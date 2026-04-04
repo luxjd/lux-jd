@@ -1,0 +1,150 @@
+"""Market analysis — price statistics and LLM-powered price adjustments."""
+
+import json
+import logging
+from decimal import Decimal
+
+from valuation_agent.llm.client import call_claude, load_prompt
+from valuation_agent.schemas import (
+    ComparableListing,
+    MarketAnalysis,
+    MarketLiquidity,
+    PriceAdjustment,
+    PriceStatistics,
+    TrendDirection,
+    ValuationInput,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def calculate_price_statistics(listings: list[ComparableListing]) -> PriceStatistics | None:
+    """Calculate basic price statistics from comparable listings."""
+    if not listings:
+        return None
+
+    prices = sorted(listing.price_eur for listing in listings)
+    n = len(prices)
+
+    return PriceStatistics(
+        mean=Decimal(str(sum(prices) / n)),
+        median=prices[n // 2] if n % 2 else Decimal(str((prices[n // 2 - 1] + prices[n // 2]) / 2)),
+        p25=prices[max(0, n // 4)],
+        p75=prices[min(n - 1, 3 * n // 4)],
+        min=prices[0],
+        max=prices[-1],
+    )
+
+
+async def analyze_market(
+    vehicle: ValuationInput,
+    comparables: list[ComparableListing],
+    condition_grade: str = "GOOD",
+) -> MarketAnalysis:
+    """Run full market analysis with LLM-powered price adjustments.
+
+    Args:
+        vehicle: The vehicle being valued.
+        comparables: List of comparable DE market listings.
+        condition_grade: Condition assessment grade string.
+
+    Returns:
+        Complete MarketAnalysis object.
+    """
+    stats = calculate_price_statistics(comparables)
+
+    if not stats:
+        logger.warning("No comparables found, returning empty market analysis")
+        return MarketAnalysis(data_source="none")
+
+    # Determine liquidity
+    count = len(comparables)
+    if count >= 15:
+        liquidity = MarketLiquidity.HIGH
+    elif count >= 5:
+        liquidity = MarketLiquidity.MEDIUM
+    else:
+        liquidity = MarketLiquidity.LOW
+
+    # Use LLM for price adjustment analysis
+    adjustments, estimated_price, confidence = await _llm_price_analysis(
+        vehicle, comparables, stats, condition_grade
+    )
+
+    from datetime import datetime
+
+    return MarketAnalysis(
+        search_criteria={
+            "make": vehicle.make,
+            "model": vehicle.model,
+            "year_range": f"{vehicle.year - 2}–{vehicle.year + 2}",
+        },
+        total_comparables_found=count,
+        price_statistics=stats,
+        estimated_sale_price=estimated_price,
+        price_adjustments=adjustments,
+        days_on_market_avg=30,  # Default estimate, refined with real data later
+        market_liquidity=liquidity,
+        trend_direction=TrendDirection.STABLE,
+        data_freshness=datetime.utcnow(),
+        data_source="mobile.de",
+    )
+
+
+async def _llm_price_analysis(
+    vehicle: ValuationInput,
+    comparables: list[ComparableListing],
+    stats: PriceStatistics,
+    condition_grade: str,
+) -> tuple[list[PriceAdjustment], Decimal, float]:
+    """Use Claude to analyze price adjustments based on comparables."""
+    prompt_template = load_prompt("price_analysis")
+
+    comparables_data = [
+        {
+            "title": c.title,
+            "price_eur": str(c.price_eur),
+            "mileage_km": c.mileage_km,
+            "year": c.year,
+            "color": c.color,
+            "url": c.url,
+        }
+        for c in comparables[:15]  # Limit to keep prompt manageable
+    ]
+
+    prompt = prompt_template.format(
+        make=vehicle.make,
+        model=vehicle.model,
+        year=vehicle.year,
+        mileage_km=vehicle.mileage_km,
+        exterior_color=vehicle.exterior_color,
+        interior_color=vehicle.interior_color or "Unknown",
+        drive_side=vehicle.drive_side.value,
+        service_history=vehicle.service_history.value,
+        accident_history=vehicle.accident_history,
+        condition_grade=condition_grade,
+        notable_options=vehicle.specification_notes or "None specified",
+        comparables_json=json.dumps(comparables_data, indent=2),
+    )
+
+    try:
+        response = call_claude(prompt, model_tier="reasoning")
+        data = json.loads(response)
+
+        adjustments = [
+            PriceAdjustment(
+                factor=adj["factor"],
+                adjustment_eur=Decimal(str(adj["adjustment_eur"])),
+                reasoning=adj["reasoning"],
+            )
+            for adj in data.get("adjustments", [])
+        ]
+
+        estimated_price = Decimal(str(data.get("estimated_sale_price_eur", stats.median)))
+        confidence = data.get("confidence", 0.6)
+
+        return adjustments, estimated_price, confidence
+
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error("LLM price analysis failed: %s, falling back to median", e)
+        return [], stats.median, 0.5

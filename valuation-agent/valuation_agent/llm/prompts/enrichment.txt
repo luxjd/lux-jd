@@ -1,0 +1,21 @@
+You are an expert luxury vehicle database. Given the following vehicle information, return enriched data as JSON.
+
+Vehicle: {make} {model} {year}
+Transmission: {transmission}
+Fuel Type: {fuel_type}
+Specification Notes: {specification_notes}
+
+Return a JSON object with these exact fields:
+{
+  "model_full_name": "Full model name including factory code if identifiable, e.g. 'Ferrari 488 GTB (F142M)'",
+  "engine_spec": "Engine specification, e.g. '3.9L Twin-Turbo V8, 670 PS'",
+  "original_msrp_eur": 0,
+  "production_years": "e.g. '2015–2019'",
+  "transmission_type": "MANUAL/AUTOMATIC/DCT/PDK/SMG or null if unknown",
+  "fuel_type": "PETROL/DIESEL/HYBRID/ELECTRIC or null if unknown",
+  "notable_options": [
+    {"option_name": "e.g. Carbon Ceramic Brakes", "estimated_value_premium_eur": 5000}
+  ]
+}
+
+Be precise with MSRP estimates. Use your knowledge of factory option pricing for the notable_options premiums. Only return valid JSON, no other text.

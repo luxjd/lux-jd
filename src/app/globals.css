@@ -81,6 +81,191 @@ body {
   box-shadow: 0 0 15px rgba(234, 193, 105, 0.2);
 }
 
+/* ─── Hero entrance animations ─── */
+@keyframes heroFadeUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes heroBadgeIn {
+  from { opacity: 0; transform: translateY(-10px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes heroImageZoom {
+  from { transform: scale(1.1); }
+  to { transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+/* Wave: each card rests for most of the cycle, pops up briefly.
+   Total cycle = 2.5s × 5 cards stagger window ≈ 5s feels right.
+   A card rises at 10%-20% of its cycle, rests the other 80%. */
+@keyframes waveBlue {
+  0%   { transform: translateY(0);     box-shadow: 0 0 0 rgba(173,198,255,0);   border-color: rgba(65,71,84,0.1); }
+  10%  { transform: translateY(-22px); box-shadow: 0 12px 35px rgba(173,198,255,0.25); border-color: rgba(173,198,255,0.5); }
+  20%  { transform: translateY(0);     box-shadow: 0 0 0 rgba(173,198,255,0);   border-color: rgba(65,71,84,0.1); }
+  100% { transform: translateY(0);     box-shadow: 0 0 0 rgba(173,198,255,0);   border-color: rgba(65,71,84,0.1); }
+}
+
+@keyframes waveGold {
+  0%   { transform: translateY(0);     box-shadow: 0 0 0 rgba(234,193,105,0);   border-color: rgba(65,71,84,0.1); }
+  10%  { transform: translateY(-22px); box-shadow: 0 12px 35px rgba(234,193,105,0.25); border-color: rgba(234,193,105,0.5); }
+  20%  { transform: translateY(0);     box-shadow: 0 0 0 rgba(234,193,105,0);   border-color: rgba(65,71,84,0.1); }
+  100% { transform: translateY(0);     box-shadow: 0 0 0 rgba(234,193,105,0);   border-color: rgba(65,71,84,0.1); }
+}
+
+.anim-wave {
+  animation: waveBlue 2.5s ease-in-out infinite;
+}
+
+.anim-wave-gold {
+  animation: waveGold 2.5s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 15px rgba(173, 198, 255, 0.15); }
+  50% { box-shadow: 0 0 30px rgba(173, 198, 255, 0.35); }
+}
+
+@keyframes pulseGlowGold {
+  0%, 100% { box-shadow: 0 0 15px rgba(234, 193, 105, 0.15); }
+  50% { box-shadow: 0 0 30px rgba(234, 193, 105, 0.35); }
+}
+
+@keyframes lineGrow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes navSlideDown {
+  from { opacity: 0; transform: translateY(-100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes borderPulse {
+  0%, 100% { border-color: rgba(173, 198, 255, 0.1); }
+  50% { border-color: rgba(173, 198, 255, 0.35); }
+}
+
+/* ─── Utility animation classes ─── */
+.anim-hero-badge {
+  animation: heroBadgeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+
+.anim-hero-title {
+  animation: heroFadeUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
+}
+
+.anim-hero-subtitle {
+  animation: heroFadeUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.6s both;
+}
+
+.anim-hero-buttons {
+  animation: heroFadeUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.8s both;
+}
+
+.anim-hero-image {
+  animation: heroImageZoom 1.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.anim-nav {
+  animation: navSlideDown 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.anim-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--color-primary) 0%,
+    var(--color-secondary) 40%,
+    var(--color-primary) 60%,
+    var(--color-secondary) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 4s linear infinite;
+}
+
+.anim-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.anim-pulse-glow {
+  animation: pulseGlow 3s ease-in-out infinite;
+}
+
+.anim-pulse-glow-gold {
+  animation: pulseGlowGold 3s ease-in-out infinite;
+}
+
+.anim-line-grow {
+  transform-origin: left;
+  animation: lineGrow 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.anim-gradient-bg {
+  background: linear-gradient(
+    135deg,
+    rgba(173, 198, 255, 0.05) 0%,
+    rgba(234, 193, 105, 0.05) 50%,
+    rgba(173, 198, 255, 0.05) 100%
+  );
+  background-size: 200% 200%;
+  animation: gradientShift 6s ease infinite;
+}
+
+.anim-border-pulse {
+  animation: borderPulse 3s ease-in-out infinite;
+}
+
+/* ─── Hover micro-interactions ─── */
+.hover-lift {
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+.hover-icon-spin:hover .material-symbols-outlined {
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: rotateY(180deg);
+}
+
+.icon-bounce .material-symbols-outlined {
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.icon-bounce:hover .material-symbols-outlined {
+  transform: scale(1.25);
+}
+
 ::-webkit-scrollbar {
   width: 8px;
 }

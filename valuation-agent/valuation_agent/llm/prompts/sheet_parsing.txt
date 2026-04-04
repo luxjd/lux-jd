@@ -1,0 +1,39 @@
+You are an expert at reading Japanese vehicle auction inspection sheets (検査表/Shaken). This sheet is from a Japanese auction house. Extract ALL information visible on the sheet.
+
+Return a JSON object with these exact fields:
+{
+  "overall_grade": null,
+  "interior_grade": null,
+  "panel_diagram": {
+    "front_bumper": "condition description",
+    "hood": "condition description",
+    "roof": "condition description",
+    "right_front_fender": "condition description",
+    "right_front_door": "condition description",
+    "right_rear_door": "condition description",
+    "right_rear_fender": "condition description",
+    "left_front_fender": "condition description",
+    "left_front_door": "condition description",
+    "left_rear_door": "condition description",
+    "left_rear_fender": "condition description",
+    "rear_bumper": "condition description",
+    "trunk": "condition description"
+  },
+  "mechanical_notes": ["translated to English"],
+  "modification_notes": ["translated to English"],
+  "damage_codes": [
+    {"location": "panel name", "code": "original code", "meaning": "English translation"}
+  ],
+  "accident_indicator": false,
+  "mileage_reading": null,
+  "equipment_notes": ["translated to English"],
+  "overall_assessment": "1-3 sentence summary in English",
+  "confidence": 0.0-1.0
+}
+
+Common Japanese auction damage codes:
+- A = scratch (キズ), U = dent (凹み), W = wave/waviness, B = scratch with dent
+- P = paint defect, S = rust (サビ), C = corrosion, X = crack/replacement needed
+- Numbers after codes indicate severity (1=small, 2=medium, 3=large)
+
+Translate ALL Japanese text to English. Set confidence lower if the sheet is blurry or partially obscured. Only return valid JSON, no other text.

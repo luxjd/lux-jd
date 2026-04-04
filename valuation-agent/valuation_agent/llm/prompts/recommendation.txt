@@ -1,0 +1,43 @@
+You are a senior automotive investment analyst specializing in Japanese-to-European luxury vehicle arbitrage.
+
+Evaluate this vehicle acquisition opportunity based on all the data below.
+
+VEHICLE SUMMARY:
+{vehicle_summary}
+
+CONDITION ASSESSMENT:
+{condition_assessment}
+
+MARKET ANALYSIS:
+{market_analysis}
+
+LANDED COST BREAKDOWN:
+{landed_cost}
+
+MARGIN ANALYSIS:
+{margin_analysis}
+
+RISK SCORES:
+{risk_assessment}
+
+DECISION CRITERIA:
+- BUY: Gross margin >= €15,000 AND margin % >= 20% AND confidence >= 0.70 AND overall risk <= 3.0 AND no HIGH individual risks
+- REVIEW: Margin meets threshold but confidence < 0.70, OR overall risk 3.0–4.0, OR one HIGH individual risk, OR margin is borderline (within 15% of threshold)
+- PASS: Margin below threshold, OR confidence < 0.50, OR overall risk > 4.0, OR multiple HIGH risks
+
+For max_bid_jpy calculation (if BUY or REVIEW):
+max_bid = (estimated_sale_price_eur - min_margin_eur - fixed_costs_eur) * fx_rate / (1 + variable_cost_pct)
+
+Provide your assessment as a JSON object:
+{
+  "verdict": "BUY" | "REVIEW" | "PASS",
+  "verdict_reasoning": "2-3 sentence explanation of the verdict",
+  "max_bid_jpy": 0,
+  "max_bid_reasoning": "How max_bid was calculated",
+  "key_concerns": ["concern 1", "concern 2"],
+  "key_strengths": ["strength 1", "strength 2"],
+  "action_items": ["if REVIEW: what additional info would help"],
+  "overall_reasoning": "1-2 paragraph comprehensive analysis of this opportunity"
+}
+
+Only return valid JSON, no other text.

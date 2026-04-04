@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valuation Report — {{ report.vehicle_summary.make }} {{ report.vehicle_summary.model }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Valuation Report</h1>
+            <p class="subtitle">{{ report.vehicle_summary.make }} {{ report.vehicle_summary.model }} ({{ report.vehicle_summary.year }})</p>
+            <small>ID: {{ report.valuation_id }} | Generated: {{ report.timestamp }}</small>
+        </header>
+
+        <div class="report-content">
+            <p>Report template — populated by the /report/{valuation_id} route.</p>
+        </div>
+    </div>
+</body>
+</html>

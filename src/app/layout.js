@@ -12,7 +12,7 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "LUXURY AUTO ARBITRAGE | AI-Powered Supercar Sourcing",
+  title: "LuxJD | AI-Powered Supercar Sourcing",
   description:
     "Source undervalued supercars from Japan. Sell at premium in Europe. Guided by hyper-intelligent market data.",
 };
