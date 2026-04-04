@@ -81,6 +81,21 @@ body {
   box-shadow: 0 0 15px rgba(234, 193, 105, 0.2);
 }
 
+/* ─── Hero carousel ─── */
+@keyframes heroCarouselZoom {
+  from { transform: scale(1.05); }
+  to { transform: scale(1.15); }
+}
+
+.hero-carousel-zoom {
+  animation: heroCarouselZoom 6s ease-in-out both;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 /* ─── Hero entrance animations ─── */
 @keyframes heroFadeUp {
   from { opacity: 0; transform: translateY(30px); }
@@ -151,6 +166,38 @@ body {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
+}
+
+@keyframes speedLines {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50px); }
+}
+
+/* Drift hero text reveal */
+@keyframes driftTextReveal {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.anim-drift-text-1 {
+  animation: driftTextReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) 3.2s both;
+}
+.anim-drift-text-2 {
+  animation: driftTextReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) 3.5s both;
+}
+.anim-drift-text-3 {
+  animation: driftTextReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) 3.8s both;
+}
+.anim-drift-text-4 {
+  animation: driftTextReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) 4.1s both;
 }
 
 @keyframes modalIn {

@@ -4,7 +4,7 @@ import Image from "next/image";
 import AuthModals from "./components/AuthModals";
 import ScrollReveal from "./components/ScrollReveal";
 import FAQ from "./components/FAQ";
-import HeroDrift, { HeroCarousel, TypingText } from "./components/HeroDrift";
+import HeroDrift from "./components/HeroDrift";
 
 export default function Home() {
   return (
@@ -48,15 +48,25 @@ export default function Home() {
 
           {/* Hero Section */}
           <section className="relative h-screen flex items-center justify-center overflow-hidden">
-            {/* Option B: Rotating car showcase — parallax bg layer (oversized for movement room) */}
-            <div data-parallax-bg className="absolute -inset-6 will-change-transform">
-              <HeroCarousel />
+            {/* Background — parallax layer (moves opposite to mouse) */}
+            <div data-parallax-bg className="absolute inset-0 z-0 will-change-transform" style={{ transform: "scale(1.08)" }}>
+              <Image
+                className="w-full h-full object-cover brightness-50"
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXqatSJuC2pgQuVAPu8TeDA7b1kLNpCVtRV7yGGGh18NO3MmSJbJu3mlWonzp5HPIGD_1kogl2WBawoVO9SrNGcJUADLM5zoz0wA29p3NQTbUciCox9WKz3ymYYJ06a9kM53OhvMQ9aXKUEac9MXrrm8EDJ0RUO8u5Lgi6FN5WrUurOjqZzbfr8JGdsVD7Ni6dkYbpRXkp4rLLMO9XBO8F2VPi7glwcmcxxTGCvTyWB6dn3IByIFARqlGHQc2SI4y3CNkuw03J9w=w1920"
+                alt="dramatic low angle shot of a sleek black supercar in a futuristic dark garage with atmospheric blue and gold neon lighting reflections"
+                fill
+                priority
+                quality={100}
+                sizes="100vw"
+                unoptimized
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/50"></div>
             </div>
 
-            {/* Ambient effects + Option C parallax + cursor glow */}
+            {/* Cinematic effects layer */}
             <HeroDrift />
 
-            {/* Hero text — parallax foreground layer */}
+            {/* Hero text — parallax foreground (moves with mouse) */}
             <div data-parallax-text className="relative z-10 text-center max-w-5xl px-6 will-change-transform">
               <div className="anim-drift-text-1 inline-block mb-4 px-4 py-1 rounded-full border border-primary/20 bg-primary/10 backdrop-blur-md">
                 <span className="text-primary font-medium tracking-widest uppercase text-xs">
@@ -69,14 +79,10 @@ export default function Home() {
                   Luxury Car Arbitrage
                 </span>
               </h1>
-              {/* Option D: Typing effect on subtitle */}
-              <div className="anim-drift-text-3 text-on-surface-variant text-xl md:text-2xl mb-10 max-w-2xl mx-auto leading-relaxed h-[4em] md:h-[3em]">
-                <TypingText
-                  text="Source undervalued supercars from Japan. Sell at premium in Europe. Guided by hyper-intelligent market data."
-                  delay={2000}
-                  speed={30}
-                />
-              </div>
+              <p className="anim-drift-text-3 text-on-surface-variant text-xl md:text-2xl mb-10 max-w-2xl mx-auto leading-relaxed">
+                Source undervalued supercars from Japan. Sell at premium in Europe.
+                Guided by hyper-intelligent market data.
+              </p>
               <div className="anim-drift-text-4 flex flex-col md:flex-row gap-6 justify-center items-center">
                 <button
                   onClick={openSignup}
