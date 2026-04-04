@@ -1,10 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import AuthModals from "./components/AuthModals";
-import ScrollReveal from "./components/ScrollReveal";
-import FAQ from "./components/FAQ";
-import HeroDrift, { HeroCarousel, TypingText } from "./components/HeroDrift";
+import AuthModals from "../components/AuthModals";
+import ScrollReveal from "../components/ScrollReveal";
+import FAQ from "../components/FAQ";
+import HeroDrift, { HeroCarousel, TypingText } from "../components/HeroDrift";
 
 export default function Home() {
   return (

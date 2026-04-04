@@ -1,10 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function AuthModals({ children }) {
-  const [activeModal, setActiveModal] = useState(null); // 'login' | 'signup' | null
+  const router = useRouter();
+  const [activeModal, setActiveModal] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
 
   const openLogin = () => {
     setActiveModal("login");
@@ -73,7 +79,32 @@ export default function AuthModals({ children }) {
                   </p>
                 </div>
 
-                <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
+                {loginError && (
+                  <div className="mb-4 p-3 rounded-xl bg-error/10 border border-error/20 text-error text-sm text-center">
+                    {loginError}
+                  </div>
+                )}
+
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  setLoginError("");
+                  setLoginLoading(true);
+                  try {
+                    const res = await fetch("/api/auth/login", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+                    });
+                    if (res.ok) {
+                      close();
+                      router.push("/dashboard");
+                    } else {
+                      const data = await res.json();
+                      setLoginError(data.error || "Invalid credentials");
+                    }
+                  } catch { setLoginError("Network error"); }
+                  finally { setLoginLoading(false); }
+                }} className="space-y-5">
                   <div>
                     <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2 font-label">
                       Email
@@ -84,7 +115,9 @@ export default function AuthModals({ children }) {
                       </span>
                       <input
                         type="email"
-                        placeholder="you@example.com"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        placeholder="admin@luxjd.com"
                         className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(173,198,255,0.15)] transition-all"
                       />
                     </div>
@@ -100,6 +133,8 @@ export default function AuthModals({ children }) {
                       </span>
                       <input
                         type={showPassword ? "text" : "password"}
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
                         placeholder="Enter your password"
                         className="w-full pl-11 pr-11 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(173,198,255,0.15)] transition-all"
                       />
@@ -133,9 +168,10 @@ export default function AuthModals({ children }) {
 
                   <button
                     type="submit"
-                    className="w-full py-3.5 bg-primary text-on-primary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(173,198,255,0.5)] transition-all duration-300 active:scale-[0.98]"
+                    disabled={loginLoading}
+                    className="w-full py-3.5 bg-primary text-on-primary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(173,198,255,0.5)] transition-all duration-300 active:scale-[0.98] disabled:opacity-50"
                   >
-                    Sign In
+                    {loginLoading ? "Signing in..." : "Sign In"}
                   </button>
                 </form>
 
