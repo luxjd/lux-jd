@@ -54,12 +54,12 @@ export default function ValuationForm({ onSubmit, loading }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Vehicle Identification */}
-      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-6">
         <h3 className="font-headline font-bold text-lg mb-4 flex items-center gap-2">
           <span className="material-symbols-outlined text-primary">directions_car</span>
           Vehicle Details
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
           <div>
             <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2">Make *</label>
             <select value={form.make} onChange={(e) => update("make", e.target.value)} required className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary/50 transition-all">
@@ -110,12 +110,12 @@ export default function ValuationForm({ onSubmit, loading }) {
       </div>
 
       {/* Price & Color */}
-      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-6">
         <h3 className="font-headline font-bold text-lg mb-4 flex items-center gap-2">
           <span className="material-symbols-outlined text-secondary">currency_yen</span>
           Price & Specification
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
           <div>
             <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2">Asking Price (JPY) *</label>
             <input type="number" value={form.askingPriceJpy} onChange={(e) => update("askingPriceJpy", parseInt(e.target.value))} min={0} step={100000} required className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary/50 transition-all" />
@@ -150,7 +150,7 @@ export default function ValuationForm({ onSubmit, loading }) {
       </div>
 
       {/* Photos & Documents */}
-      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-6">
         <h3 className="font-headline font-bold text-lg mb-4 flex items-center gap-2">
           <span className="material-symbols-outlined text-primary">photo_camera</span>
           Photos & Documents
@@ -160,7 +160,7 @@ export default function ValuationForm({ onSubmit, loading }) {
             <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2">Vehicle Photos (up to 30)</label>
             <input ref={fileRef} type="file" accept="image/*" multiple onChange={(e) => setPhotos(Array.from(e.target.files || []))} className="hidden" />
             <button type="button" onClick={() => fileRef.current?.click()}
-              className="w-full py-8 rounded-xl border-2 border-dashed border-outline-variant/30 text-on-surface-variant hover:border-primary/50 hover:text-primary transition-all flex flex-col items-center gap-2">
+              className="w-full py-6 sm:py-8 rounded-xl border-2 border-dashed border-outline-variant/30 text-on-surface-variant hover:border-primary/50 hover:text-primary transition-all flex flex-col items-center gap-2">
               <span className="material-symbols-outlined text-3xl">add_photo_alternate</span>
               <span className="text-sm">{photos.length > 0 ? `${photos.length} photos selected` : "Click to upload photos"}</span>
             </button>
@@ -169,7 +169,7 @@ export default function ValuationForm({ onSubmit, loading }) {
             <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2">Auction Sheet</label>
             <input type="file" accept="image/*,.pdf" onChange={(e) => setAuctionSheet(e.target.files?.[0] || null)} className="hidden" id="auction-sheet" />
             <label htmlFor="auction-sheet"
-              className="w-full py-8 rounded-xl border-2 border-dashed border-outline-variant/30 text-on-surface-variant hover:border-secondary/50 hover:text-secondary transition-all flex flex-col items-center gap-2 cursor-pointer">
+              className="w-full py-6 sm:py-8 rounded-xl border-2 border-dashed border-outline-variant/30 text-on-surface-variant hover:border-secondary/50 hover:text-secondary transition-all flex flex-col items-center gap-2 cursor-pointer">
               <span className="material-symbols-outlined text-3xl">description</span>
               <span className="text-sm">{auctionSheet ? auctionSheet.name : "Click to upload auction sheet"}</span>
             </label>

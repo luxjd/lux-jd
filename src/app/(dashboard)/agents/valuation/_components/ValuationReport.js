@@ -20,7 +20,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
       {/* Verdict Banner */}
       <div className={`rounded-2xl border-2 p-8 text-center ${VERDICT_STYLES[v.verdict]}`}>
         <span className="material-symbols-outlined text-5xl mb-3 block">{VERDICT_ICONS[v.verdict]}</span>
-        <h2 className="font-headline text-4xl font-bold mb-2">{v.verdict}</h2>
+        <h2 className="font-headline text-2xl sm:text-4xl font-bold mb-2">{v.verdict}</h2>
         <p className="text-sm max-w-2xl mx-auto opacity-90">{v.verdictReasoning}</p>
         {v.maxBidJpy && (
           <div className="mt-4 inline-block px-4 py-2 rounded-xl bg-black/20">
@@ -66,7 +66,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
       </div>
 
       {/* Margin Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
         <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-5">
           <p className="text-[10px] uppercase text-on-surface-variant tracking-widest mb-1">DE Market Value</p>
           <p className="font-headline text-2xl font-bold">{fmtFull(m.estimatedSalePrice)}</p>
@@ -92,7 +92,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
       {/* Margin Scenarios */}
       <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
         <h3 className="font-headline font-bold text-lg mb-4">Margin Scenarios</h3>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           {[
             { label: "Pessimistic (P25)", value: m.pessimisticMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics.p25)}` },
             { label: "Base (Median)", value: m.baseMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics.median)}` },
@@ -218,7 +218,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
       {(risk.conditionRisk || risk.overallRiskScore) && (
       <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
         <h3 className="font-headline font-bold text-lg mb-4">Risk Assessment</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
           {[
             { label: "Condition", ...(risk.conditionRisk || { score: "—", level: "MEDIUM" }), weight: "25%" },
             { label: "Market", ...(risk.marketRisk || { score: "—", level: "MEDIUM" }), weight: "25%" },

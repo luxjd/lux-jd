@@ -32,10 +32,10 @@ export default function ProcessingSteps() {
   }, []);
 
   return (
-    <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-8">
-      <div className="flex items-center gap-3 mb-6">
-        <span className="material-symbols-outlined text-primary text-2xl animate-spin">progress_activity</span>
-        <h3 className="font-headline font-bold text-xl">Processing Valuation</h3>
+    <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-6 lg:p-8">
+      <div className="flex items-center gap-3 mb-4 sm:mb-6">
+        <span className="material-symbols-outlined text-primary text-2xl animate-spin" role="status" aria-label="Processing">progress_activity</span>
+        <h3 className="font-headline font-bold text-lg sm:text-xl">Processing Valuation</h3>
       </div>
 
       <div className="space-y-3">

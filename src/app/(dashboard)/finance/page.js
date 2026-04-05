@@ -6,7 +6,7 @@ export default function FinancePage() {
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         {[
           { label: "Total Revenue", value: `€${(summary.totalRevenue / 1000).toFixed(0)}K`, icon: "payments", color: "text-secondary" },
           { label: "Gross Margin", value: `${summary.grossMargin}%`, icon: "trending_up", color: "text-emerald-400" },
@@ -18,7 +18,7 @@ export default function FinancePage() {
               <span className={`material-symbols-outlined ${m.color} text-2xl`}>{m.icon}</span>
               <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">{m.label}</span>
             </div>
-            <p className="font-headline text-3xl font-bold">{m.value}</p>
+            <p className="font-headline text-xl sm:text-3xl font-bold">{m.value}</p>
           </div>
         ))}
       </div>

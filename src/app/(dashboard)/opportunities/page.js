@@ -14,11 +14,11 @@ export default function OpportunitiesPage() {
       <div className="grid gap-4">
         {opportunities.map((opp) => (
           <div key={opp.id} className="bg-surface-container rounded-2xl border border-outline-variant/10 p-5 hover:border-primary/30 transition-all">
-            <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3 sm:gap-4">
               {/* Vehicle info */}
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="font-headline text-lg font-bold">{opp.make} {opp.model}</h3>
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <h3 className="font-headline text-base sm:text-lg font-bold">{opp.make} {opp.model}</h3>
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                     opp.recommendation === "STRONG_BUY" ? "bg-emerald-400/15 text-emerald-400" :
                     opp.recommendation === "BUY" ? "bg-primary/15 text-primary" :
@@ -41,7 +41,7 @@ export default function OpportunitiesPage() {
               </div>
 
               {/* Financials */}
-              <div className="flex items-center gap-6">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-6">
                 <div className="text-center">
                   <p className="text-[10px] uppercase text-on-surface-variant tracking-wider">JP Price</p>
                   <p className="font-headline font-bold">€{opp.jpPriceEur.toLocaleString()}</p>

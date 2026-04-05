@@ -14,8 +14,8 @@ export default function PipelinePage() {
       </div>
 
       {/* Kanban board */}
-      <div className="overflow-x-auto pb-4 -mx-6 px-6">
-        <div className="flex gap-4" style={{ minWidth: "1600px" }}>
+      <div className="overflow-x-auto pb-4 -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6">
+        <div className="flex gap-3 sm:gap-4" style={{ minWidth: "1200px" }}>
           {PIPELINE_STAGES.map((stage) => {
             const stageVehicles = vehicles.filter((v) => v.currentStage === stage.key);
             return (

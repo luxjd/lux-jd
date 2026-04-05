@@ -9,20 +9,20 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         {[
           { label: "Active Vehicles", value: dashboardMetrics.activeVehicles, icon: "directions_car", color: "text-primary", trend: "+2 this week" },
           { label: "Portfolio Value", value: `€${(dashboardMetrics.portfolioValue / 1000).toFixed(0)}K`, icon: "account_balance_wallet", color: "text-secondary", trend: "+€120K" },
           { label: "Unrealized P&L", value: `€${(dashboardMetrics.unrealizedPL / 1000).toFixed(0)}K`, icon: "trending_up", color: "text-emerald-400", trend: "27.8% avg margin" },
           { label: "Leads This Month", value: dashboardMetrics.leadsThisMonth, icon: "people", color: "text-primary", trend: "6 converted" },
         ].map((m, i) => (
-          <div key={i} className="bg-surface-container rounded-2xl border border-outline-variant/10 p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className={`material-symbols-outlined ${m.color} text-2xl`}>{m.icon}</span>
-              <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">{m.label}</span>
+          <div key={i} className="bg-surface-container rounded-2xl border border-outline-variant/10 p-3 sm:p-5">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <span className={`material-symbols-outlined ${m.color} text-xl sm:text-2xl`}>{m.icon}</span>
+              <span className="text-[9px] sm:text-[10px] uppercase tracking-widest text-on-surface-variant">{m.label}</span>
             </div>
-            <p className="font-headline text-3xl font-bold mb-1">{m.value}</p>
-            <p className="text-xs text-on-surface-variant">{m.trend}</p>
+            <p className="font-headline text-xl sm:text-3xl font-bold mb-1">{m.value}</p>
+            <p className="text-[10px] sm:text-xs text-on-surface-variant">{m.trend}</p>
           </div>
         ))}
       </div>
@@ -30,9 +30,9 @@ export default function DashboardPage() {
       {/* Pipeline Summary + Agent Status */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Pipeline Mini */}
-        <div className="lg:col-span-2 bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
-          <h3 className="font-headline font-bold text-lg mb-4">Pipeline Overview</h3>
-          <div className="grid grid-cols-5 lg:grid-cols-10 gap-2">
+        <div className="lg:col-span-2 bg-surface-container rounded-2xl border border-outline-variant/10 p-3 sm:p-6">
+          <h3 className="font-headline font-bold text-base sm:text-lg mb-3 sm:mb-4">Pipeline Overview</h3>
+          <div className="grid grid-cols-5 sm:grid-cols-10 gap-1 sm:gap-2">
             {stageCount.map((s) => (
               <div key={s.key} className="text-center">
                 <div className={`w-10 h-10 rounded-full ${s.bg} flex items-center justify-center mx-auto mb-1.5`}>
