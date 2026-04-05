@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/listings", label: "Listings", icon: "directions_car" },
   { href: "/finance", label: "Finance", icon: "account_balance" },
   { href: "/leads", label: "Leads", icon: "people" },
+  { href: "/agents", label: "Agents", icon: "smart_toy" },
 ];
 
 export default function Sidebar() {

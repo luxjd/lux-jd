@@ -407,3 +407,13 @@ body {
   background: #353534;
   border-radius: 4px;
 }
+
+/* ─── Print / PDF Export ─── */
+@media print {
+  body { background: white !important; color: black !important; }
+  nav, aside, header, footer, button, .no-print { display: none !important; }
+  main { padding: 0 !important; }
+  * { color: #1a1a1a !important; border-color: #ccc !important; background: white !important; box-shadow: none !important; }
+  .bg-emerald-400\/10, .bg-amber-400\/10, .bg-red-400\/10, .bg-primary\/10, .bg-slate-400\/10 { background: #f0f0f0 !important; }
+  .text-emerald-400, .text-primary, .text-secondary { color: #333 !important; }
+}

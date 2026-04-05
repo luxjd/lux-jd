@@ -1,0 +1,381 @@
+"use client";
+
+const fmt = (n) => { if (n == null || isNaN(n)) return "€—"; return n >= 1000000 ? `€${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `€${(n / 1000).toFixed(0)}K` : `€${n.toLocaleString()}`; };
+const fmtFull = (n) => { if (n == null || isNaN(n)) return "€—"; return `€${n.toLocaleString()}`; };
+const RISK_COLORS = { LOW: "text-emerald-400 bg-emerald-400/10", MEDIUM: "text-amber-400 bg-amber-400/10", HIGH: "text-red-400 bg-red-400/10" };
+const VERDICT_STYLES = { BUY: "bg-emerald-400/15 text-emerald-400 border-emerald-400/30", REVIEW: "bg-amber-400/15 text-amber-400 border-amber-400/30", PASS: "bg-slate-400/10 text-slate-400 border-slate-400/20" };
+const VERDICT_ICONS = { BUY: "check_circle", REVIEW: "help", PASS: "block" };
+
+export default function ValuationReport({ report, onNewValuation, onRerun, onSendToPipeline }) {
+  const r = report;
+  const v = r.recommendation || { verdict: "REVIEW", verdictReasoning: "AI recommendation unavailable — review manually.", keyStrengths: [], keyConcerns: ["AI analysis incomplete"], maxBidJpy: null };
+  const m = r.marginAnalysis || {};
+  const lc = r.landedCost || {};
+  const risk = r.riskAssessment || {};
+  const cond = r.conditionAssessment || {};
+  const mkt = r.marketAnalysis || {};
+
+  return (
+    <div className="space-y-6">
+      {/* Verdict Banner */}
+      <div className={`rounded-2xl border-2 p-8 text-center ${VERDICT_STYLES[v.verdict]}`}>
+        <span className="material-symbols-outlined text-5xl mb-3 block">{VERDICT_ICONS[v.verdict]}</span>
+        <h2 className="font-headline text-4xl font-bold mb-2">{v.verdict}</h2>
+        <p className="text-sm max-w-2xl mx-auto opacity-90">{v.verdictReasoning}</p>
+        {v.maxBidJpy && (
+          <div className="mt-4 inline-block px-4 py-2 rounded-xl bg-black/20">
+            <span className="text-xs uppercase tracking-widest opacity-70">Max Recommended Bid</span>
+            <p className="font-headline text-2xl font-bold">¥{v.maxBidJpy.toLocaleString()}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Overall Reasoning */}
+      {r.reasoning && (
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+          <h3 className="font-headline font-bold text-lg mb-3 flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary">psychology</span> Analysis Summary
+          </h3>
+          <p className="text-sm text-on-surface-variant leading-relaxed">{r.reasoning}</p>
+        </div>
+      )}
+
+      {/* Vehicle + Confidence */}
+      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+        <div className="flex flex-col lg:flex-row justify-between gap-4">
+          <div>
+            <h3 className="font-headline text-2xl font-bold">{r.vehicleSummary.make} {r.vehicleSummary.model}</h3>
+            <p className="text-on-surface-variant">
+              {r.vehicleSummary.year} &middot; {r.vehicleSummary.mileageKm.toLocaleString()} km &middot; {r.vehicleSummary.driveSide} &middot; {r.vehicleSummary.exteriorColor}
+              {r.vehicleSummary.auctionGrade && ` · Grade ${r.vehicleSummary.auctionGrade}`}
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-center">
+              <svg width="56" height="56" viewBox="0 0 36 36" className="-rotate-90">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(65,71,84,0.3)" strokeWidth="3" />
+                <circle cx="18" cy="18" r="14" fill="none" stroke={m.marginConfidence >= 0.80 ? "#34d399" : m.marginConfidence >= 0.65 ? "#fbbf24" : "#f87171"} strokeWidth="3" strokeDasharray={`${m.marginConfidence * 88} 88`} strokeLinecap="round" />
+              </svg>
+              <p className="text-xs text-on-surface-variant mt-1">{(m.marginConfidence * 100).toFixed(0)}% conf</p>
+            </div>
+            <div className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase ${RISK_COLORS[risk.overallRiskLevel]}`}>
+              {risk.overallRiskLevel} RISK ({risk.overallRiskScore})
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Margin Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-5">
+          <p className="text-[10px] uppercase text-on-surface-variant tracking-widest mb-1">DE Market Value</p>
+          <p className="font-headline text-2xl font-bold">{fmtFull(m.estimatedSalePrice)}</p>
+          <p className="text-xs text-on-surface-variant">{mkt.totalComparables} comparables</p>
+        </div>
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-5">
+          <p className="text-[10px] uppercase text-on-surface-variant tracking-widest mb-1">Landed Cost</p>
+          <p className="font-headline text-2xl font-bold">{fmtFull(m.totalLandedCost)}</p>
+          <p className="text-xs text-on-surface-variant">excl. reclaimable VAT</p>
+        </div>
+        <div className="bg-surface-container rounded-2xl border border-primary/30 p-5">
+          <p className="text-[10px] uppercase text-primary tracking-widest mb-1">Gross Margin</p>
+          <p className="font-headline text-2xl font-bold text-primary">{fmtFull(m.grossMarginEur)}</p>
+          <p className="text-xs text-primary">{m.grossMarginPct}%</p>
+        </div>
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-5">
+          <p className="text-[10px] uppercase text-on-surface-variant tracking-widest mb-1">Annualized ROI</p>
+          <p className="font-headline text-2xl font-bold">{m.annualizedRoi}%</p>
+          <p className="text-xs text-on-surface-variant">{m.estimatedHoldDays}d hold</p>
+        </div>
+      </div>
+
+      {/* Margin Scenarios */}
+      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+        <h3 className="font-headline font-bold text-lg mb-4">Margin Scenarios</h3>
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: "Pessimistic (P25)", value: m.pessimisticMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics.p25)}` },
+            { label: "Base (Median)", value: m.baseMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics.median)}` },
+            { label: "Optimistic (P75)", value: m.optimisticMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics.p75)}` },
+          ].map((s, i) => (
+            <div key={i} className={`p-4 rounded-xl text-center ${i === 1 ? "bg-primary/5 border border-primary/20" : "bg-surface-container-high/30"}`}>
+              <p className="text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">{s.label}</p>
+              <p className={`font-headline text-xl font-bold ${s.value > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {s.value > 0 ? "+" : ""}{fmtFull(s.value)}
+              </p>
+              <p className="text-[10px] text-on-surface-variant mt-0.5">{s.sub}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Cost Breakdown + Condition */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Cost Breakdown */}
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+          <h3 className="font-headline font-bold text-lg mb-4">Landed Cost Breakdown</h3>
+          <div className="space-y-2">
+            {[
+              { label: `Purchase (¥${lc.purchasePriceJpy.toLocaleString()})`, value: lc.purchasePriceEur, icon: "gavel" },
+              { label: "Auction fees (4%)", value: lc.auctionFeesEur, icon: "receipt" },
+              { label: "JP Transport", value: lc.jpTransportEur, icon: "local_shipping" },
+              { label: "Export docs", value: lc.exportDocsEur, icon: "description" },
+              { label: "Container freight", value: lc.freightEur, icon: "sailing" },
+              { label: "Marine insurance (2%)", value: lc.insuranceEur, icon: "security" },
+              { label: "Customs duty (10% CIF)", value: lc.customsDutyEur, icon: "account_balance" },
+              { label: "Port handling", value: lc.portHandlingEur, icon: "inventory_2" },
+              { label: "TUV inspection", value: lc.tuvEstimatedEur, icon: "verified" },
+              { label: "Registration", value: lc.registrationEur, icon: "badge" },
+              { label: "DE Transport", value: lc.deTransportEur, icon: "local_shipping" },
+              { label: "Detailing + prep", value: lc.detailingEur, icon: "auto_fix_high" },
+              { label: "Photography", value: lc.photographyEur, icon: "photo_camera" },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center justify-between py-2 border-b border-outline-variant/10 last:border-0">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-on-surface-variant text-sm">{item.icon}</span>
+                  <span className="text-sm text-on-surface-variant">{item.label}</span>
+                </div>
+                <span className="text-sm font-mono font-bold">{fmtFull(item.value)}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-3 mt-2 border-t-2 border-primary/30">
+              <span className="font-headline font-bold">Total Landed</span>
+              <span className="font-headline font-bold text-lg">{fmtFull(lc.totalLandedCostEur)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-on-surface-variant">
+              <span>Import VAT (reclaimable)</span>
+              <span className="text-emerald-400 font-bold">+{fmtFull(lc.reclaimableVatEur)} back</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-on-surface-variant">
+              <span>Cash outlay (incl. VAT)</span>
+              <span className="font-bold">{fmtFull(lc.totalCashOutlayEur)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-on-surface-variant">
+              <span>FX rate used (with {lc.fxBufferApplied}% buffer)</span>
+              <span className="font-mono">¥{lc.fxRateUsed}/€</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Condition Assessment */}
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+          <h3 className="font-headline font-bold text-lg mb-4">Condition Assessment</h3>
+          <div className="flex items-center gap-4 mb-6">
+            <div className="text-center">
+              <p className="font-headline text-3xl font-bold">{cond.overallGradeNumeric}/10</p>
+              <p className={`text-sm font-bold ${cond.overallGrade === "EXCELLENT" ? "text-emerald-400" : cond.overallGrade === "VERY_GOOD" ? "text-primary" : "text-amber-400"}`}>
+                {cond.overallGrade.replace("_", " ")}
+              </p>
+            </div>
+            {cond.photoCount > 0 && <p className="text-xs text-on-surface-variant">{cond.photoCount} photos analyzed</p>}
+          </div>
+
+          <div className="space-y-4">
+            {[
+              { label: "Exterior", score: cond.exteriorScore || 0, notes: cond.exteriorNotes || [] },
+              { label: "Interior", score: cond.interiorScore || 0, notes: cond.interiorNotes || [] },
+            ].map((area) => (
+              <div key={area.label}>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-sm font-bold">{area.label}</span>
+                  <span className="text-sm font-mono font-bold">{area.score}/10</span>
+                </div>
+                <div className="w-full h-2 bg-surface-container-high rounded-full overflow-hidden mb-2">
+                  <div className={`h-full rounded-full ${area.score >= 8 ? "bg-emerald-400" : area.score >= 6 ? "bg-primary" : "bg-amber-400"}`} style={{ width: `${area.score * 10}%` }} />
+                </div>
+                <ul className="space-y-1">
+                  {area.notes.map((n, i) => (
+                    <li key={i} className="text-xs text-on-surface-variant flex items-start gap-1.5">
+                      <span className="material-symbols-outlined text-xs mt-0.5 shrink-0">arrow_right</span>{n}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+
+            {cond.mechanicalNotes?.length > 0 && (
+              <div>
+                <p className="text-sm font-bold mb-1">Mechanical</p>
+                {cond.mechanicalNotes.map((n, i) => (
+                  <p key={i} className="text-xs text-on-surface-variant">{n}</p>
+                ))}
+              </div>
+            )}
+
+            {cond.modificationNotes?.length > 0 && (
+              <div>
+                <p className="text-sm font-bold mb-1">Modifications</p>
+                {cond.modificationNotes.map((n, i) => (
+                  <p key={i} className="text-xs text-emerald-400">{n}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Risk Assessment */}
+      {(risk.conditionRisk || risk.overallRiskScore) && (
+      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+        <h3 className="font-headline font-bold text-lg mb-4">Risk Assessment</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {[
+            { label: "Condition", ...(risk.conditionRisk || { score: "—", level: "MEDIUM" }), weight: "25%" },
+            { label: "Market", ...(risk.marketRisk || { score: "—", level: "MEDIUM" }), weight: "25%" },
+            { label: "Currency", ...(risk.currencyRisk || { score: "—", level: "MEDIUM" }), weight: "20%" },
+            { label: "Provenance", ...(risk.provenanceRisk || { score: "—", level: "MEDIUM" }), weight: "15%" },
+            { label: "TUV", ...(risk.tuvRisk || { score: "—", level: "MEDIUM" }), weight: "10%" },
+            { label: "Capital", ...(risk.capitalRisk || { score: "—", level: "MEDIUM" }), weight: "5%" },
+          ].map((rd) => (
+            <div key={rd.label} className={`p-4 rounded-xl text-center ${RISK_COLORS[rd.level] || RISK_COLORS.MEDIUM}`}>
+              <p className="font-headline text-2xl font-bold">{rd.score}/5</p>
+              <p className="text-xs font-bold">{rd.label}</p>
+              <p className="text-[10px] opacity-70 mt-0.5">{rd.level || "—"} · {rd.weight}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      )}
+
+      {/* Strengths & Concerns */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-surface-container rounded-2xl border border-emerald-400/20 p-6">
+          <h3 className="font-headline font-bold text-lg mb-3 text-emerald-400 flex items-center gap-2">
+            <span className="material-symbols-outlined">thumb_up</span> Key Strengths
+          </h3>
+          <ul className="space-y-2">
+            {v.keyStrengths.map((s, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm">
+                <span className="material-symbols-outlined text-emerald-400 text-sm mt-0.5 shrink-0">check</span>
+                {s}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="bg-surface-container rounded-2xl border border-amber-400/20 p-6">
+          <h3 className="font-headline font-bold text-lg mb-3 text-amber-400 flex items-center gap-2">
+            <span className="material-symbols-outlined">warning</span> Key Concerns
+          </h3>
+          <ul className="space-y-2">
+            {v.keyConcerns.length > 0 ? v.keyConcerns.map((c, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm">
+                <span className="material-symbols-outlined text-amber-400 text-sm mt-0.5 shrink-0">priority_high</span>
+                {c}
+              </li>
+            )) : (
+              <li className="text-sm text-on-surface-variant">No significant concerns identified</li>
+            )}
+          </ul>
+        </div>
+      </div>
+
+      {/* Action Items (REVIEW only) */}
+      {v.actionItems?.length > 0 && (
+        <div className="bg-surface-container rounded-2xl border border-primary/20 p-6">
+          <h3 className="font-headline font-bold text-lg mb-3 text-primary flex items-center gap-2">
+            <span className="material-symbols-outlined">checklist</span> Action Items to Move to BUY
+          </h3>
+          <ul className="space-y-2">
+            {v.actionItems.map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm">
+                <span className="material-symbols-outlined text-primary text-sm mt-0.5 shrink-0">radio_button_unchecked</span>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Comparable Listings */}
+      {r.comparableListings?.length > 0 && (
+      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+        <h3 className="font-headline font-bold text-lg mb-4">Comparable Listings ({r.comparableListings.length})</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[600px]">
+            <thead>
+              <tr className="border-b border-outline-variant/20">
+                {["Vehicle", "Price", "Mileage", "Location", "Platform", "Days"].map((h) => (
+                  <th key={h} className="text-left py-2 px-3 text-[10px] uppercase tracking-widest text-on-surface-variant">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {r.comparableListings.map((c, i) => (
+                <tr key={c.id || i} className="border-b border-outline-variant/10 hover:bg-surface-container-high/30">
+                  <td className="py-2 px-3 text-sm font-bold">{c.title || "—"}</td>
+                  <td className="py-2 px-3 text-sm font-mono">{fmtFull(c.price)}</td>
+                  <td className="py-2 px-3 text-sm text-on-surface-variant">{c.mileage ? c.mileage.toLocaleString() + " km" : "—"}</td>
+                  <td className="py-2 px-3 text-sm text-on-surface-variant">{c.location || "—"}</td>
+                  <td className="py-2 px-3 text-sm text-on-surface-variant">{c.platform || "—"}</td>
+                  <td className="py-2 px-3 text-sm text-on-surface-variant">{c.daysOnMarket != null ? c.daysOnMarket + "d" : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      )}
+
+      {/* Price Adjustments */}
+      {mkt.priceAdjustments?.length > 0 && (
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+          <h3 className="font-headline font-bold text-lg mb-4">Price Adjustments Applied</h3>
+          <div className="space-y-2">
+            {mkt.priceAdjustments.map((a, i) => (
+              <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-surface-container-high/30">
+                <div>
+                  <p className="text-sm font-bold">{a.factor}</p>
+                  <p className="text-xs text-on-surface-variant">{a.reasoning}</p>
+                </div>
+                <span className={`text-sm font-mono font-bold ${a.adjustmentEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {a.adjustmentEur >= 0 ? "+" : ""}{fmtFull(a.adjustmentEur)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        {v.verdict !== "PASS" && (
+          <button onClick={onSendToPipeline}
+            className="flex-1 py-4 bg-primary text-on-primary font-headline font-bold text-lg rounded-xl hover:shadow-[0_0_30px_rgba(173,198,255,0.5)] transition-all flex items-center justify-center gap-2">
+            <span className="material-symbols-outlined">send</span>
+            Send to Pipeline
+          </button>
+        )}
+        <button onClick={onRerun}
+          className="flex-1 py-4 bg-secondary/15 text-secondary border-2 border-secondary/30 font-headline font-bold text-lg rounded-xl hover:bg-secondary/25 transition-all flex items-center justify-center gap-2">
+          <span className="material-symbols-outlined">replay</span>
+          Rerun Valuation
+        </button>
+        <button onClick={onNewValuation}
+          className="flex-1 py-4 border-2 border-outline-variant/30 text-on-surface font-headline font-bold text-lg rounded-xl hover:border-primary/50 transition-all flex items-center justify-center gap-2">
+          <span className="material-symbols-outlined">add</span>
+          New Valuation
+        </button>
+        <button onClick={() => window.print()}
+          className="flex-1 py-4 border-2 border-outline-variant/30 text-on-surface-variant font-headline font-bold text-lg rounded-xl hover:border-primary/50 transition-all flex items-center justify-center gap-2">
+          <span className="material-symbols-outlined">picture_as_pdf</span>
+          Export PDF
+        </button>
+      </div>
+
+      {/* Processing meta */}
+      <p className="text-center text-xs text-on-surface-variant">
+        {r.aiPowered ? (
+          <span className="inline-flex items-center gap-1 text-emerald-400">
+            <span className="material-symbols-outlined text-xs">auto_awesome</span> AI-Powered
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-amber-400">
+            <span className="material-symbols-outlined text-xs">calculate</span> Mock Estimation
+          </span>
+        )}
+        {" "}&middot; {r.processingTimeSeconds}s &middot; {r.valuationId} &middot; {new Date(r.timestamp).toLocaleString()}
+        {r.fxLive && <span> &middot; <span className="text-emerald-400">Live FX</span></span>}
+      </p>
+    </div>
+  );
+}

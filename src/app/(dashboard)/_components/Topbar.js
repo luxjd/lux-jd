@@ -10,11 +10,14 @@ const PAGE_TITLES = {
   "/finance": "Finance & Compliance",
   "/leads": "Leads & Inquiries",
   "/settings": "Settings",
+  "/agents": "AI Agents",
+  "/agents/de-market": "DE Market Research Agent",
+  "/agents/valuation": "Valuation Agent",
 };
 
 export default function Topbar() {
   const pathname = usePathname();
-  const title = PAGE_TITLES[pathname] || "Dashboard";
+  const title = PAGE_TITLES[pathname] || (pathname.startsWith("/agents/de-market/") ? "Model Detail" : "Dashboard");
 
   return (
     <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-outline-variant/10 bg-surface/80 backdrop-blur-xl">
