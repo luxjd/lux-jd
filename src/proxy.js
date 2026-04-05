@@ -8,12 +8,18 @@ const PROTECTED_PATHS = [
   "/finance",
   "/leads",
   "/settings",
+  "/agents",
 ];
 
 export function proxy(request) {
   const { pathname } = request.nextUrl;
-  const session = request.cookies.get("luxjd-session");
 
+  // Skip API routes entirely
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.next();
+  }
+
+  const session = request.cookies.get("luxjd-session");
   const isProtected = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
 
   if (isProtected && !session) {
