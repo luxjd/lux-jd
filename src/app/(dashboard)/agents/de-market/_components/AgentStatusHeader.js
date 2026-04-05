@@ -4,23 +4,37 @@ import { useState } from "react";
 
 export default function AgentStatusHeader({ status }) {
   const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState("");
   const [lastResult, setLastResult] = useState(null);
 
   const handleScan = async () => {
     setScanning(true);
     setLastResult(null);
+    setScanProgress("Starting full market scan...");
+
     try {
-      const res = await fetch("/api/agents/de-market/scan", { method: "POST" });
+      // For single model quick scan vs full scan
+      const res = await fetch("/api/agents/de-market/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
       const data = await res.json();
-      setLastResult(data.results);
-    } catch {
-      setLastResult({ error: true });
+
+      if (data.error) {
+        setLastResult({ error: true, message: data.error });
+      } else {
+        setLastResult(data);
+      }
+    } catch (err) {
+      setLastResult({ error: true, message: err.message });
     } finally {
-      setTimeout(() => setScanning(false), 1500);
+      setScanning(false);
+      setScanProgress("");
     }
   };
 
-  const healthEntries = Object.entries(status.healthChecks);
+  const healthEntries = Object.entries(status.healthChecks || {});
 
   return (
     <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
@@ -96,11 +110,30 @@ export default function AgentStatusHeader({ status }) {
         ))}
       </div>
 
+      {/* Scanning progress */}
+      {scanning && (
+        <div className="mt-4 p-3 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm flex items-center gap-2">
+          <span className="material-symbols-outlined text-lg animate-spin">progress_activity</span>
+          {scanProgress || "Scanning all models... This takes 2-3 minutes with real AI."}
+        </div>
+      )}
+
       {/* Scan result toast */}
-      {lastResult && !lastResult.error && (
+      {lastResult && !lastResult.error && !scanning && (
         <div className="mt-4 p-3 rounded-xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 text-sm flex items-center gap-2">
           <span className="material-symbols-outlined text-lg">check_circle</span>
-          Scan complete: {lastResult.listingsScanned} scanned, {lastResult.newFound} new, {lastResult.priceChanges} price changes
+          {lastResult.aiPowered
+            ? `AI Scan complete: ${lastResult.models?.succeeded || 0}/${lastResult.models?.total || 0} models scanned, ${lastResult.tvrsGenerated || 0} TVRs generated, ${lastResult.totalListingsTracked || 0} listings tracked (${((lastResult.duration || 0) / 1000).toFixed(1)}s)`
+            : `Scan complete: ${lastResult.listingsScanned || 0} scanned, ${lastResult.newFound || 0} new`
+          }
+        </div>
+      )}
+
+      {/* Error toast */}
+      {lastResult?.error && !scanning && (
+        <div className="mt-4 p-3 rounded-xl bg-red-400/10 border border-red-400/20 text-red-400 text-sm flex items-center gap-2">
+          <span className="material-symbols-outlined text-lg">error</span>
+          {lastResult.message || "Scan failed. Check console for details."}
         </div>
       )}
     </div>
