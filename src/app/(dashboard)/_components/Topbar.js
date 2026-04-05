@@ -13,6 +13,7 @@ const PAGE_TITLES = {
   "/agents": "AI Agents",
   "/agents/de-market": "DE Market Research Agent",
   "/agents/valuation": "Valuation Agent",
+  "/agents/jp-sourcing": "JP Sourcing Agent",
 };
 
 export default function Topbar() {
