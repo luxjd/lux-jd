@@ -1,5 +1,6 @@
 import { isAIAvailable } from "@/lib/claude";
 import { createListing } from "@/lib/agents/listing/ai/listing-orchestrator";
+import { db } from "@/lib/db-storage";
 
 export async function POST(request) {
   if (!isAIAvailable()) {
@@ -14,6 +15,22 @@ export async function POST(request) {
 
   try {
     const result = await createListing(vehicle);
+
+    // Save listing to PostgreSQL
+    try {
+      if (result.listing) {
+        await db.listings.create({
+          vehicleId: vehicle.id || result.listing.id,
+          status: "ACTIVE",
+          currentPrice: result.initialPrice || 0,
+          initialPrice: result.initialPrice || 0,
+          pricingStrategy: result.pricingStrategy,
+          platforms: result.listing.platforms || {},
+          content: result.listing.content || {},
+        });
+      }
+    } catch (e) { console.warn("DB save listing failed:", e.message); }
+
     return Response.json(result);
   } catch (error) {
     return Response.json({ error: `Listing creation failed: ${error.message}` }, { status: 500 });

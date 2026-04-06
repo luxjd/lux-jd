@@ -49,7 +49,7 @@ export default function Home() {
           {/* Hero Section */}
           <section className="relative h-screen flex items-center justify-center overflow-hidden">
             {/* Option B: Rotating car showcase — parallax bg layer (oversized for movement room) */}
-            <div data-parallax-bg className="absolute -inset-6 will-change-transform">
+            <div data-parallax-bg className="absolute -inset-6 will-change-transform pointer-events-none">
               <HeroCarousel />
             </div>
 
@@ -80,7 +80,7 @@ export default function Home() {
               <div className="anim-drift-text-4 flex flex-col md:flex-row gap-6 justify-center items-center">
                 <button
                   onClick={openSignup}
-                  className="px-10 py-4 bg-primary-container text-on-primary-container font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(248,113,113,0.5)] transition-all duration-300 hover:scale-105 active:scale-95"
+                  className="cursor-pointer px-10 py-4 bg-primary-container text-on-primary-container font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(248,113,113,0.5)] transition-all duration-300 hover:scale-105 active:scale-95"
                 >
                   Explore Inventory
                 </button>

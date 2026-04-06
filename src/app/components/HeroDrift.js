@@ -70,7 +70,7 @@ export function HeroCarousel() {
       />
 
       {/* Progress indicators */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[4] flex gap-2.5">
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[4] flex gap-2.5 pointer-events-auto">
         {HERO_IMAGES.map((_, i) => (
           <button
             key={i}

@@ -1,5 +1,6 @@
 import { getAllTransactions, getTransactionsByVehicle } from "@/lib/agents/finance/storage";
 import { recordTransaction, recordSale, recordLandedCosts } from "@/lib/agents/finance/ai/finance-orchestrator";
+import { db } from "@/lib/db-storage";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -31,5 +32,20 @@ export async function POST(request) {
 
   // Record single transaction
   const txn = recordTransaction(body);
+
+  // Also save to PostgreSQL
+  try {
+    await db.transactions.create({
+      vehicleId: body.vehicleId,
+      category: body.category,
+      amountEur: body.amountEur,
+      amountOriginal: body.amountOriginal || body.amountEur,
+      currency: body.currency || "EUR",
+      fxRate: body.fxRate || null,
+      description: body.description || "",
+      documentRef: body.documentRef || null,
+    });
+  } catch (e) { console.warn("DB save txn failed:", e.message); }
+
   return Response.json({ success: true, transaction: txn });
 }

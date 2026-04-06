@@ -1,6 +1,7 @@
 import { isAIAvailable } from "@/lib/claude";
 import { generateRealValuation } from "@/lib/agents/valuation/real-engine";
 import { generateValuation as generateMockValuation } from "@/lib/agents/valuation/engine";
+import { db } from "@/lib/db-storage";
 
 export async function POST(request) {
   const contentType = request.headers.get("content-type") || "";
@@ -66,6 +67,23 @@ export async function POST(request) {
         images: images.length > 0 ? images : null,
         auctionSheetImage,
       });
+
+      // Save to PostgreSQL
+      try {
+        await db.valuations.create({
+          make: input.make,
+          model: input.model,
+          year: input.year,
+          inputData: input,
+          reportData: report,
+          verdict: report.recommendation?.verdict,
+          marginEur: report.marginAnalysis?.grossMarginEur,
+          confidence: report.marginAnalysis?.marginConfidence,
+          aiPowered: true,
+          processingTime: report.processingTimeSeconds,
+        });
+      } catch (e) { console.warn("DB save failed:", e.message); }
+
       return Response.json(report);
     } catch (error) {
       console.error("Real valuation failed, falling back to mock:", error.message);
@@ -78,6 +96,18 @@ export async function POST(request) {
   } else {
     const report = generateMockValuation(input);
     report.aiPowered = false;
+
+    try {
+      await db.valuations.create({
+        make: input.make, model: input.model, year: input.year,
+        inputData: input, reportData: report,
+        verdict: report.recommendation?.verdict,
+        marginEur: report.marginAnalysis?.grossMarginEur,
+        confidence: report.marginAnalysis?.marginConfidence,
+        aiPowered: false, processingTime: report.processingTimeSeconds,
+      });
+    } catch (e) { console.warn("DB save failed:", e.message); }
+
     return Response.json(report);
   }
 }
