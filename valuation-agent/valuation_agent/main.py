@@ -1,7 +1,6 @@
 """FastAPI app entry point — Web UI and API."""
 
 import logging
-import os
 import uuid
 from pathlib import Path
 
@@ -11,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+from valuation_agent.config import settings
 from valuation_agent.db.models import init_db
 from valuation_agent.pipeline import run_valuation
 from valuation_agent.schemas import DriveSide, ServiceHistory, ValuationInput
@@ -36,8 +36,25 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 @app.on_event("startup")
 async def startup():
+    # Validate API keys
+    errors = settings.validate_required()
+    if errors:
+        for err in errors:
+            logger.error("CONFIG ERROR: %s", err)
+        logger.error(
+            "The valuation agent will NOT work correctly without required API keys. "
+            "LLM-powered features (photo analysis, price adjustments, recommendations) "
+            "will fail. Cost calculator and FX rate fetching will still work."
+        )
+    else:
+        logger.info("All required API keys present")
+
     init_db()
-    logger.info("Valuation Agent started")
+    logger.info(
+        "Valuation Agent started | LLM: %s | FX: frankfurter.app | DB: %s",
+        settings.openrouter_model_reasoning,
+        "PostgreSQL" if "postgresql" in settings.database_url else "SQLite",
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -134,4 +151,14 @@ async def valuate(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """Health check with dependency status."""
+    errors = settings.validate_required()
+    return {
+        "status": "ok" if not errors else "degraded",
+        "llm_provider": "openrouter",
+        "llm_model": settings.openrouter_model_reasoning,
+        "fx_source": "frankfurter.app (free, no key)",
+        "scrapers": ["mobile.de (Playwright)", "autoscout24.de (Playwright)"],
+        "database": "PostgreSQL" if "postgresql" in settings.database_url else "SQLite",
+        "config_errors": errors,
+    }

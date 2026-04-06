@@ -1,8 +1,16 @@
 """Tests for the risk assessment engine."""
 
+import pytest
 from decimal import Decimal
 
-from valuation_agent.analyzer.risk_assessor import calculate_risk_assessment
+from valuation_agent.analyzer.risk_assessor import (
+    assess_condition_risk,
+    assess_provenance_risk,
+    assess_tuv_risk,
+    assess_market_risk,
+    assess_capital_risk,
+    calculate_risk_assessment,
+)
 from valuation_agent.schemas import (
     ConditionAssessment,
     DriveSide,
@@ -59,57 +67,82 @@ class TestRiskAssessor:
         defaults.update(overrides)
         return MarginAnalysis(**defaults)
 
-    def test_low_risk_vehicle(self):
-        """Grade 4.5, full dealer history, LHD, no accidents → low risk."""
-        risk = calculate_risk_assessment(
+    def test_low_risk_condition(self):
+        """Grade 4.5, high confidence → low condition risk."""
+        risk = assess_condition_risk(
+            condition=self._make_condition(condition_confidence=0.9),
+            vehicle=self._make_input(),
+        )
+        assert risk.score <= 2
+        assert risk.level == RiskLevel.LOW
+
+    def test_high_risk_condition(self):
+        """Low grade, low confidence → high condition risk."""
+        risk = assess_condition_risk(
+            condition=self._make_condition(condition_confidence=0.3),
+            vehicle=self._make_input(auction_grade=3.0),
+        )
+        assert risk.score >= 4
+
+    def test_provenance_risk_full_dealer_no_accident(self):
+        """Full dealer history, no accidents → low provenance risk."""
+        risk = assess_provenance_risk(self._make_input())
+        assert risk.score == 1
+        assert risk.level == RiskLevel.LOW
+
+    def test_provenance_risk_unknown_with_accident(self):
+        """Unknown history + accident → high provenance risk."""
+        risk = assess_provenance_risk(
+            self._make_input(
+                service_history=ServiceHistory.UNKNOWN,
+                accident_history=True,
+            )
+        )
+        assert risk.score >= 4
+
+    def test_market_risk_low_supply(self):
+        """Few comparables + declining trend → high market risk."""
+        risk = assess_market_risk(
+            self._make_market(
+                total_comparables_found=2,
+                market_liquidity=MarketLiquidity.LOW,
+                trend_direction=TrendDirection.DECLINING,
+            )
+        )
+        assert risk.score >= 4
+
+    def test_brand_adjusted_mileage(self):
+        """Ferrari with 5k expected annual km — 18k over 9 years is fine."""
+        risk = assess_condition_risk(
+            condition=self._make_condition(condition_confidence=0.9),
+            vehicle=self._make_input(make="Ferrari", year=2017, mileage_km=18000),
+        )
+        # 9 years * 5000 = 45000 expected, 18000 actual = low mileage = low risk
+        assert risk.score <= 2
+
+    def test_all_six_dimensions_populated(self):
+        """All non-async risk dimensions must have scores between 1 and 5."""
+        for risk_fn, args in [
+            (assess_condition_risk, (self._make_condition(), self._make_input())),
+            (assess_provenance_risk, (self._make_input(),)),
+            (assess_tuv_risk, (self._make_input(), self._make_condition())),
+            (assess_market_risk, (self._make_market(),)),
+            (assess_capital_risk, (self._make_margin(),)),
+        ]:
+            factor = risk_fn(*args)
+            assert 1 <= factor.score <= 5
+            assert factor.level in (RiskLevel.LOW, RiskLevel.MED, RiskLevel.HIGH)
+
+    @pytest.mark.asyncio
+    async def test_full_risk_assessment_async(self):
+        """Full risk assessment (with real FX volatility call) returns valid results."""
+        risk = await calculate_risk_assessment(
             vehicle=self._make_input(),
             condition=self._make_condition(condition_confidence=0.9),
             market=self._make_market(),
             margin=self._make_margin(),
         )
-        assert risk.overall_risk_score <= 2.5
-        assert risk.overall_risk_level == RiskLevel.LOW
-
-    def test_high_risk_vehicle(self):
-        """Low grade, unknown history, RHD, accidents → high risk."""
-        risk = calculate_risk_assessment(
-            vehicle=self._make_input(
-                auction_grade=3.0,
-                service_history=ServiceHistory.UNKNOWN,
-                drive_side=DriveSide.RHD,
-                accident_history=True,
-            ),
-            condition=self._make_condition(
-                condition_confidence=0.3,
-                modification_notes=["Aftermarket exhaust", "Lowering springs"],
-            ),
-            market=self._make_market(
-                total_comparables_found=2,
-                market_liquidity=MarketLiquidity.LOW,
-                trend_direction=TrendDirection.DECLINING,
-            ),
-            margin=self._make_margin(
-                gross_margin_eur=Decimal("5000"),
-                capital_required=Decimal("140000"),
-            ),
-        )
-        assert risk.overall_risk_score >= 3.0
-
-    def test_all_six_dimensions_populated(self):
-        """All risk dimensions must have scores between 1 and 5."""
-        risk = calculate_risk_assessment(
-            vehicle=self._make_input(),
-            condition=self._make_condition(),
-            market=self._make_market(),
-            margin=self._make_margin(),
-        )
-        for factor in [
-            risk.condition_risk,
-            risk.provenance_risk,
-            risk.tuv_risk,
-            risk.market_risk,
-            risk.currency_risk,
-            risk.capital_risk,
-        ]:
-            assert 1 <= factor.score <= 5
-            assert factor.level in (RiskLevel.LOW, RiskLevel.MED, RiskLevel.HIGH)
+        assert 1.0 <= risk.overall_risk_score <= 5.0
+        assert risk.overall_risk_level in (RiskLevel.LOW, RiskLevel.MED, RiskLevel.HIGH)
+        # Currency risk should now come from real data (not hardcoded LOW)
+        assert 1 <= risk.currency_risk.score <= 5

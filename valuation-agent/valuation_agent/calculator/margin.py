@@ -25,6 +25,7 @@ def calculate_margin(
     market_data_confidence: float = 0.7,
     condition_confidence: float = 0.7,
     fx_confidence: float = 0.8,
+    days_on_market: int | None = None,
 ) -> MarginAnalysis:
     """Calculate margin analysis including three scenarios.
 
@@ -35,6 +36,7 @@ def calculate_margin(
         market_data_confidence: Confidence in market data (0-1).
         condition_confidence: Confidence in condition assessment (0-1).
         fx_confidence: Confidence in FX stability (0-1).
+        days_on_market: Estimated days to sell (from market analyzer). Uses config default if None.
 
     Returns:
         Complete MarginAnalysis object.
@@ -57,8 +59,11 @@ def calculate_margin(
         else Decimal("0")
     )
 
-    # Estimated hold time: ~70 days (4-6 wk shipping + 2-4 wk customs/TÜV + 2-4 wk sale)
-    hold_days = 70
+    # Hold time: shipping (~42 days) + customs/TÜV (~14 days) + sale time
+    sale_days = days_on_market if days_on_market else settings.estimated_hold_days
+    # Total hold = shipping + processing + sale
+    hold_days = 42 + 14 + sale_days  # ~56 days logistics + actual sale time
+
     annualized_roi = (
         _round(return_on_capital * Decimal("365") / Decimal(str(hold_days)))
         if hold_days > 0
@@ -81,10 +86,11 @@ def calculate_margin(
         )
 
     logger.info(
-        "Margin: €%s (%.1f%%) | ROC: %.1f%% | Confidence: %.2f",
+        "Margin: €%s (%.1f%%) | ROC: %.1f%% | Hold: %d days | Confidence: %.2f",
         gross_margin,
         gross_margin_pct,
         return_on_capital,
+        hold_days,
         composite,
     )
 

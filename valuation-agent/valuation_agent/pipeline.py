@@ -1,4 +1,4 @@
-"""Main orchestration pipeline — runs all valuation steps."""
+"""Main orchestration pipeline — runs all valuation steps with real data sources."""
 
 import asyncio
 import logging
@@ -13,27 +13,88 @@ from valuation_agent.calculator.landed_cost import calculate_landed_cost
 from valuation_agent.calculator.margin import calculate_margin
 from valuation_agent.recommender.engine import generate_recommendation
 from valuation_agent.schemas import (
-    ConditionAssessment,
+    ComparableListing,
     ValuationInput,
     ValuationReport,
     VehicleSummary,
 )
+from valuation_agent.scraper.autoscout24 import AutoScout24Scraper
 from valuation_agent.scraper.mobile_de import MobileDeScraper
 
 logger = logging.getLogger(__name__)
 
 
+async def _scrape_both_sources(
+    make: str,
+    model: str,
+    year: int,
+    lhd_only: bool,
+) -> list[ComparableListing]:
+    """Scrape mobile.de and autoscout24 in parallel, merge and deduplicate results."""
+    mobile_scraper = MobileDeScraper()
+    autoscout_scraper = AutoScout24Scraper()
+
+    year_from = year - 2
+    year_to = year + 2
+
+    mobile_task = mobile_scraper.search(
+        make=make, model=model,
+        year_from=year_from, year_to=year_to,
+        lhd_only=lhd_only,
+    )
+    autoscout_task = autoscout_scraper.search(
+        make=make, model=model,
+        year_from=year_from, year_to=year_to,
+        lhd_only=lhd_only,
+    )
+
+    mobile_results, autoscout_results = await asyncio.gather(
+        mobile_task, autoscout_task, return_exceptions=True
+    )
+
+    # Handle exceptions gracefully
+    comparables: list[ComparableListing] = []
+
+    if isinstance(mobile_results, list):
+        logger.info("mobile.de returned %d listings", len(mobile_results))
+        comparables.extend(mobile_results)
+    else:
+        logger.error("mobile.de scraper failed: %s", mobile_results)
+
+    if isinstance(autoscout_results, list):
+        logger.info("autoscout24 returned %d listings", len(autoscout_results))
+        comparables.extend(autoscout_results)
+    else:
+        logger.error("autoscout24 scraper failed: %s", autoscout_results)
+
+    # Deduplicate by title + price (rough heuristic)
+    seen = set()
+    unique = []
+    for c in comparables:
+        key = (c.title.lower().strip(), int(c.price_eur))
+        if key not in seen:
+            seen.add(key)
+            unique.append(c)
+
+    logger.info(
+        "Total comparables: %d (mobile.de + autoscout24), %d after dedup",
+        len(comparables),
+        len(unique),
+    )
+    return unique
+
+
 async def run_valuation(input_data: ValuationInput) -> ValuationReport:
-    """Execute the full valuation pipeline.
+    """Execute the full valuation pipeline with real data sources.
 
     Steps (per Section 4.1):
         1. Input validation & enrichment
         2. Photo & condition analysis  (parallel)
-        3. Market research / scraping   (parallel)
-        4. FX rate fetch                (parallel)
+        3. Market research / scraping   (parallel — both mobile.de + autoscout24)
+        4. FX rate fetch                (parallel — frankfurter.app)
         5. Landed cost calculation
         6. Margin calculation
-        7. Risk assessment
+        7. Risk assessment (with real FX volatility)
         8. Final recommendation
         9. Report assembly
 
@@ -65,8 +126,6 @@ async def run_valuation(input_data: ValuationInput) -> ValuationReport:
     )
 
     # ── Steps 2, 3, 4: Run in parallel ──────────────────────────────────
-    scraper = MobileDeScraper()
-
     photo_task = analyze_photos(
         photo_paths=input_data.photo_paths,
         make=input_data.make,
@@ -74,22 +133,22 @@ async def run_valuation(input_data: ValuationInput) -> ValuationReport:
         year=input_data.year,
     )
 
-    scrape_task = scraper.search(
+    scrape_task = _scrape_both_sources(
         make=input_data.make,
         model=input_data.model,
-        year_from=input_data.year - 2,
-        year_to=input_data.year + 2,
+        year=input_data.year,
         lhd_only=(input_data.drive_side.value == "LHD"),
     )
 
     fx_task = get_jpy_eur_rate()
 
     # Parse auction sheet if provided
-    sheet_task = (
-        parse_auction_sheet(input_data.auction_sheet_path)
-        if input_data.auction_sheet_path
-        else asyncio.coroutine(lambda: None)()
-    )
+    if input_data.auction_sheet_path:
+        sheet_task = parse_auction_sheet(input_data.auction_sheet_path)
+    else:
+        async def _no_sheet():
+            return None
+        sheet_task = _no_sheet()
 
     condition, comparables, fx_rate, sheet_data = await asyncio.gather(
         photo_task, scrape_task, fx_task, sheet_task
@@ -115,16 +174,17 @@ async def run_valuation(input_data: ValuationInput) -> ValuationReport:
         vehicle_value_eur=market.estimated_sale_price if market.estimated_sale_price else None,
     )
 
-    # ── Step 6: Margin calculation ───────────────────────────────────────
+    # ── Step 6: Margin calculation (with real days-on-market) ────────────
     margin = calculate_margin(
         estimated_sale_price=market.estimated_sale_price,
         landed_cost=landed_cost,
         price_stats=market.price_statistics,
         condition_confidence=condition.condition_confidence,
+        days_on_market=market.days_on_market_avg,
     )
 
-    # ── Step 7: Risk assessment ──────────────────────────────────────────
-    risk = calculate_risk_assessment(
+    # ── Step 7: Risk assessment (with real FX volatility) ────────────────
+    risk = await calculate_risk_assessment(
         vehicle=input_data,
         condition=condition,
         market=market,
@@ -158,11 +218,14 @@ async def run_valuation(input_data: ValuationInput) -> ValuationReport:
     )
 
     logger.info(
-        "Valuation complete in %.1fs — Verdict: %s | Margin: €%s (%.1f%%)",
+        "Valuation complete in %.1fs — Verdict: %s | Margin: €%s (%.1f%%) | "
+        "Comparables: %d | FX: ¥%.2f/€",
         elapsed,
         recommendation.verdict.value,
         margin.gross_margin_eur,
         margin.gross_margin_pct,
+        len(comparables),
+        fx_rate,
     )
 
     return report

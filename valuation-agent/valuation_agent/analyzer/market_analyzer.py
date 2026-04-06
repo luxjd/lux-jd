@@ -1,7 +1,11 @@
-"""Market analysis — price statistics and LLM-powered price adjustments."""
+"""Market analysis — price statistics and LLM-powered price adjustments.
+
+Uses real scraper data to derive trends, days-on-market, and liquidity.
+"""
 
 import json
 import logging
+from datetime import datetime
 from decimal import Decimal
 
 from valuation_agent.llm.client import call_claude, load_prompt
@@ -36,12 +40,94 @@ def calculate_price_statistics(listings: list[ComparableListing]) -> PriceStatis
     )
 
 
+def estimate_days_on_market(listings: list[ComparableListing]) -> int:
+    """Estimate average days-on-market from listing dates.
+
+    If listing dates are available, calculates how long listings have been active.
+    Falls back to a heuristic based on listing count (more listings = longer DOM).
+    """
+    today = datetime.utcnow()
+    days_list = []
+
+    for listing in listings:
+        if listing.listing_date:
+            try:
+                # Try common date formats
+                for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+                    try:
+                        listed = datetime.strptime(listing.listing_date, fmt)
+                        dom = (today - listed).days
+                        if 0 < dom < 365:
+                            days_list.append(dom)
+                        break
+                    except ValueError:
+                        continue
+            except Exception:
+                pass
+
+    if days_list:
+        avg_dom = sum(days_list) // len(days_list)
+        logger.info("Estimated DOM from %d listings with dates: %d days", len(days_list), avg_dom)
+        return avg_dom
+
+    # Heuristic fallback: more listings on market = slower sales
+    count = len(listings)
+    if count <= 5:
+        return 21  # Low supply = fast sales
+    elif count <= 15:
+        return 35  # Moderate supply
+    elif count <= 30:
+        return 45  # High supply
+    else:
+        return 60  # Very high supply = slow market
+
+    return 30
+
+
+def detect_trend(listings: list[ComparableListing]) -> TrendDirection:
+    """Detect price trend from listing data.
+
+    Compares lower-mileage (newer condition) listings against higher-mileage ones
+    within the same year range to infer if the market is rising or declining.
+
+    A more sophisticated version would compare against historical snapshots.
+    """
+    if len(listings) < 5:
+        return TrendDirection.STABLE  # Not enough data
+
+    # Sort by mileage as a proxy for "freshness" of listing
+    sorted_by_km = sorted(listings, key=lambda x: x.mileage_km)
+    half = len(sorted_by_km) // 2
+
+    low_km_avg = sum(l.price_eur for l in sorted_by_km[:half]) / half
+    high_km_avg = sum(l.price_eur for l in sorted_by_km[half:]) / (len(sorted_by_km) - half)
+
+    # If low-km vehicles are priced significantly above average, demand is strong
+    if low_km_avg > 0:
+        premium_pct = float((low_km_avg - high_km_avg) / low_km_avg * 100)
+    else:
+        premium_pct = 0
+
+    if premium_pct > 15:
+        trend = TrendDirection.RISING
+    elif premium_pct < 5:
+        trend = TrendDirection.DECLINING
+    else:
+        trend = TrendDirection.STABLE
+
+    logger.info(
+        "Trend detection: low-km avg=€%.0f, high-km avg=€%.0f, premium=%.1f%% → %s",
+        low_km_avg, high_km_avg, premium_pct, trend.value,
+    )
+    return trend
+
+
 async def analyze_market(
     vehicle: ValuationInput,
     comparables: list[ComparableListing],
     condition_grade: str = "GOOD",
 ) -> MarketAnalysis:
-    """Run full market analysis with LLM-powered price adjustments.
+    """Run full market analysis with real data-driven metrics.
 
     Args:
         vehicle: The vehicle being valued.
@@ -54,10 +140,10 @@ async def analyze_market(
     stats = calculate_price_statistics(comparables)
 
     if not stats:
-        logger.warning("No comparables found, returning empty market analysis")
+        logger.warning("No comparables found — market analysis will be empty")
         return MarketAnalysis(data_source="none")
 
-    # Determine liquidity
+    # Real data-driven metrics
     count = len(comparables)
     if count >= 15:
         liquidity = MarketLiquidity.HIGH
@@ -66,28 +152,30 @@ async def analyze_market(
     else:
         liquidity = MarketLiquidity.LOW
 
+    dom = estimate_days_on_market(comparables)
+    trend = detect_trend(comparables)
+
     # Use LLM for price adjustment analysis
     adjustments, estimated_price, confidence = await _llm_price_analysis(
         vehicle, comparables, stats, condition_grade
     )
-
-    from datetime import datetime
 
     return MarketAnalysis(
         search_criteria={
             "make": vehicle.make,
             "model": vehicle.model,
             "year_range": f"{vehicle.year - 2}–{vehicle.year + 2}",
+            "comparables_count": count,
         },
         total_comparables_found=count,
         price_statistics=stats,
         estimated_sale_price=estimated_price,
         price_adjustments=adjustments,
-        days_on_market_avg=30,  # Default estimate, refined with real data later
+        days_on_market_avg=dom,
         market_liquidity=liquidity,
-        trend_direction=TrendDirection.STABLE,
+        trend_direction=trend,
         data_freshness=datetime.utcnow(),
-        data_source="mobile.de",
+        data_source="mobile.de + autoscout24.de",
     )
 
 

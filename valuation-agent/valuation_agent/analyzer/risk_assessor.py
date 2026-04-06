@@ -1,4 +1,4 @@
-"""Risk scoring logic — primarily rule-based for determinism."""
+"""Risk scoring logic — rule-based with real data inputs where available."""
 
 import logging
 
@@ -16,6 +16,20 @@ from valuation_agent.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Average annual mileage expectations per brand segment
+ANNUAL_KM_BY_SEGMENT = {
+    "Ferrari": 5000,
+    "Lamborghini": 5000,
+    "Aston Martin": 6000,
+    "Bentley": 8000,
+    "Maserati": 8000,
+    "Porsche": 10000,
+    "Mercedes-AMG": 12000,
+    "BMW M": 12000,
+    "Jaguar": 10000,
+    "Range Rover": 12000,
+}
 
 
 def _score_to_level(score: int) -> RiskLevel:
@@ -46,8 +60,8 @@ def assess_condition_risk(
     if condition.condition_confidence < 0.5:
         score += 1
 
-    # Age vs mileage ratio (high mileage for age = higher risk)
-    expected_annual_km = 8000  # luxury car average
+    # Age vs mileage ratio (brand-adjusted expectations)
+    expected_annual_km = ANNUAL_KM_BY_SEGMENT.get(vehicle.make, 8000)
     age = max(1, 2026 - vehicle.year)
     expected_km = expected_annual_km * age
     if vehicle.mileage_km > expected_km * 1.5:
@@ -85,7 +99,7 @@ def assess_tuv_risk(vehicle: ValuationInput, condition: ConditionAssessment) -> 
         score += 1
 
     if condition.modification_notes:
-        score += len(condition.modification_notes)
+        score += min(3, len(condition.modification_notes))
 
     score = min(5, max(1, score))
     return RiskFactor(score=score, level=_score_to_level(score))
@@ -110,12 +124,34 @@ def assess_market_risk(market: MarketAnalysis) -> RiskFactor:
     return RiskFactor(score=score, level=_score_to_level(score))
 
 
-def assess_currency_risk() -> RiskFactor:
-    """Assess currency risk from FX volatility.
+async def assess_currency_risk() -> RiskFactor:
+    """Assess currency risk using real 30-day FX volatility data."""
+    from valuation_agent.calculator.fx import calculate_fx_volatility
 
-    TODO: Integrate real FX volatility data (30-day std dev of JPY/EUR).
-    """
-    return RiskFactor(score=2, level=RiskLevel.LOW)
+    volatility = await calculate_fx_volatility(days=30)
+
+    if volatility < 0:
+        # No data available — treat as medium risk (unknown)
+        logger.warning("No FX volatility data available, defaulting to MEDIUM risk")
+        return RiskFactor(score=3, level=RiskLevel.MED)
+
+    # Scoring based on daily % volatility (std dev)
+    # < 0.3% daily std dev = calm market
+    # 0.3-0.6% = moderate
+    # > 0.6% = volatile
+    if volatility < 0.3:
+        score = 1
+    elif volatility < 0.4:
+        score = 2
+    elif volatility < 0.6:
+        score = 3
+    elif volatility < 0.8:
+        score = 4
+    else:
+        score = 5
+
+    logger.info("Currency risk: volatility=%.4f%% → score=%d", volatility, score)
+    return RiskFactor(score=score, level=_score_to_level(score))
 
 
 def assess_capital_risk(margin: MarginAnalysis) -> RiskFactor:
@@ -136,7 +172,7 @@ def assess_capital_risk(margin: MarginAnalysis) -> RiskFactor:
     return RiskFactor(score=min(5, score), level=_score_to_level(min(5, score)))
 
 
-def calculate_risk_assessment(
+async def calculate_risk_assessment(
     vehicle: ValuationInput,
     condition: ConditionAssessment,
     market: MarketAnalysis,
@@ -150,7 +186,7 @@ def calculate_risk_assessment(
     prov = assess_provenance_risk(vehicle)
     tuv = assess_tuv_risk(vehicle, condition)
     mkt = assess_market_risk(market)
-    ccy = assess_currency_risk()
+    ccy = await assess_currency_risk()  # Now async — fetches real FX data
     cap = assess_capital_risk(margin)
 
     overall = (
