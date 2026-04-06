@@ -1,6 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
+import Link from "next/link";
 
 const PAGE_TITLES = {
   "/dashboard": "Dashboard",
@@ -9,6 +11,7 @@ const PAGE_TITLES = {
   "/listings": "Listings",
   "/finance": "Finance & Compliance",
   "/leads": "Leads & Inquiries",
+  "/notifications": "Notifications & Alerts",
   "/settings": "Settings",
   "/agents": "AI Agents",
   "/agents/de-market": "DE Market Research Agent",
@@ -24,6 +27,18 @@ const PAGE_TITLES = {
 export default function Topbar() {
   const pathname = usePathname();
   const title = PAGE_TITLES[pathname] || (pathname.startsWith("/agents/de-market/") ? "Model Detail" : "Dashboard");
+  const [notifCount, setNotifCount] = useState(0);
+  const [criticalCount, setCriticalCount] = useState(0);
+
+  useEffect(() => {
+    fetch("/api/notifications")
+      .then((r) => r.json())
+      .then((d) => {
+        setNotifCount(d.count || 0);
+        setCriticalCount(d.byCritical || 0);
+      })
+      .catch(() => {});
+  }, [pathname]); // Re-fetch when page changes
 
   return (
     <header className="h-14 md:h-16 shrink-0 flex items-center justify-between px-4 pl-14 lg:pl-4 sm:px-6 border-b border-outline-variant/10 bg-surface/80 backdrop-blur-xl">
@@ -43,10 +58,15 @@ export default function Topbar() {
         </div>
 
         {/* Notifications */}
-        <button className="relative text-on-surface-variant hover:text-on-surface transition-colors p-1.5 sm:p-2 rounded-xl hover:bg-surface-container-high/50" aria-label="Notifications">
+        <Link href="/notifications"
+          className="relative text-on-surface-variant hover:text-on-surface transition-colors p-1.5 sm:p-2 rounded-xl hover:bg-surface-container-high/50" aria-label="Notifications">
           <span className="material-symbols-outlined text-lg sm:text-xl">notifications</span>
-          <span className="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
-        </button>
+          {notifCount > 0 && (
+            <span className={`absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[9px] font-bold text-white px-1 ${criticalCount > 0 ? "bg-red-500" : "bg-amber-500"}`}>
+              {notifCount > 99 ? "99+" : notifCount}
+            </span>
+          )}
+        </Link>
 
         {/* User */}
         <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/20 flex items-center justify-center">

@@ -7,6 +7,7 @@ const PROTECTED_PATHS = [
   "/listings",
   "/finance",
   "/leads",
+  "/notifications",
   "/settings",
   "/agents",
 ];

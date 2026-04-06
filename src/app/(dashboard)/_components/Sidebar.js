@@ -4,14 +4,45 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
-  { href: "/pipeline", label: "Pipeline", icon: "local_shipping" },
-  { href: "/opportunities", label: "Opportunities", icon: "travel_explore" },
-  { href: "/listings", label: "Listings", icon: "directions_car" },
-  { href: "/finance", label: "Finance", icon: "account_balance" },
-  { href: "/leads", label: "Leads", icon: "people" },
-  { href: "/agents", label: "Agents", icon: "smart_toy" },
+const NAV_SECTIONS = [
+  {
+    label: "OVERVIEW",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
+      { href: "/notifications", label: "Notifications", icon: "notifications", badge: true },
+    ],
+  },
+  {
+    label: "PIPELINE",
+    items: [
+      { href: "/pipeline", label: "Pipeline", icon: "local_shipping" },
+      { href: "/opportunities", label: "Opportunities", icon: "travel_explore" },
+      { href: "/listings", label: "Listings", icon: "directions_car" },
+    ],
+  },
+  {
+    label: "OPERATIONS",
+    items: [
+      { href: "/agents/valuation", label: "Valuate", icon: "auto_awesome", accent: true },
+      { href: "/finance", label: "Finance", icon: "account_balance" },
+      { href: "/leads", label: "Leads", icon: "people" },
+    ],
+  },
+  {
+    label: "AI AGENTS",
+    items: [
+      { href: "/agents", label: "Agent Hub", icon: "smart_toy" },
+    ],
+    subItems: [
+      { href: "/agents/de-market", label: "DE Market", icon: "query_stats" },
+      { href: "/agents/jp-sourcing", label: "JP Sourcing", icon: "travel_explore" },
+      { href: "/agents/listing", label: "Listing", icon: "edit_note" },
+      { href: "/agents/logistics", label: "Logistics", icon: "local_shipping" },
+      { href: "/agents/finance", label: "Finance AI", icon: "account_balance" },
+      { href: "/agents/concierge", label: "Concierge", icon: "support_agent" },
+      { href: "/agents/orchestrator", label: "Orchestrator", icon: "hub" },
+    ],
+  },
 ];
 
 export default function Sidebar() {
@@ -19,11 +50,12 @@ export default function Sidebar() {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [agentsExpanded, setAgentsExpanded] = useState(pathname.startsWith("/agents"));
 
-  // Close mobile menu on route change
   useEffect(() => { setMobileOpen(false); }, [pathname]);
-
-  // Close on escape
+  useEffect(() => {
+    if (pathname.startsWith("/agents")) setAgentsExpanded(true);
+  }, [pathname]);
   useEffect(() => {
     const handler = (e) => { if (e.key === "Escape") setMobileOpen(false); };
     window.addEventListener("keydown", handler);
@@ -35,12 +67,14 @@ export default function Sidebar() {
     router.push("/login");
   };
 
+  const isActive = (href) => pathname === href || (href !== "/dashboard" && href !== "/agents" && pathname.startsWith(href));
+
   const navContent = (
     <>
       {/* Logo */}
-      <div className="flex items-center justify-between px-4 sm:px-5 py-4 sm:py-5 border-b border-outline-variant/10">
+      <div className="flex items-center justify-between px-4 py-4 border-b border-outline-variant/10">
         {!collapsed && (
-          <Link href="/dashboard" className="font-headline text-lg sm:text-xl font-bold tracking-widest text-on-surface">
+          <Link href="/dashboard" className="font-headline text-lg font-bold tracking-widest text-on-surface">
             LuxJD
           </Link>
         )}
@@ -49,69 +83,107 @@ export default function Sidebar() {
           className="text-on-surface-variant hover:text-on-surface transition-colors p-1"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          <span className="material-symbols-outlined text-xl">
-            {collapsed ? "menu" : "menu_open"}
-          </span>
+          <span className="material-symbols-outlined text-xl">{collapsed ? "menu" : "menu_open"}</span>
         </button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-3 sm:py-4 px-2 sm:px-3 space-y-1 overflow-y-auto" role="navigation" aria-label="Main navigation">
-        {NAV_ITEMS.map((item) => {
-          const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group ${
-                isActive
-                  ? "bg-primary/10 text-primary border-l-2 border-primary"
-                  : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
-              }`}
-            >
-              <span className={`material-symbols-outlined text-xl ${isActive ? "text-primary" : "text-on-surface-variant group-hover:text-on-surface"}`}>
-                {item.icon}
-              </span>
-              {!collapsed && (
-                <span className="text-sm font-medium">{item.label}</span>
-              )}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 py-2 px-2 overflow-y-auto" role="navigation" aria-label="Main navigation">
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.label} className="mb-1">
+            {/* Section label */}
+            {!collapsed && (
+              <p className="px-3 pt-3 pb-1 text-[9px] uppercase tracking-[0.2em] text-on-surface-variant/50 font-bold">
+                {section.label}
+              </p>
+            )}
+
+            {/* Section items */}
+            {section.items.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 group mb-0.5 ${
+                  isActive(item.href)
+                    ? "bg-primary/10 text-primary"
+                    : item.accent
+                    ? "text-secondary hover:bg-secondary/10"
+                    : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
+                }`}
+              >
+                <span className={`material-symbols-outlined text-[20px] ${
+                  isActive(item.href) ? "text-primary" : item.accent ? "text-secondary" : "text-on-surface-variant group-hover:text-on-surface"
+                }`}>
+                  {item.icon}
+                </span>
+                {!collapsed && (
+                  <span className="text-[13px] font-medium flex-1">{item.label}</span>
+                )}
+                {!collapsed && item.badge && (
+                  <span className="w-2 h-2 rounded-full bg-error shrink-0"></span>
+                )}
+              </Link>
+            ))}
+
+            {/* Agent sub-items (expandable) */}
+            {section.subItems && !collapsed && (
+              <>
+                <button
+                  onClick={() => setAgentsExpanded(!agentsExpanded)}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-on-surface-variant/60 hover:text-on-surface-variant transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px] transition-transform" style={{ transform: agentsExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
+                    chevron_right
+                  </span>
+                  <span className="text-[11px] uppercase tracking-wider">Individual Agents</span>
+                </button>
+
+                {agentsExpanded && (
+                  <div className="ml-3 border-l border-outline-variant/10 pl-1 space-y-0.5">
+                    {section.subItems.map((sub) => (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-[12px] ${
+                          isActive(sub.href)
+                            ? "text-primary bg-primary/5"
+                            : "text-on-surface-variant/70 hover:text-on-surface hover:bg-surface-container-low"
+                        }`}
+                      >
+                        <span className={`material-symbols-outlined text-[16px] ${isActive(sub.href) ? "text-primary" : ""}`}>{sub.icon}</span>
+                        <span>{sub.label}</span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ))}
       </nav>
 
-      {/* Bottom section */}
-      <div className="border-t border-outline-variant/10 p-2 sm:p-3 space-y-1">
-        <Link
-          href="/settings"
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${
-            pathname === "/settings"
-              ? "bg-primary/10 text-primary"
-              : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
-          }`}
-        >
-          <span className="material-symbols-outlined text-xl">settings</span>
-          {!collapsed && <span className="text-sm font-medium">Settings</span>}
+      {/* Bottom */}
+      <div className="border-t border-outline-variant/10 p-2 space-y-0.5">
+        <Link href="/settings"
+          className={`flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 ${pathname === "/settings" ? "bg-primary/10 text-primary" : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"}`}>
+          <span className="material-symbols-outlined text-[20px]">settings</span>
+          {!collapsed && <span className="text-[13px] font-medium">Settings</span>}
         </Link>
 
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-surface-variant hover:bg-error/10 hover:text-error transition-all duration-200"
-          aria-label="Sign out"
-        >
-          <span className="material-symbols-outlined text-xl">logout</span>
-          {!collapsed && <span className="text-sm font-medium">Sign Out</span>}
+        <button onClick={handleLogout}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-on-surface-variant hover:bg-error/10 hover:text-error transition-all duration-200" aria-label="Sign out">
+          <span className="material-symbols-outlined text-[20px]">logout</span>
+          {!collapsed && <span className="text-[13px] font-medium">Sign Out</span>}
         </button>
 
-        {/* User */}
         {!collapsed && (
-          <div className="flex items-center gap-3 px-3 py-3 mt-2">
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-              <span className="text-primary text-xs font-bold">A</span>
+          <div className="flex items-center gap-2.5 px-3 py-2 mt-1">
+            <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+              <span className="text-primary text-[10px] font-bold">A</span>
             </div>
             <div className="overflow-hidden min-w-0">
-              <p className="text-xs font-medium text-on-surface truncate">Admin</p>
-              <p className="text-[10px] text-on-surface-variant truncate">admin@luxjd.com</p>
+              <p className="text-[11px] font-medium text-on-surface truncate">Admin</p>
+              <p className="text-[9px] text-on-surface-variant truncate">admin@luxjd.com</p>
             </div>
           </div>
         )}
@@ -121,34 +193,18 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger button — shown only on small screens */}
-      <button
-        onClick={() => setMobileOpen(true)}
+      {/* Mobile hamburger */}
+      <button onClick={() => setMobileOpen(true)}
         className="lg:hidden fixed top-3 left-3 z-50 w-10 h-10 rounded-xl bg-surface-container border border-outline-variant/20 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"
-        aria-label="Open menu"
-      >
+        aria-label="Open menu">
         <span className="material-symbols-outlined">menu</span>
       </button>
 
       {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
+      {mobileOpen && <div className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />}
 
-      {/* Sidebar — desktop: always visible, mobile: slide-in drawer */}
-      <aside
-        className={`
-          ${collapsed ? "w-20" : "w-64"}
-          h-full flex flex-col bg-surface-container-lowest border-r border-outline-variant/10 transition-all duration-300 shrink-0
-
-          fixed lg:relative z-50 lg:z-auto
-          ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
-        `}
-        role="navigation"
-      >
+      {/* Sidebar */}
+      <aside className={`${collapsed ? "w-[60px]" : "w-60"} h-full flex flex-col bg-surface-container-lowest border-r border-outline-variant/10 transition-all duration-300 shrink-0 fixed lg:relative z-50 lg:z-auto ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`} role="navigation">
         {navContent}
       </aside>
     </>
