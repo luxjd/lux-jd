@@ -29,9 +29,9 @@ export default function AgentsHubPage() {
       <h3 className="font-headline font-bold text-lg mb-4">Pipeline Agents</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {agents.map((a) => {
-          const hasPage = ["de-market", "jp-sourcing", "listing", "logistics", "finance"].includes(a.id);
+          const hasPage = ["de-market", "jp-sourcing", "listing", "logistics", "finance", "concierge"].includes(a.id);
           const Wrapper = hasPage ? Link : "div";
-          const hrefMap = { "de-market": "/agents/de-market", "jp-sourcing": "/agents/jp-sourcing", "listing": "/agents/listing", "logistics": "/agents/logistics", "finance": "/agents/finance" };
+          const hrefMap = { "de-market": "/agents/de-market", "jp-sourcing": "/agents/jp-sourcing", "listing": "/agents/listing", "logistics": "/agents/logistics", "finance": "/agents/finance", "concierge": "/agents/concierge" };
           const wrapperProps = hasPage ? { href: hrefMap[a.id] || "/agents" } : {};
 
           return (
