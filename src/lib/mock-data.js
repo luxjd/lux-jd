@@ -1,5 +1,5 @@
 export const PIPELINE_STAGES = [
-  { key: "SOURCED", label: "Sourced", icon: "search", color: "text-blue-400", bg: "bg-blue-400/10" },
+  { key: "SOURCED", label: "Sourced", icon: "search", color: "text-primary", bg: "bg-primary/10" },
   { key: "PURCHASED", label: "Purchased", icon: "gavel", color: "text-indigo-400", bg: "bg-indigo-400/10" },
   { key: "JP_TRANSPORT", label: "JP Transport", icon: "local_shipping", color: "text-violet-400", bg: "bg-violet-400/10" },
   { key: "AT_PORT_JP", label: "At Port JP", icon: "anchor", color: "text-purple-400", bg: "bg-purple-400/10" },

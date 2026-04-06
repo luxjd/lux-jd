@@ -117,7 +117,7 @@ export default function OpportunitiesPage() {
                 </div>
 
                 <div className="flex gap-2 shrink-0">
-                  <button className="px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold hover:shadow-[0_0_15px_rgba(173,198,255,0.3)] transition-all">Approve</button>
+                  <button className="px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold hover:shadow-[0_0_15px_rgba(248,113,113,0.3)] transition-all">Approve</button>
                   <button className="px-4 py-2 border border-outline-variant/20 text-on-surface-variant rounded-xl text-sm font-bold hover:bg-surface-container-high transition-all">Review</button>
                 </div>
               </div>

@@ -53,7 +53,7 @@ export default function CreateListingButton({ vehicles }) {
         <button
           onClick={handleCreate}
           disabled={creating || !selectedVehicle}
-          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-sm hover:shadow-[0_0_20px_rgba(173,198,255,0.4)] transition-all disabled:opacity-50 shrink-0"
+          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-sm hover:shadow-[0_0_20px_rgba(248,113,113,0.4)] transition-all disabled:opacity-50 shrink-0"
         >
           <span className={`material-symbols-outlined text-lg ${creating ? "animate-spin" : ""}`}>
             {creating ? "progress_activity" : "add_circle"}

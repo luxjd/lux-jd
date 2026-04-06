@@ -160,7 +160,7 @@ export default function JpSourcingPage() {
                       {da?.suggested_bid_jpy && <span className="ml-2">· AI suggests: <span className="font-bold text-primary">¥{da.suggested_bid_jpy.toLocaleString()}</span></span>}
                     </p>
                     <div className="flex gap-2">
-                      <button className="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold hover:shadow-[0_0_10px_rgba(173,198,255,0.3)] transition-all">
+                      <button className="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold hover:shadow-[0_0_10px_rgba(248,113,113,0.3)] transition-all">
                         Approve Bid
                       </button>
                       <button className="px-3 py-1.5 border border-outline-variant/20 text-on-surface-variant rounded-lg text-xs font-bold hover:bg-surface-container-high transition-all">

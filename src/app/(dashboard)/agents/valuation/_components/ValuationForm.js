@@ -179,7 +179,7 @@ export default function ValuationForm({ onSubmit, loading }) {
 
       {/* Submit */}
       <button type="submit" disabled={loading || !form.make || !form.model || !form.exteriorColor}
-        className="w-full py-4 bg-primary text-on-primary font-headline font-bold text-lg rounded-xl hover:shadow-[0_0_30px_rgba(173,198,255,0.5)] transition-all duration-300 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3">
+        className="w-full py-4 bg-primary text-on-primary font-headline font-bold text-lg rounded-xl hover:shadow-[0_0_30px_rgba(248,113,113,0.5)] transition-all duration-300 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3">
         <span className="material-symbols-outlined text-2xl">auto_awesome</span>
         {loading ? "Processing Valuation..." : "Generate Valuation Report"}
       </button>

@@ -39,7 +39,7 @@ export default function AdvanceStageButton({ vehicleId, currentStage, vehicleNam
       <button
         onClick={handleAdvance}
         disabled={advancing}
-        className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold hover:shadow-[0_0_10px_rgba(173,198,255,0.3)] transition-all disabled:opacity-50"
+        className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold hover:shadow-[0_0_10px_rgba(248,113,113,0.3)] transition-all disabled:opacity-50"
       >
         <span className={`material-symbols-outlined text-sm ${advancing ? "animate-spin" : ""}`}>
           {advancing ? "progress_activity" : "arrow_forward"}

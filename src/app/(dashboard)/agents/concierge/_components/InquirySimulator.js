@@ -88,7 +88,7 @@ export default function InquirySimulator() {
           <textarea value={inquiry} onChange={(e) => setInquiry(e.target.value)} rows={3} placeholder="e.g. Guten Tag, ich interessiere mich für den Ferrari 488. Ist das Fahrzeug noch verfügbar? Können Sie mir mehr über die Ausstattung und die Servicehistorie sagen?" className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 resize-none" />
         </div>
 
-        <button type="submit" disabled={processing || !inquiry.trim()} className="w-full py-3 bg-primary text-on-primary font-bold rounded-xl text-sm hover:shadow-[0_0_20px_rgba(173,198,255,0.4)] transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+        <button type="submit" disabled={processing || !inquiry.trim()} className="w-full py-3 bg-primary text-on-primary font-bold rounded-xl text-sm hover:shadow-[0_0_20px_rgba(248,113,113,0.4)] transition-all disabled:opacity-50 flex items-center justify-center gap-2">
           <span className={`material-symbols-outlined text-lg ${processing ? "animate-spin" : ""}`}>{processing ? "progress_activity" : "send"}</span>
           {processing ? "Generating Expert Response..." : "Send Inquiry"}
         </button>

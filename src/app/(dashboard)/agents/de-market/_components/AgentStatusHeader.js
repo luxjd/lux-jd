@@ -66,7 +66,7 @@ export default function AgentStatusHeader({ status }) {
         <button
           onClick={handleScan}
           disabled={scanning}
-          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-sm hover:shadow-[0_0_20px_rgba(173,198,255,0.4)] transition-all disabled:opacity-50"
+          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-sm hover:shadow-[0_0_20px_rgba(248,113,113,0.4)] transition-all disabled:opacity-50"
         >
           <span className={`material-symbols-outlined text-lg ${scanning ? "animate-spin" : ""}`}>
             {scanning ? "progress_activity" : "radar"}

@@ -340,7 +340,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
       <div className="flex flex-col sm:flex-row gap-4">
         {v.verdict !== "PASS" && (
           <button onClick={onSendToPipeline}
-            className="flex-1 py-4 bg-primary text-on-primary font-headline font-bold text-lg rounded-xl hover:shadow-[0_0_30px_rgba(173,198,255,0.5)] transition-all flex items-center justify-center gap-2">
+            className="flex-1 py-4 bg-primary text-on-primary font-headline font-bold text-lg rounded-xl hover:shadow-[0_0_30px_rgba(248,113,113,0.5)] transition-all flex items-center justify-center gap-2">
             <span className="material-symbols-outlined">send</span>
             Send to Pipeline
           </button>

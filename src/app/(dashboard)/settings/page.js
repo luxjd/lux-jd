@@ -82,7 +82,7 @@ export default function SettingsPage() {
 
       {/* Save */}
       <div className="flex justify-end">
-        <button className="px-8 py-3 bg-primary text-on-primary font-bold rounded-xl hover:shadow-[0_0_25px_rgba(173,198,255,0.5)] transition-all">
+        <button className="px-8 py-3 bg-primary text-on-primary font-bold rounded-xl hover:shadow-[0_0_25px_rgba(248,113,113,0.5)] transition-all">
           Save Changes
         </button>
       </div>

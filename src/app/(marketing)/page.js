@@ -12,21 +12,21 @@ export default function Home() {
       {({ openLogin, openSignup }) => (
         <>
           {/* Top Navigation Bar */}
-          <nav className="anim-nav fixed top-0 w-full z-50 bg-[#0B0B0B]/80 backdrop-blur-xl shadow-[0_0_20px_rgba(58,134,255,0.1)] flex justify-between items-center px-8 py-4 max-w-full font-headline tracking-tighter uppercase">
+          <nav className="anim-nav fixed top-0 w-full z-50 bg-[#0a0a0a]/80 backdrop-blur-xl shadow-[0_0_20px_rgba(248,113,113,0.1)] flex justify-between items-center px-8 py-4 max-w-full font-headline tracking-tighter uppercase">
             <div className="text-xl font-bold tracking-widest text-slate-100">
               LuxJD
             </div>
             <div className="hidden md:flex items-center gap-8">
-              <a className="text-blue-400 border-b-2 border-blue-500 pb-1" href="#">
+              <a className="text-primary border-b-2 border-primary-container pb-1" href="#">
                 Home
               </a>
-              <a className="text-slate-300 hover:text-blue-300 transition-colors" href="#">
+              <a className="text-slate-300 hover:text-primary transition-colors" href="#">
                 About
               </a>
-              <a className="text-slate-300 hover:text-blue-300 transition-colors" href="#">
+              <a className="text-slate-300 hover:text-primary transition-colors" href="#">
                 Inventory
               </a>
-              <a className="text-slate-300 hover:text-blue-300 transition-colors" href="#">
+              <a className="text-slate-300 hover:text-primary transition-colors" href="#">
                 Contact
               </a>
             </div>
@@ -39,7 +39,7 @@ export default function Home() {
               </button>
               <button
                 onClick={openSignup}
-                className="bg-primary-container text-on-primary-container px-6 py-2 rounded-xl font-bold scale-95 active:scale-90 transition-transform hover:shadow-[0_0_15px_rgba(173,198,255,0.4)]"
+                className="bg-primary-container text-on-primary-container px-6 py-2 rounded-xl font-bold scale-95 active:scale-90 transition-transform hover:shadow-[0_0_15px_rgba(248,113,113,0.4)]"
               >
                 Get Started
               </button>
@@ -80,7 +80,7 @@ export default function Home() {
               <div className="anim-drift-text-4 flex flex-col md:flex-row gap-6 justify-center items-center">
                 <button
                   onClick={openSignup}
-                  className="px-10 py-4 bg-primary text-on-primary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(173,198,255,0.5)] transition-all duration-300 hover:scale-105 active:scale-95"
+                  className="px-10 py-4 bg-primary-container text-on-primary-container font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(248,113,113,0.5)] transition-all duration-300 hover:scale-105 active:scale-95"
                 >
                   Explore Inventory
                 </button>
@@ -769,7 +769,7 @@ export default function Home() {
                       <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2 font-label">Message</label>
                       <textarea rows={4} placeholder="Tell us about the vehicle you're looking for..." className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 transition-all resize-none"></textarea>
                     </div>
-                    <button type="submit" className="w-full py-3.5 bg-secondary text-on-secondary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(234,193,105,0.5)] transition-all duration-300 active:scale-[0.98]">
+                    <button type="submit" className="w-full py-3.5 bg-primary-container text-on-primary-container font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(248,113,113,0.5)] transition-all duration-300 active:scale-[0.98]">
                       Send Inquiry
                     </button>
                     <p className="text-center text-xs text-on-surface-variant">
@@ -784,7 +784,7 @@ export default function Home() {
           {/* Premium CTA */}
           <section className="py-32 px-6">
             <ScrollReveal direction="up" duration={900}>
-              <div className="max-w-6xl mx-auto relative rounded-[3rem] overflow-hidden bg-gradient-to-br from-[#0B0B0B] via-[#0B0B0B] to-primary/20 p-20 border border-primary/10 anim-border-pulse">
+              <div className="max-w-6xl mx-auto relative rounded-[3rem] overflow-hidden bg-gradient-to-br from-[#0a0a0a] via-[#0a0a0a] to-primary/20 p-20 border border-primary/10 anim-border-pulse">
                 <div className="absolute inset-0 z-0">
                   <Image
                     className="w-full h-full object-cover opacity-30"
@@ -805,7 +805,7 @@ export default function Home() {
                   </p>
                   <button
                     onClick={openSignup}
-                    className="bg-secondary text-on-secondary font-headline font-extrabold text-xl px-12 py-6 rounded-xl hover:shadow-[0_0_30px_rgba(234,193,105,0.6)] transition-all duration-500 scale-100 hover:scale-105 active:scale-95 uppercase tracking-widest"
+                    className="bg-primary-container text-on-primary-container font-headline font-extrabold text-xl px-12 py-6 rounded-xl hover:shadow-[0_0_30px_rgba(248,113,113,0.6)] transition-all duration-500 scale-100 hover:scale-105 active:scale-95 uppercase tracking-widest"
                   >
                     Get Started
                   </button>
@@ -816,7 +816,7 @@ export default function Home() {
 
           {/* Footer */}
           <ScrollReveal direction="up" distance={20} duration={500}>
-            <footer className="w-full border-t border-[#EAC169]/30 bg-[#121212] flex flex-col md:flex-row justify-between items-center px-12 py-8 gap-6 font-body text-sm tracking-wide">
+            <footer className="w-full border-t border-primary/20 bg-[#0a0a0a] flex flex-col md:flex-row justify-between items-center px-12 py-8 gap-6 font-body text-sm tracking-wide">
               <div className="text-slate-500">© 2024 LuxJD</div>
               <div className="flex gap-8">
                 <a className="text-slate-500 hover:text-slate-200 transition-all" href="#">
@@ -831,14 +831,14 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-6">
                 <a
-                  className="text-[#EAC169] font-bold transition-all hover:shadow-[0_0_15px_rgba(234,193,105,0.4)]"
+                  className="text-primary font-bold transition-all hover:shadow-[0_0_15px_rgba(248,113,113,0.4)]"
                   href="#"
                 >
                   <span className="material-symbols-outlined">language</span>
                 </a>
                 <button
                   onClick={openLogin}
-                  className="text-[#EAC169] font-bold transition-all hover:shadow-[0_0_15px_rgba(234,193,105,0.4)]"
+                  className="text-primary font-bold transition-all hover:shadow-[0_0_15px_rgba(248,113,113,0.4)]"
                 >
                   <span className="material-symbols-outlined">account_circle</span>
                 </button>

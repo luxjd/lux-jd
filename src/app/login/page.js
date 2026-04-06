@@ -51,7 +51,7 @@ export default function LoginPage() {
         </div>
 
         {/* Login card */}
-        <div className="glass-panel border border-outline-variant/20 rounded-3xl p-8 shadow-[0_0_60px_rgba(173,198,255,0.05)]">
+        <div className="glass-panel border border-outline-variant/20 rounded-3xl p-8 shadow-[0_0_60px_rgba(248,113,113,0.05)]">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 border border-primary/20 mb-4">
               <span className="material-symbols-outlined text-primary text-3xl">
@@ -85,7 +85,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@luxjd.com"
                   required
-                  className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(173,198,255,0.15)] transition-all"
+                  className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(248,113,113,0.15)] transition-all"
                 />
               </div>
             </div>
@@ -104,7 +104,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   required
-                  className="w-full pl-11 pr-11 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(173,198,255,0.15)] transition-all"
+                  className="w-full pl-11 pr-11 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(248,113,113,0.15)] transition-all"
                 />
                 <button
                   type="button"
@@ -121,7 +121,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 bg-primary text-on-primary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(173,198,255,0.5)] transition-all duration-300 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3.5 bg-primary text-on-primary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(248,113,113,0.5)] transition-all duration-300 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Signing in..." : "Sign In"}
             </button>

@@ -51,7 +51,7 @@ export default function AuthModals({ children }) {
 
           {/* Modal */}
           <div
-            className="relative z-10 w-full max-w-md rounded-3xl border border-outline-variant/20 bg-surface-container p-8 shadow-[0_0_60px_rgba(173,198,255,0.1)] animate-[modalIn_0.25s_ease-out]"
+            className="relative z-10 w-full max-w-md rounded-3xl border border-outline-variant/20 bg-surface-container p-8 shadow-[0_0_60px_rgba(248,113,113,0.1)] animate-[modalIn_0.25s_ease-out]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close button */}
@@ -118,7 +118,7 @@ export default function AuthModals({ children }) {
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         placeholder="admin@luxjd.com"
-                        className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(173,198,255,0.15)] transition-all"
+                        className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(248,113,113,0.15)] transition-all"
                       />
                     </div>
                   </div>
@@ -136,7 +136,7 @@ export default function AuthModals({ children }) {
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         placeholder="Enter your password"
-                        className="w-full pl-11 pr-11 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(173,198,255,0.15)] transition-all"
+                        className="w-full pl-11 pr-11 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(248,113,113,0.15)] transition-all"
                       />
                       <button
                         type="button"
@@ -169,7 +169,7 @@ export default function AuthModals({ children }) {
                   <button
                     type="submit"
                     disabled={loginLoading}
-                    className="w-full py-3.5 bg-primary text-on-primary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(173,198,255,0.5)] transition-all duration-300 active:scale-[0.98] disabled:opacity-50"
+                    className="w-full py-3.5 bg-primary text-on-primary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(248,113,113,0.5)] transition-all duration-300 active:scale-[0.98] disabled:opacity-50"
                   >
                     {loginLoading ? "Signing in..." : "Sign In"}
                   </button>
@@ -230,7 +230,7 @@ export default function AuthModals({ children }) {
                       <input
                         type="text"
                         placeholder="John"
-                        className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-secondary/50 focus:shadow-[0_0_10px_rgba(234,193,105,0.15)] transition-all"
+                        className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-secondary/50 focus:shadow-[0_0_10px_rgba(255,138,101,0.15)] transition-all"
                       />
                     </div>
                     <div>
@@ -240,7 +240,7 @@ export default function AuthModals({ children }) {
                       <input
                         type="text"
                         placeholder="Doe"
-                        className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-secondary/50 focus:shadow-[0_0_10px_rgba(234,193,105,0.15)] transition-all"
+                        className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-secondary/50 focus:shadow-[0_0_10px_rgba(255,138,101,0.15)] transition-all"
                       />
                     </div>
                   </div>
@@ -256,7 +256,7 @@ export default function AuthModals({ children }) {
                       <input
                         type="email"
                         placeholder="you@example.com"
-                        className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-secondary/50 focus:shadow-[0_0_10px_rgba(234,193,105,0.15)] transition-all"
+                        className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-secondary/50 focus:shadow-[0_0_10px_rgba(255,138,101,0.15)] transition-all"
                       />
                     </div>
                   </div>
@@ -272,7 +272,7 @@ export default function AuthModals({ children }) {
                       <input
                         type={showPassword ? "text" : "password"}
                         placeholder="Min. 8 characters"
-                        className="w-full pl-11 pr-11 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-secondary/50 focus:shadow-[0_0_10px_rgba(234,193,105,0.15)] transition-all"
+                        className="w-full pl-11 pr-11 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-secondary/50 focus:shadow-[0_0_10px_rgba(255,138,101,0.15)] transition-all"
                       />
                       <button
                         type="button"
@@ -305,7 +305,7 @@ export default function AuthModals({ children }) {
 
                   <button
                     type="submit"
-                    className="w-full py-3.5 bg-secondary text-on-secondary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(234,193,105,0.5)] transition-all duration-300 active:scale-[0.98]"
+                    className="w-full py-3.5 bg-secondary text-on-secondary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(255,138,101,0.5)] transition-all duration-300 active:scale-[0.98]"
                   >
                     Create Account
                   </button>

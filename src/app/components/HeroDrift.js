@@ -193,7 +193,7 @@ export default function HeroDrift() {
 
       // Cursor glow spotlight
       if (glow) {
-        glow.style.background = `radial-gradient(700px circle at ${m.x * 100}% ${m.y * 100}%, rgba(173,198,255,0.08) 0%, rgba(234,193,105,0.04) 40%, transparent 70%)`;
+        glow.style.background = `radial-gradient(700px circle at ${m.x * 100}% ${m.y * 100}%, rgba(248,113,113,0.08) 0%, rgba(255,138,101,0.04) 40%, transparent 70%)`;
       }
 
       raf = requestAnimationFrame(animate);
@@ -274,9 +274,9 @@ export default function HeroDrift() {
         const dx = p.x + pox;
         const dy = p.y + poy;
         const grad = ctx.createRadialGradient(dx, dy, 0, dx, dy, p.size);
-        grad.addColorStop(0, `rgba(173, 198, 255, ${p.alpha * p.life})`);
-        grad.addColorStop(0.5, `rgba(140, 160, 200, ${p.alpha * p.life * 0.4})`);
-        grad.addColorStop(1, "rgba(140, 160, 200, 0)");
+        grad.addColorStop(0, `rgba(248, 113, 113, ${p.alpha * p.life})`);
+        grad.addColorStop(0.5, `rgba(200, 90, 90, ${p.alpha * p.life * 0.4})`);
+        grad.addColorStop(1, "rgba(200, 90, 90, 0)");
         ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(dx, dy, p.size, 0, Math.PI * 2);
@@ -294,7 +294,7 @@ export default function HeroDrift() {
 
         const a = mt.alpha * (0.4 + 0.6 * Math.sin(mt.pulse));
         ctx.globalAlpha = a;
-        ctx.fillStyle = "rgba(220, 230, 255, 1)";
+        ctx.fillStyle = "rgba(255, 200, 180, 1)";
         ctx.beginPath();
         ctx.arc(mt.x + pox * 0.5, mt.y + poy * 0.5, mt.size, 0, Math.PI * 2);
         ctx.fill();
@@ -319,7 +319,7 @@ export default function HeroDrift() {
       <div ref={glowRef} className="absolute inset-0" />
 
       {/* Bottom atmospheric glow */}
-      <div className="absolute bottom-0 left-0 w-full h-[25%]" style={{ background: "linear-gradient(to top, rgba(173,198,255,0.03) 0%, transparent 100%)" }} />
+      <div className="absolute bottom-0 left-0 w-full h-[25%]" style={{ background: "linear-gradient(to top, rgba(248,113,113,0.03) 0%, transparent 100%)" }} />
     </div>
   );
 }

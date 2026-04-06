@@ -41,7 +41,7 @@ export default function ScanButton() {
       <button
         onClick={handleScan}
         disabled={scanning}
-        className="flex items-center gap-2 px-5 py-2.5 bg-secondary text-on-secondary rounded-xl font-bold text-sm hover:shadow-[0_0_20px_rgba(234,193,105,0.4)] transition-all disabled:opacity-50"
+        className="flex items-center gap-2 px-5 py-2.5 bg-secondary text-on-secondary rounded-xl font-bold text-sm hover:shadow-[0_0_20px_rgba(255,138,101,0.4)] transition-all disabled:opacity-50"
       >
         <span className={`material-symbols-outlined text-lg ${scanning ? "animate-spin" : ""}`}>
           {scanning ? "progress_activity" : "travel_explore"}

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getAllLeads, getEscalations, getAgentStatus } from "@/lib/agents/concierge/storage";
 import InquirySimulator from "./_components/InquirySimulator";
 
-const STATUS_STYLES = { NEW: "bg-blue-400/15 text-blue-400", QUALIFIED: "bg-emerald-400/15 text-emerald-400", ESCALATED: "bg-red-400/15 text-red-400", CONTACTED: "bg-amber-400/15 text-amber-400", CONVERTED: "bg-primary/15 text-primary", LOST: "bg-slate-400/10 text-slate-400" };
+const STATUS_STYLES = { NEW: "bg-primary/15 text-primary", QUALIFIED: "bg-emerald-400/15 text-emerald-400", ESCALATED: "bg-red-400/15 text-red-400", CONTACTED: "bg-amber-400/15 text-amber-400", CONVERTED: "bg-primary/15 text-primary", LOST: "bg-slate-400/10 text-slate-400" };
 const BUYER_STYLES = { COLLECTOR: "text-secondary", SERIOUS: "text-emerald-400", TRADE: "text-primary", BROWSER: "text-on-surface-variant", COMPETITOR: "text-red-400" };
 
 export default function ConciergeAgentPage() {
@@ -42,9 +42,9 @@ export default function ConciergeAgentPage() {
 
         {hasLeads && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-            <div className="px-3 py-2 rounded-lg bg-blue-400/5 border border-blue-400/10">
-              <span className="font-headline font-bold text-lg text-blue-400">{leads.filter((l) => l.status === "NEW").length}</span>
-              <span className="text-[10px] text-blue-400 uppercase ml-2">New</span>
+            <div className="px-3 py-2 rounded-lg bg-primary/5 border border-primary/10">
+              <span className="font-headline font-bold text-lg text-primary">{leads.filter((l) => l.status === "NEW").length}</span>
+              <span className="text-[10px] text-primary uppercase ml-2">New</span>
             </div>
             <div className="px-3 py-2 rounded-lg bg-emerald-400/5 border border-emerald-400/10">
               <span className="font-headline font-bold text-lg text-emerald-400">{leads.filter((l) => l.status === "QUALIFIED").length}</span>

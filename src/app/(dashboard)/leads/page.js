@@ -6,7 +6,7 @@ import { leads as mockLeads } from "@/lib/mock-data";
 
 const TABS = ["ALL", "NEW", "QUALIFIED", "ESCALATED", "CONTACTED", "CONVERTED", "LOST"];
 const STATUS_COLORS = {
-  NEW: "bg-blue-400/15 text-blue-400", QUALIFIED: "bg-emerald-400/15 text-emerald-400",
+  NEW: "bg-primary/15 text-primary", QUALIFIED: "bg-emerald-400/15 text-emerald-400",
   ESCALATED: "bg-red-400/15 text-red-400", CONTACTED: "bg-amber-400/15 text-amber-400",
   CONVERTED: "bg-primary/15 text-primary", LOST: "bg-slate-400/10 text-slate-400",
 };
