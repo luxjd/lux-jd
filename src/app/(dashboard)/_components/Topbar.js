@@ -18,6 +18,7 @@ const PAGE_TITLES = {
   "/agents/logistics": "Logistics Agent",
   "/agents/finance": "Finance & Compliance Agent",
   "/agents/concierge": "Concierge Agent",
+  "/agents/orchestrator": "Orchestrator — Command Center",
 };
 
 export default function Topbar() {
