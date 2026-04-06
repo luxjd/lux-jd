@@ -16,6 +16,7 @@ const PAGE_TITLES = {
   "/agents/jp-sourcing": "JP Sourcing Agent",
   "/agents/listing": "Listing & Presentation Agent",
   "/agents/logistics": "Logistics Agent",
+  "/agents/finance": "Finance & Compliance Agent",
 };
 
 export default function Topbar() {
