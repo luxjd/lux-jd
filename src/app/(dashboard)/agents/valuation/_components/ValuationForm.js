@@ -38,6 +38,7 @@ export default function ValuationForm({ onSubmit, loading }) {
   const fileRef = useRef(null);
 
   const update = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+  const updateNum = (key, val) => setForm((f) => ({ ...f, [key]: val === "" ? "" : parseInt(val) || f[key] }));
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -73,11 +74,11 @@ export default function ValuationForm({ onSubmit, loading }) {
           </div>
           <div>
             <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2">Year *</label>
-            <input type="number" value={form.year} onChange={(e) => update("year", parseInt(e.target.value))} min={1990} max={2026} required className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary/50 transition-all" />
+            <input type="number" value={form.year} onChange={(e) => updateNum("year", e.target.value)} min={1990} max={2026} required className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary/50 transition-all" />
           </div>
           <div>
             <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2">Mileage (km) *</label>
-            <input type="number" value={form.mileageKm} onChange={(e) => update("mileageKm", parseInt(e.target.value))} min={0} required className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary/50 transition-all" />
+            <input type="number" value={form.mileageKm} onChange={(e) => updateNum("mileageKm", e.target.value)} min={0} required className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary/50 transition-all" />
           </div>
           <div>
             <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2">Drive Side *</label>
@@ -118,7 +119,7 @@ export default function ValuationForm({ onSubmit, loading }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
           <div>
             <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2">Asking Price (JPY) *</label>
-            <input type="number" value={form.askingPriceJpy} onChange={(e) => update("askingPriceJpy", parseInt(e.target.value))} min={0} step={100000} required className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary/50 transition-all" />
+            <input type="number" value={form.askingPriceJpy} onChange={(e) => updateNum("askingPriceJpy", e.target.value)} min={0} step={100000} required className="w-full px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary/50 transition-all" />
             <p className="text-xs text-on-surface-variant mt-1">≈ €{Math.round(form.askingPriceJpy / 166.80).toLocaleString()} at ¥166.80</p>
           </div>
           <div>

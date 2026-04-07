@@ -49,7 +49,7 @@ export function recommendStation(vehicle, preferredCity = null) {
  */
 export async function generateTuvAssessment(vehicle) {
   if (!isAIAvailable()) {
-    return createFallbackAssessment(vehicle);
+    throw new Error("AI is required for TUV assessment. Configure OPENROUTER_API_KEY.");
   }
 
   const station = recommendStation(vehicle);
@@ -93,7 +93,7 @@ Return ONLY valid JSON:
     jsonMode: true,
   });
 
-  if (!result) return createFallbackAssessment(vehicle);
+  if (!result) throw new Error("TUV assessment failed — no response from AI.");
 
   return {
     ...result,
@@ -106,37 +106,6 @@ Return ONLY valid JSON:
 
 function isEuSpec(make) {
   return ["Ferrari", "Mercedes-AMG", "Porsche", "Lamborghini", "Bentley", "Aston Martin", "BMW M", "BMW", "Maserati", "Jaguar", "Range Rover"].some((b) => make?.includes(b));
-}
-
-function createFallbackAssessment(vehicle) {
-  const euSpec = isEuSpec(vehicle.make);
-  const station = recommendStation(vehicle);
-  return {
-    complexity: euSpec && vehicle.driveSide === "LHD" ? "LOW" : "MEDIUM",
-    estimated_cost_eur: euSpec ? 400 : 800,
-    estimated_duration_hours: 2,
-    eu_type_approval: euSpec,
-    coc_required: true,
-    coc_available: euSpec,
-    modifications_required: [],
-    checklist: [
-      { item: "Certificate of Conformity (CoC)", category: "DOCUMENTS", critical: true },
-      { item: "Vehicle identification number verification", category: "TECHNICAL", critical: true },
-      { item: "Emissions test (AU)", category: "EMISSIONS", critical: true },
-      { item: "Brake test", category: "SAFETY", critical: true },
-      { item: "Lighting and signaling check", category: "SAFETY", critical: true },
-      { item: "Speedometer units (km/h)", category: "TECHNICAL", critical: false },
-      { item: "Infotainment language settings", category: "TECHNICAL", critical: false },
-    ],
-    potential_issues: [],
-    pass_probability_pct: euSpec ? 92 : 75,
-    recommended_station: station.name,
-    recommended_station_city: station.city,
-    appointment_lead_time_days: station.avgWaitDays,
-    stationDetails: station,
-    assessedAt: new Date().toISOString(),
-    aiPowered: false,
-  };
 }
 
 /**

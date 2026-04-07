@@ -59,10 +59,7 @@ Return ONLY valid JSON:
  */
 export async function calculateListingPrice(vehicle, tvr) {
   if (!isAIAvailable()) {
-    // Fallback: use TVR median with standard positioning
-    const median = tvr?.marketValue?.medianEur || 100000;
-    const initialPrice = Math.round(median * 1.05); // slightly above median
-    return createFallbackPricing(initialPrice, vehicle.landedCostEur);
+    throw new Error("AI is required for pricing. Configure OPENROUTER_API_KEY.");
   }
 
   const result = await callClaude({
@@ -72,8 +69,7 @@ export async function calculateListingPrice(vehicle, tvr) {
   });
 
   if (!result) {
-    const median = tvr?.marketValue?.medianEur || 100000;
-    return createFallbackPricing(Math.round(median * 1.05), vehicle.landedCostEur);
+    throw new Error("Pricing calculation failed — no response from AI.");
   }
 
   return {
@@ -82,27 +78,6 @@ export async function calculateListingPrice(vehicle, tvr) {
     tvrMedian: tvr?.marketValue?.medianEur,
     landedCost: vehicle.landedCostEur,
     expectedMargin: (result.initial_price_eur || 0) - (vehicle.landedCostEur || 0),
-    calculatedAt: new Date().toISOString(),
-  };
-}
-
-function createFallbackPricing(initialPrice, landedCost) {
-  return {
-    initial_price_eur: initialPrice,
-    pricing_strategy: "COMPETITIVE",
-    price_justification: "Priced at market median with standard positioning.",
-    adjustments_applied: [],
-    floor_price_eur: Math.round(initialPrice * 0.85),
-    wholesale_price_eur: Math.round(initialPrice * 0.85),
-    reduction_schedule: [
-      { day: 15, action: "REDUCE", new_price_eur: Math.round(initialPrice * 0.96), reduction_pct: 4 },
-      { day: 28, action: "REDUCE", new_price_eur: Math.round(initialPrice * 0.92), reduction_pct: 4 },
-      { day: 42, action: "REVIEW", note: "Orchestrator strategic review" },
-      { day: 56, action: "WHOLESALE", new_price_eur: Math.round(initialPrice * 0.85), reduction_pct: 15 },
-    ],
-    expected_days_to_sell: 30,
-    confidence: 0.65,
-    expectedMargin: initialPrice - (landedCost || 0),
     calculatedAt: new Date().toISOString(),
   };
 }

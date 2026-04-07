@@ -16,7 +16,7 @@ Format: structured, scannable, decisive. Never waffle. State the recommendation 
  */
 export async function generateDecisionBrief(evaluation, opportunity) {
   if (!isAIAvailable()) {
-    return generateFallbackBrief(evaluation, opportunity);
+    throw new Error("AI is required for decision briefs. Configure OPENROUTER_API_KEY.");
   }
 
   const result = await callClaude({
@@ -66,7 +66,7 @@ Return ONLY valid JSON:
     jsonMode: true,
   });
 
-  if (!result) return generateFallbackBrief(evaluation, opportunity);
+  if (!result) throw new Error("Decision brief generation failed — no response from AI.");
 
   return {
     ...result,
@@ -82,20 +82,3 @@ Return ONLY valid JSON:
   };
 }
 
-function generateFallbackBrief(evaluation, opportunity) {
-  return {
-    headline: `${evaluation.decision}: ${evaluation.vehicleName}`,
-    recommendation: evaluation.decision === "AUTO_APPROVE" ? "APPROVE" : evaluation.decision === "REJECT" ? "REJECT" : "CONDITIONAL_APPROVE",
-    executive_summary: evaluation.decisionReason,
-    bull_case: `Margin of €${evaluation.financials.margin.toLocaleString()} (${evaluation.financials.marginPct}%) meets acquisition criteria.`,
-    bear_case: evaluation.flagReasons.length > 0 ? evaluation.flagReasons.join(". ") : "No significant concerns identified.",
-    conditions: evaluation.flagReasons,
-    immediate_actions: evaluation.decision !== "REJECT" ? ["Submit bid", "Arrange financing"] : ["Pass on this vehicle"],
-    deadline_note: opportunity.source?.auctionDate || "Check auction schedule",
-    confidence_in_recommendation: 0.6,
-    evaluation_summary: { decision: evaluation.decision, stepsPass: evaluation.summary.passCount, stepsFail: evaluation.summary.failCount, stepsFlag: evaluation.summary.flagCount },
-    vehicle: evaluation.vehicleName,
-    generatedAt: new Date().toISOString(),
-    aiPowered: false,
-  };
-}

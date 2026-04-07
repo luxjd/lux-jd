@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAllListings, getAgentStatus } from "@/lib/agents/listing/storage";
-import { vehicles } from "@/lib/mock-data";
+import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
 import CreateListingButton from "./_components/CreateListingButton";
 
 const STATUS_STYLES = { ACTIVE: "bg-emerald-400/15 text-emerald-400", SOLD: "bg-primary/15 text-primary", DRAFT: "bg-amber-400/15 text-amber-400", PAUSED: "bg-slate-400/10 text-slate-400" };
@@ -14,8 +14,9 @@ export default function ListingAgentPage() {
   const activeListings = listings.filter((l) => l.status === "ACTIVE");
   const soldListings = listings.filter((l) => l.status === "SOLD");
 
-  // Vehicles available for listing (from mock pipeline data — in production, from Logistics Agent)
-  const readyVehicles = vehicles.filter((v) => v.currentStage === "READY_FOR_SALE" || v.currentStage === "TUV");
+  // Vehicles available for listing from Logistics Agent pipeline
+  const pipelineData = getPipelineVehicles();
+  const readyVehicles = (pipelineData?.vehicles || []).filter((v) => v.currentStage === "READY_FOR_SALE" || v.currentStage === "TUV");
 
   const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";
 

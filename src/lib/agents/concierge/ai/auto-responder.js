@@ -85,7 +85,7 @@ Return ONLY valid JSON:
  */
 export async function generateResponse(inquiry, vehicle, buyerType, language = "DE") {
   if (!isAIAvailable()) {
-    return generateFallbackResponse(inquiry, vehicle, language);
+    throw new Error("AI is required for response generation. Configure OPENROUTER_API_KEY.");
   }
 
   const result = await callClaude({
@@ -95,7 +95,9 @@ export async function generateResponse(inquiry, vehicle, buyerType, language = "
     jsonMode: true,
   });
 
-  if (!result) return generateFallbackResponse(inquiry, vehicle, language);
+  if (!result) {
+    throw new Error("Response generation failed — no response from AI.");
+  }
 
   return {
     ...result,
@@ -104,24 +106,5 @@ export async function generateResponse(inquiry, vehicle, buyerType, language = "
     buyerType,
     generatedAt: new Date().toISOString(),
     aiPowered: true,
-  };
-}
-
-function generateFallbackResponse(inquiry, vehicle, language) {
-  const name = `${vehicle.make} ${vehicle.model} ${vehicle.year}`;
-
-  const responses = {
-    DE: `Sehr geehrte/r Interessent/in,\n\nvielen Dank für Ihre Anfrage zu unserem ${name}. Das Fahrzeug befindet sich in hervorragendem Zustand mit ${vehicle.mileageKm?.toLocaleString() || "niedriger"} km Laufleistung.\n\nGerne stellen wir Ihnen weitere Informationen, zusätzliche Fotos oder einen Besichtigungstermin zur Verfügung.\n\nMit freundlichen Grüßen,\nLuxJD Premium Automobiles`,
-    EN: `Dear prospective buyer,\n\nThank you for your interest in our ${name}. This exceptional example presents in outstanding condition with ${vehicle.mileageKm?.toLocaleString() || "low"} km.\n\nWe would be delighted to provide additional photography, documentation, or arrange a private viewing at your convenience.\n\nKind regards,\nLuxJD Premium Automobiles`,
-  };
-
-  return {
-    response_text: responses[language] || responses.EN,
-    suggested_next_action: "SEND_PHOTOS",
-    confidence: 0.4,
-    generatedBy: "fallback",
-    language,
-    aiPowered: false,
-    generatedAt: new Date().toISOString(),
   };
 }

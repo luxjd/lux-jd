@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { listings as mockListings } from "@/lib/mock-data";
 
 const TABS = ["ALL", "ACTIVE", "SOLD", "DRAFT"];
 const STATUS_STYLES = { ACTIVE: "bg-emerald-400/15 text-emerald-400", SOLD: "bg-primary/15 text-primary", DRAFT: "bg-amber-400/15 text-amber-400", PAUSED: "bg-slate-400/10 text-slate-400" };
@@ -24,28 +23,24 @@ export default function ListingsPage() {
 
   const hasRealData = realListings && realListings.length > 0;
 
-  // Merge real + mock, or just mock
   const allListings = hasRealData
-    ? [
-        ...realListings.map((l) => ({
-          id: l.id,
-          make: l.vehicle?.make,
-          model: l.vehicle?.model,
-          year: l.vehicle?.year,
-          color: l.vehicle?.exteriorColor,
-          listedPrice: l.currentPrice,
-          status: l.status,
-          daysOnMarket: l.daysOnMarket || 0,
-          views: l.metrics?.totalViews || 0,
-          inquiries: l.metrics?.totalInquiries || 0,
-          platform: Object.values(l.platforms || {}).find((p) => p.status === "PUBLISHED")?.platform || "LuxJD",
-          aiPowered: l.aiPowered,
-          platformCount: l.publishing?.totalPublished || 0,
-          pricingStrategy: l.pricing?.pricing_strategy,
-        })),
-        ...mockListings,
-      ]
-    : mockListings;
+    ? realListings.map((l) => ({
+        id: l.id,
+        make: l.vehicle?.make,
+        model: l.vehicle?.model,
+        year: l.vehicle?.year,
+        color: l.vehicle?.exteriorColor,
+        listedPrice: l.currentPrice,
+        status: l.status,
+        daysOnMarket: l.daysOnMarket || 0,
+        views: l.metrics?.totalViews || 0,
+        inquiries: l.metrics?.totalInquiries || 0,
+        platform: Object.values(l.platforms || {}).find((p) => p.status === "PUBLISHED")?.platform || "LuxJD",
+        aiPowered: l.aiPowered,
+        platformCount: l.publishing?.totalPublished || 0,
+        pricingStrategy: l.pricing?.pricing_strategy,
+      }))
+    : [];
 
   const filtered = tab === "ALL" ? allListings : allListings.filter((l) => l.status === tab);
   const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";

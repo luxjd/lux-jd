@@ -1,7 +1,30 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { agents } from "@/lib/mock-data";
+
+const AGENT_DEFS = [
+  { id: "de-market", name: "DE Market Agent", icon: "query_stats", description: "German market intelligence — pricing, trends, demand scoring" },
+  { id: "jp-sourcing", name: "JP Sourcing Agent", icon: "location_searching", description: "Japanese auction scanning — candidates, margins, risk" },
+  { id: "orchestrator", name: "Orchestrator", icon: "hub", description: "Purchase decisions — 7-step evaluation framework" },
+  { id: "logistics", name: "Logistics Agent", icon: "local_shipping", description: "Pipeline management — shipping, customs, TUV" },
+  { id: "listing", name: "Listing Agent", icon: "storefront", description: "Multi-platform listings — content, pricing, publication" },
+  { id: "finance", name: "Finance Agent", icon: "account_balance", description: "P&L, FX monitoring, tax optimization" },
+  { id: "concierge", name: "Concierge Agent", icon: "support_agent", description: "Customer interaction — lead scoring, responses" },
+];
 
 export default function AgentsHubPage() {
+  const [statuses, setStatuses] = useState({});
+
+  useEffect(() => {
+    AGENT_DEFS.forEach((a) => {
+      fetch(`/api/agents/${a.id}/status`)
+        .then((r) => r.json())
+        .then((data) => setStatuses((prev) => ({ ...prev, [a.id]: data })))
+        .catch(() => setStatuses((prev) => ({ ...prev, [a.id]: { aiPowered: false } })));
+    });
+  }, []);
+
   return (
     <div className="space-y-6">
       <p className="text-on-surface-variant text-sm">7 specialized AI agents powering the arbitrage pipeline</p>
@@ -28,19 +51,15 @@ export default function AgentsHubPage() {
 
       <h3 className="font-headline font-bold text-lg mb-4">Pipeline Agents</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {agents.map((a) => {
-          const hasPage = ["de-market", "jp-sourcing", "listing", "logistics", "finance", "concierge", "orchestrator"].includes(a.id);
-          const Wrapper = hasPage ? Link : "div";
-          const hrefMap = { "de-market": "/agents/de-market", "jp-sourcing": "/agents/jp-sourcing", "listing": "/agents/listing", "logistics": "/agents/logistics", "finance": "/agents/finance", "concierge": "/agents/concierge", "orchestrator": "/agents/orchestrator" };
-          const wrapperProps = hasPage ? { href: hrefMap[a.id] || "/agents" } : {};
+        {AGENT_DEFS.map((a) => {
+          const status = statuses[a.id];
+          const isOnline = status?.aiPowered;
 
           return (
-            <Wrapper
+            <Link
               key={a.id}
-              {...wrapperProps}
-              className={`bg-surface-container rounded-2xl border border-outline-variant/10 p-6 transition-all ${
-                hasPage ? "hover:border-primary/30 cursor-pointer" : "opacity-70"
-              }`}
+              href={`/agents/${a.id}`}
+              className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6 transition-all hover:border-primary/30 cursor-pointer"
             >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -53,30 +72,22 @@ export default function AgentsHubPage() {
                   </div>
                 </div>
                 <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                  a.status === "ONLINE" ? "bg-emerald-400/15 text-emerald-400" :
-                  a.status === "PROCESSING" ? "bg-amber-400/15 text-amber-400" :
-                  "bg-slate-500/15 text-slate-400"
+                  isOnline ? "bg-emerald-400/15 text-emerald-400" : "bg-slate-500/15 text-slate-400"
                 }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${
-                    a.status === "ONLINE" ? "bg-emerald-400" : a.status === "PROCESSING" ? "bg-amber-400 animate-pulse" : "bg-slate-500"
-                  }`} />
-                  {a.status}
+                  <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-emerald-400" : "bg-slate-500"}`} />
+                  {isOnline ? "LIVE" : "OFFLINE"}
                 </span>
               </div>
 
-              <p className="text-xs text-on-surface-variant mb-3">{a.lastAction}</p>
+              <p className="text-xs text-on-surface-variant mb-3">{a.description}</p>
 
               <div className="flex items-center justify-between pt-3 border-t border-outline-variant/10">
-                <span className="text-[10px] text-on-surface-variant">{a.time}</span>
-                {hasPage ? (
-                  <span className="text-xs text-primary font-bold flex items-center gap-1">
-                    Open <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-on-surface-variant">Coming Soon</span>
-                )}
+                <span className="text-[10px] text-on-surface-variant">{status?.hasData ? "Has scan data" : "No data yet"}</span>
+                <span className="text-xs text-primary font-bold flex items-center gap-1">
+                  Open <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                </span>
               </div>
-            </Wrapper>
+            </Link>
           );
         })}
       </div>

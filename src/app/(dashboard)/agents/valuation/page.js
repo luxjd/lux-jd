@@ -61,9 +61,16 @@ export default function ValuationPage() {
       // Wait for processing animation to finish (~12s)
       await new Promise((resolve) => setTimeout(resolve, 12500));
 
+      if (data.error) {
+        alert(`Valuation failed: ${data.error}`);
+        setState("form");
+        return;
+      }
+
       setReport(data);
       setState("report");
-    } catch {
+    } catch (err) {
+      alert(`Valuation error: ${err.message || "Unknown error"}`);
       setState("form");
     }
   };

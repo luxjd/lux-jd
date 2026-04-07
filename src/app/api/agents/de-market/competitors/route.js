@@ -1,5 +1,4 @@
 import { getLatestCompetitors } from "@/lib/agents/de-market/storage";
-import { competitors as mockCompetitors } from "@/lib/agents/de-market/mock-data";
 
 export async function GET() {
   const real = getLatestCompetitors();
@@ -8,5 +7,10 @@ export async function GET() {
     return Response.json({ ...real, aiPowered: true });
   }
 
-  return Response.json({ competitors: mockCompetitors, count: mockCompetitors.length, aiPowered: false });
+  return Response.json({
+    competitors: [],
+    count: 0,
+    aiPowered: false,
+    message: "No competitor data available. Run a market scan first.",
+  });
 }

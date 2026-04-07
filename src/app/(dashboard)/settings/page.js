@@ -1,11 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import { agents } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+
+const AGENT_DEFS = [
+  { id: "de-market", name: "DE Market Agent", icon: "query_stats" },
+  { id: "jp-sourcing", name: "JP Sourcing Agent", icon: "location_searching" },
+  { id: "orchestrator", name: "Orchestrator", icon: "hub" },
+  { id: "logistics", name: "Logistics Agent", icon: "local_shipping" },
+  { id: "listing", name: "Listing Agent", icon: "storefront" },
+  { id: "finance", name: "Finance Agent", icon: "account_balance" },
+  { id: "concierge", name: "Concierge Agent", icon: "support_agent" },
+];
 
 export default function SettingsPage() {
+  const [agents, setAgents] = useState(AGENT_DEFS);
   const [agentStates, setAgentStates] = useState(
-    agents.reduce((acc, a) => ({ ...acc, [a.id]: true }), {})
+    AGENT_DEFS.reduce((acc, a) => ({ ...acc, [a.id]: true }), {})
   );
 
   const toggleAgent = (id) => {

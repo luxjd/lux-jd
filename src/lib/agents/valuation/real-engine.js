@@ -112,15 +112,18 @@ export async function generateRealValuation(input) {
   ]);
 
   // ─── Step 5: Landed cost ───
-  const estimatedSalePrice = marketResult?.estimated_sale_price_eur || marketResult?.price_statistics?.median || 150000;
+  if (!marketResult?.estimated_sale_price_eur && !marketResult?.price_statistics?.median) {
+    throw new Error("Market estimation failed: no sale price estimate available. Scrapers may have returned no results.");
+  }
+  const estimatedSalePrice = marketResult.estimated_sale_price_eur || marketResult.price_statistics.median;
   const hasModifications = !!(photoResult?.visible_modifications?.length || sheetResult?.modification_notes?.length);
   const landedCost = calculateLandedCost(input.askingPriceJpy, fxResult.rate, estimatedSalePrice, input.make, input.driveSide, hasModifications);
 
   // ─── Step 6: Margin ───
   const grossMargin = estimatedSalePrice - landedCost.totalLandedCostEur;
   const grossMarginPct = Number(((grossMargin / estimatedSalePrice) * 100).toFixed(1));
-  const p25 = marketResult?.price_statistics?.p25 || Math.round(estimatedSalePrice * 0.90);
-  const p75 = marketResult?.price_statistics?.p75 || Math.round(estimatedSalePrice * 1.12);
+  const p25 = marketResult?.price_statistics?.p25 || estimatedSalePrice;
+  const p75 = marketResult?.price_statistics?.p75 || estimatedSalePrice;
 
   // Condition scores (from photos or auction sheet or defaults)
   const extScore = photoResult?.exterior_score || (input.auctionGrade ? input.auctionGrade * 1.8 : 7.0);
@@ -216,7 +219,7 @@ export async function generateRealValuation(input) {
 
     marketAnalysis: {
       totalComparables: marketResult?.comparable_count || 0,
-      priceStatistics: marketResult?.price_statistics || { median: estimatedSalePrice, mean: estimatedSalePrice, p25, p75, min: Math.round(estimatedSalePrice * 0.82), max: Math.round(estimatedSalePrice * 1.25) },
+      priceStatistics: marketResult?.price_statistics || { median: estimatedSalePrice, mean: estimatedSalePrice, p25, p75, min: p25, max: p75 },
       estimatedSalePrice,
       priceAdjustments: marketResult?.price_adjustments || [],
       searchCriteria: {
@@ -230,7 +233,7 @@ export async function generateRealValuation(input) {
       marketLiquidity: marketResult?.market_liquidity || "MEDIUM",
       trendDirection: marketResult?.trend_direction || "STABLE",
       dataFreshness: new Date().toISOString(),
-      dataSource: isAIAvailable() ? "Claude AI market analysis" : "Mock estimation",
+      dataSource: marketResult?.data_source || "mobile.de + autoscout24 + Claude AI",
     },
 
     landedCost,

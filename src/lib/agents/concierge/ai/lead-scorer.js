@@ -46,18 +46,19 @@ const TYPE_WEIGHTS = { COLLECTOR: 40, SERIOUS: 45, TRADE: 30, BROWSER: 10, COMPE
 export async function scoreAndClassify(inquiry, vehicleName, source = "platform") {
   let classification = null;
 
-  if (isAIAvailable()) {
-    classification = await callClaude({
-      prompt: CLASSIFY_PROMPT(inquiry, vehicleName, source),
-      system: SYSTEM_PROMPT,
-      model: process.env.OPENROUTER_MODEL_FAST, // Haiku for speed
-      jsonMode: true,
-    });
+  if (!isAIAvailable()) {
+    throw new Error("AI is required for lead scoring. Configure OPENROUTER_API_KEY.");
   }
 
-  // Fallback classification if AI unavailable
+  classification = await callClaude({
+    prompt: CLASSIFY_PROMPT(inquiry, vehicleName, source),
+    system: SYSTEM_PROMPT,
+    model: process.env.OPENROUTER_MODEL_FAST,
+    jsonMode: true,
+  });
+
   if (!classification) {
-    classification = classifyFallback(inquiry);
+    throw new Error("Lead classification failed — no response from AI.");
   }
 
   // Calculate score
@@ -100,21 +101,3 @@ export async function scoreAndClassify(inquiry, vehicleName, source = "platform"
   };
 }
 
-function classifyFallback(inquiry) {
-  const lower = inquiry.toLowerCase();
-  let type = "BROWSER";
-  if (lower.includes("collection") || lower.includes("provenance") || lower.includes("matching numbers")) type = "COLLECTOR";
-  else if (lower.includes("viewing") || lower.includes("besichtigung") || lower.includes("payment") || lower.includes("delivery")) type = "SERIOUS";
-  else if (lower.includes("best price") || lower.includes("netto") || lower.includes("trade")) type = "TRADE";
-  else if (lower.includes("sourcing") || lower.includes("import") || lower.includes("margin")) type = "COMPETITOR";
-
-  return {
-    buyer_type: type,
-    confidence: 0.5,
-    language_detected: /[äöüß]/.test(inquiry) ? "DE" : "EN",
-    urgency_signals: [],
-    specificity_signals: [],
-    red_flags: [],
-    reasoning: "Keyword-based fallback classification",
-  };
-}

@@ -1,38 +1,30 @@
 import Link from "next/link";
 import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
-import { vehicles as mockVehicles, PIPELINE_STAGES } from "@/lib/mock-data";
+import { STAGES as PIPELINE_STAGES } from "@/lib/agents/logistics/pipeline";
 
 export default function PipelinePage() {
   const realData = getPipelineVehicles();
-  const hasRealData = realData?.vehicles?.length > 0;
 
-  // Use real data if available, merge with mock
-  const allVehicles = hasRealData
-    ? [
-        ...realData.vehicles.map((v) => ({
-          id: v.id, make: v.make, model: v.model, year: v.year,
-          currentStage: v.currentStage,
-          daysInStage: Math.round((Date.now() - new Date(v.stageEnteredAt).getTime()) / (1000 * 60 * 60 * 24)),
-          landedCostEur: v.landedCostEur || v.landedCost?.totalLandedCostEur || 0,
-          margin: v.margin?.grossMarginEur || 0,
-          mileage: v.mileageKm || 0,
-          color: v.exteriorColor,
-          isReal: true,
-        })),
-        ...mockVehicles,
-      ]
-    : mockVehicles;
+  const allVehicles = (realData?.vehicles || []).map((v) => ({
+    id: v.id, make: v.make, model: v.model, year: v.year,
+    currentStage: v.currentStage,
+    daysInStage: Math.round((Date.now() - new Date(v.stageEnteredAt).getTime()) / (1000 * 60 * 60 * 24)),
+    landedCostEur: v.landedCostEur || v.landedCost?.totalLandedCostEur || 0,
+    margin: v.margin?.grossMarginEur || 0,
+    mileage: v.mileageKm || 0,
+    color: v.exteriorColor,
+  }));
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <p className="text-on-surface-variant text-sm">{allVehicles.length} vehicles in pipeline {hasRealData && "(includes AI-tracked)"}</p>
+          <p className="text-on-surface-variant text-sm">{allVehicles.length} vehicles in pipeline {allVehicles.length > 0 && "(live data)"}</p>
         </div>
         <div className="flex items-center gap-3">
-          {hasRealData && (
+          {allVehicles.length > 0 && (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 text-xs font-bold">
-              <span className="material-symbols-outlined text-sm">auto_awesome</span> {realData.vehicles.length} AI-tracked
+              <span className="material-symbols-outlined text-sm">auto_awesome</span> {allVehicles.length} vehicles
             </span>
           )}
           <Link href="/agents/logistics" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 text-xs font-bold hover:bg-cyan-400/20 transition-all">
@@ -60,10 +52,7 @@ export default function PipelinePage() {
 
                 <div className="space-y-2">
                   {stageVehicles.map((v) => (
-                    <div key={v.id} className={`bg-surface-container rounded-xl border ${v.isReal ? "border-primary/30" : "border-outline-variant/10"} p-3 hover:border-primary/50 transition-all cursor-pointer`}>
-                      {v.isReal && (
-                        <span className="text-[8px] text-primary font-bold uppercase mb-1 block">AI TRACKED</span>
-                      )}
+                    <div key={v.id} className="bg-surface-container rounded-xl border border-outline-variant/10 p-3 hover:border-primary/50 transition-all cursor-pointer">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-bold text-on-surface">{v.make}</span>
                         <span className="text-[10px] text-on-surface-variant">{v.daysInStage}d</span>

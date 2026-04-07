@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { getLatestOpportunities } from "@/lib/agents/jp-sourcing/storage";
-import { opportunities as mockOpportunities } from "@/lib/mock-data";
 
 const REC_STYLES = {
   STRONG_BUY: "bg-emerald-400/15 text-emerald-400",
@@ -14,7 +13,7 @@ export default function OpportunitiesPage() {
   const realData = getLatestOpportunities();
   const hasRealData = realData?.opportunities?.length > 0;
 
-  // Use real data if available, otherwise mock
+  // Use real data from JP Sourcing Agent
   const opportunities = hasRealData
     ? realData.opportunities.filter((o) => o.recommendation !== "PASS").map((o) => ({
         id: o.id,
@@ -40,7 +39,7 @@ export default function OpportunitiesPage() {
         conditionNotes: o.vehicle?.conditionNotes,
         thesis: o.deepAnalysis?.deep_assessment?.investment_thesis,
       }))
-    : mockOpportunities;
+    : [];
 
   const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";
 
@@ -48,7 +47,7 @@ export default function OpportunitiesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <p className="text-on-surface-variant text-sm">{opportunities.length} opportunities {hasRealData ? "from JP Sourcing Agent (AI)" : "(mock data)"}</p>
+          <p className="text-on-surface-variant text-sm">{opportunities.length} opportunities {hasRealData ? "from JP Sourcing Agent" : "— run a scan to find opportunities"}</p>
           {realData?.scannedAt && <p className="text-[10px] text-on-surface-variant">Last scan: {new Date(realData.scannedAt).toLocaleString()}</p>}
         </div>
         <div className="flex items-center gap-3">

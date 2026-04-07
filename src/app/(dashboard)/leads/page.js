@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { leads as mockLeads } from "@/lib/mock-data";
 
 const TABS = ["ALL", "NEW", "QUALIFIED", "ESCALATED", "CONTACTED", "CONVERTED", "LOST"];
 const STATUS_COLORS = {
@@ -28,17 +27,14 @@ export default function LeadsPage() {
   const hasRealData = realLeads && realLeads.length > 0;
 
   const allLeads = hasRealData
-    ? [
-        ...realLeads.map((l) => ({
-          id: l.id, name: l.name, email: l.email, vehicle: l.vehicle,
-          source: l.source, status: l.status, date: l.createdAt?.split("T")[0],
-          notes: l.escalationReason || `${l.buyerType} · Score ${l.score}/100`,
-          score: l.score, buyerType: l.buyerType, isReal: true, escalated: l.escalated,
-          offerPrice: l.offerPrice,
-        })),
-        ...mockLeads,
-      ]
-    : mockLeads;
+    ? realLeads.map((l) => ({
+        id: l.id, name: l.name, email: l.email, vehicle: l.vehicle,
+        source: l.source, status: l.status, date: l.createdAt?.split("T")[0],
+        notes: l.escalationReason || `${l.buyerType} · Score ${l.score}/100`,
+        score: l.score, buyerType: l.buyerType, escalated: l.escalated,
+        offerPrice: l.offerPrice,
+      }))
+    : [];
 
   const filtered = tab === "ALL" ? allLeads : allLeads.filter((l) => l.status === tab);
 
