@@ -5,12 +5,16 @@ import AuthModals from "../components/AuthModals";
 import ScrollReveal from "../components/ScrollReveal";
 import FAQ from "../components/FAQ";
 import HeroDrift, { HeroCarousel, TypingText } from "../components/HeroDrift";
+import ScrollCar from "../components/ScrollCar";
 
 export default function Home() {
   return (
     <AuthModals>
       {({ openLogin, openSignup }) => (
         <>
+          {/* Scroll-linked car animation — fixed bottom */}
+          <ScrollCar />
+
           {/* Top Navigation Bar */}
           <nav className="anim-nav fixed top-0 w-full z-50 bg-[#0a0a0a]/80 backdrop-blur-xl shadow-[0_0_20px_rgba(248,113,113,0.1)] flex justify-between items-center px-8 py-4 max-w-full font-headline tracking-tighter uppercase">
             <div className="text-xl font-bold tracking-widest text-slate-100">
