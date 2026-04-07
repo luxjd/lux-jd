@@ -7,7 +7,7 @@ import { getEscalations } from "@/lib/agents/concierge/storage";
 import { getFxAlerts } from "@/lib/agents/finance/storage";
 import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
 import { getAllListings } from "@/lib/agents/listing/storage";
-import { STAGES, STAGE_DURATIONS } from "@/lib/agents/logistics/pipeline";
+import { STAGE_KEYS as STAGES, STAGE_DURATIONS } from "@/lib/agents/logistics/pipeline";
 
 export async function GET() {
   const notifications = [];

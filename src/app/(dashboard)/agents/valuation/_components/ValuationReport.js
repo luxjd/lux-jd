@@ -6,7 +6,7 @@ const RISK_COLORS = { LOW: "text-emerald-400 bg-emerald-400/10", MEDIUM: "text-a
 const VERDICT_STYLES = { BUY: "bg-emerald-400/15 text-emerald-400 border-emerald-400/30", REVIEW: "bg-amber-400/15 text-amber-400 border-amber-400/30", PASS: "bg-slate-400/10 text-slate-400 border-slate-400/20" };
 const VERDICT_ICONS = { BUY: "check_circle", REVIEW: "help", PASS: "block" };
 
-export default function ValuationReport({ report, onNewValuation, onRerun, onSendToPipeline }) {
+export default function ValuationReport({ report, onNewValuation, onRerun, onSendToPipeline, pipelineSent }) {
   const r = report;
   const v = r.recommendation || { verdict: "REVIEW", verdictReasoning: "AI recommendation unavailable — review manually.", keyStrengths: [], keyConcerns: ["AI analysis incomplete"], maxBidJpy: null };
   const m = r.marginAnalysis || {};
@@ -338,12 +338,19 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
 
       {/* Actions */}
       <div className="flex flex-col sm:flex-row gap-4">
-        {v.verdict !== "PASS" && (
+        {v.verdict !== "PASS" && !pipelineSent && (
           <button onClick={onSendToPipeline}
             className="flex-1 py-4 bg-primary text-on-primary font-headline font-bold text-lg rounded-xl hover:shadow-[0_0_30px_rgba(248,113,113,0.5)] transition-all flex items-center justify-center gap-2">
             <span className="material-symbols-outlined">send</span>
             Send to Pipeline
           </button>
+        )}
+        {pipelineSent && (
+          <a href="/pipeline"
+            className="flex-1 py-4 bg-emerald-400/15 text-emerald-400 border-2 border-emerald-400/30 font-headline font-bold text-lg rounded-xl hover:bg-emerald-400/25 transition-all flex items-center justify-center gap-2">
+            <span className="material-symbols-outlined">check_circle</span>
+            Sent — View Pipeline
+          </a>
         )}
         <button onClick={onRerun}
           className="flex-1 py-4 bg-secondary/15 text-secondary border-2 border-secondary/30 font-headline font-bold text-lg rounded-xl hover:bg-secondary/25 transition-all flex items-center justify-center gap-2">

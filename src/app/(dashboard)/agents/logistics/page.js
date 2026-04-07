@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { getPipelineVehicles, getPipelineEvents, getAgentStatus, getShipments, getTuvAppointments } from "@/lib/agents/logistics/storage";
-import { STAGES } from "@/lib/agents/logistics/pipeline";
-import { STAGES as PIPELINE_STAGES } from "@/lib/agents/logistics/pipeline";
+import { STAGE_KEYS as STAGES, STAGES as PIPELINE_STAGES } from "@/lib/agents/logistics/pipeline";
 import AdvanceStageButton from "./_components/AdvanceStageButton";
 
 export default function LogisticsAgentPage() {

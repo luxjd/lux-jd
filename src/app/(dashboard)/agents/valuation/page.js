@@ -78,6 +78,7 @@ export default function ValuationPage() {
   const handleNewValuation = () => {
     setReport(null);
     setState("form");
+    setPipelineSent(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -88,8 +89,21 @@ export default function ValuationPage() {
     }
   };
 
-  const handleSendToPipeline = () => {
-    alert(`Vehicle ${report.vehicleSummary.make} ${report.vehicleSummary.model} sent to pipeline as SOURCED.\n\nIn production, this would create a vehicle record and notify the Orchestrator.`);
+  const [pipelineSent, setPipelineSent] = useState(false);
+
+  const handleSendToPipeline = async () => {
+    try {
+      const res = await fetch("/api/pipeline/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ report }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setPipelineSent(true);
+    } catch (err) {
+      alert(`Failed to send to pipeline: ${err.message}`);
+    }
   };
 
   return (
@@ -133,6 +147,7 @@ export default function ValuationPage() {
           onNewValuation={handleNewValuation}
           onRerun={handleRerun}
           onSendToPipeline={handleSendToPipeline}
+          pipelineSent={pipelineSent}
         />
       )}
     </div>

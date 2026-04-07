@@ -8,9 +8,22 @@
  * 4. Photo documentation required at specific stages
  */
 
-export const STAGES = [
+export const STAGE_KEYS = [
   "SOURCED", "PURCHASED", "JP_TRANSPORT", "AT_PORT_JP", "IN_TRANSIT",
   "AT_PORT_DE", "CUSTOMS", "WORKSHOP", "TUV", "READY_FOR_SALE",
+];
+
+export const STAGES = [
+  { key: "SOURCED", label: "Sourced", icon: "search", color: "text-blue-400", bg: "bg-blue-400/10" },
+  { key: "PURCHASED", label: "Purchased", icon: "gavel", color: "text-violet-400", bg: "bg-violet-400/10" },
+  { key: "JP_TRANSPORT", label: "JP Transport", icon: "local_shipping", color: "text-amber-400", bg: "bg-amber-400/10" },
+  { key: "AT_PORT_JP", label: "Port JP", icon: "anchor", color: "text-orange-400", bg: "bg-orange-400/10" },
+  { key: "IN_TRANSIT", label: "In Transit", icon: "sailing", color: "text-cyan-400", bg: "bg-cyan-400/10" },
+  { key: "AT_PORT_DE", label: "Port DE", icon: "anchor", color: "text-teal-400", bg: "bg-teal-400/10" },
+  { key: "CUSTOMS", label: "Customs", icon: "shield", color: "text-rose-400", bg: "bg-rose-400/10" },
+  { key: "WORKSHOP", label: "Workshop", icon: "build", color: "text-yellow-400", bg: "bg-yellow-400/10" },
+  { key: "TUV", label: "TUV", icon: "verified", color: "text-lime-400", bg: "bg-lime-400/10" },
+  { key: "READY_FOR_SALE", label: "Ready", icon: "storefront", color: "text-emerald-400", bg: "bg-emerald-400/10" },
 ];
 
 // Valid forward transitions (current → allowed next stages)
@@ -81,13 +94,13 @@ export function validateTransition(fromStage, toStage, vehicle = {}, override = 
   const errors = [];
 
   // Check stage exists
-  if (!STAGES.includes(fromStage)) errors.push(`Invalid current stage: ${fromStage}`);
-  if (!STAGES.includes(toStage)) errors.push(`Invalid target stage: ${toStage}`);
+  if (!STAGE_KEYS.includes(fromStage)) errors.push(`Invalid current stage: ${fromStage}`);
+  if (!STAGE_KEYS.includes(toStage)) errors.push(`Invalid target stage: ${toStage}`);
   if (errors.length > 0) return { valid: false, errors };
 
   // Check forward-only (no reversal without override)
-  const fromIdx = STAGES.indexOf(fromStage);
-  const toIdx = STAGES.indexOf(toStage);
+  const fromIdx = STAGE_KEYS.indexOf(fromStage);
+  const toIdx = STAGE_KEYS.indexOf(toStage);
 
   if (toIdx < fromIdx && !override) {
     errors.push(`Cannot reverse from ${fromStage} to ${toStage} without Orchestrator override`);
@@ -120,17 +133,17 @@ export function isPhotoRequired(stage) {
  * @returns {{ stage: string, estimatedDate: string, daysFromNow: number }[]}
  */
 export function calculateETAs(currentStage, currentStageEnteredAt = new Date()) {
-  const currentIdx = STAGES.indexOf(currentStage);
+  const currentIdx = STAGE_KEYS.indexOf(currentStage);
   if (currentIdx < 0) return [];
 
   const etas = [];
   let cumulativeDays = 0;
   const enteredAt = new Date(currentStageEnteredAt);
 
-  for (let i = currentIdx; i < STAGES.length; i++) {
-    const stage = STAGES[i];
+  for (let i = currentIdx; i < STAGE_KEYS.length; i++) {
+    const stage = STAGE_KEYS[i];
     if (i > currentIdx) {
-      cumulativeDays += STAGE_DURATIONS[STAGES[i - 1]] || 0;
+      cumulativeDays += STAGE_DURATIONS[STAGE_KEYS[i - 1]] || 0;
     }
 
     const etaDate = new Date(enteredAt);
@@ -152,12 +165,12 @@ export function calculateETAs(currentStage, currentStageEnteredAt = new Date()) 
  * Calculate total pipeline duration estimate (current stage → READY_FOR_SALE).
  */
 export function estimateTotalDaysRemaining(currentStage) {
-  const currentIdx = STAGES.indexOf(currentStage);
+  const currentIdx = STAGE_KEYS.indexOf(currentStage);
   if (currentIdx < 0) return 0;
 
   let total = 0;
-  for (let i = currentIdx; i < STAGES.length - 1; i++) {
-    total += STAGE_DURATIONS[STAGES[i]] || 0;
+  for (let i = currentIdx; i < STAGE_KEYS.length - 1; i++) {
+    total += STAGE_DURATIONS[STAGE_KEYS[i]] || 0;
   }
   return total;
 }
