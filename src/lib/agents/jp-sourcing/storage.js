@@ -76,3 +76,13 @@ export function updateAgentStatus(updates) {
   const current = getAgentStatus();
   writeJson("agent-status.json", { ...current, ...updates, updatedAt: new Date().toISOString() });
 }
+
+// ─── Scan Progress ───
+
+export function getScanProgress() {
+  return readJson("scan-progress.json") || null;
+}
+
+export function saveScanProgress(data) {
+  writeJson("scan-progress.json", data);
+}

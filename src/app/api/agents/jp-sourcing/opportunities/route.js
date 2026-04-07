@@ -1,4 +1,4 @@
-import { getLatestOpportunities } from "@/lib/agents/jp-sourcing/storage";
+import { getLatestOpportunities, getScanHistory } from "@/lib/agents/jp-sourcing/storage";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -33,6 +33,7 @@ export async function GET(request) {
     count: filtered.length,
     totalCount: data.count,
     scannedAt: data.scannedAt,
+    scanHistory: (getScanHistory()?.scans || []).slice(-5),
     aiPowered: true,
   });
 }

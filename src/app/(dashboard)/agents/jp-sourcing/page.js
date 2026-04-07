@@ -1,5 +1,7 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { getLatestOpportunities, getAgentStatus, getScanHistory } from "@/lib/agents/jp-sourcing/storage";
 import ScanButton from "./_components/ScanButton";
 
 const REC_STYLES = {
@@ -9,20 +11,40 @@ const REC_STYLES = {
   PASS: "bg-slate-400/10 text-slate-400",
 };
 const RISK_STYLES = { LOW: "text-emerald-400", MEDIUM: "text-amber-400", HIGH: "text-red-400" };
+const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";
 
 export default function JpSourcingPage() {
-  const status = getAgentStatus();
-  const data = getLatestOpportunities();
-  const history = getScanHistory();
-  const opportunities = data?.opportunities || [];
-  const hasData = opportunities.length > 0;
+  const [status, setStatus] = useState(null);
+  const [opportunities, setOpportunities] = useState([]);
+  const [scanHistory, setScanHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
 
+  const fetchData = useCallback(async () => {
+    try {
+      const [statusRes, oppsRes] = await Promise.all([
+        fetch("/api/agents/jp-sourcing/status").then((r) => r.json()).catch(() => null),
+        fetch("/api/agents/jp-sourcing/opportunities").then((r) => r.json()).catch(() => ({})),
+      ]);
+      setStatus(statusRes);
+      setOpportunities(oppsRes.opportunities || []);
+      setScanHistory(oppsRes.scanHistory || []);
+      setLoading(false);
+    } catch {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const hasData = opportunities.length > 0;
   const strongBuys = opportunities.filter((o) => (o.refinedRecommendation || o.recommendation) === "STRONG_BUY");
   const buys = opportunities.filter((o) => (o.refinedRecommendation || o.recommendation) === "BUY");
   const reviews = opportunities.filter((o) => (o.refinedRecommendation || o.recommendation) === "REVIEW");
   const passes = opportunities.filter((o) => (o.refinedRecommendation || o.recommendation) === "PASS");
 
-  const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";
+  if (loading) {
+    return <div className="flex items-center justify-center h-64"><span className="material-symbols-outlined text-primary text-4xl animate-spin">progress_activity</span></div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -41,18 +63,18 @@ export default function JpSourcingPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="font-headline text-xl font-bold">JP Sourcing Agent</h2>
                 <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-[10px] text-on-surface-variant font-mono">jp_sourcing</span>
-                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${status.status === "ONLINE" ? "bg-emerald-400/15 text-emerald-400" : status.status === "SCANNING" ? "bg-amber-400/15 text-amber-400" : "bg-slate-400/10 text-slate-400"}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${status.status === "ONLINE" ? "bg-emerald-400" : status.status === "SCANNING" ? "bg-amber-400 animate-pulse" : "bg-slate-400"}`} />
-                  {status.status || "IDLE"}
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${status?.status === "ONLINE" ? "bg-emerald-400/15 text-emerald-400" : status?.status === "SCANNING" ? "bg-amber-400/15 text-amber-400" : "bg-slate-400/10 text-slate-400"}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${status?.status === "ONLINE" ? "bg-emerald-400" : status?.status === "SCANNING" ? "bg-amber-400 animate-pulse" : "bg-slate-400"}`} />
+                  {status?.status || "IDLE"}
                 </span>
               </div>
               <p className="text-xs text-on-surface-variant mt-0.5">
                 Scans Japanese auctions → evaluates candidates → recommends BUY/REVIEW/PASS
-                {status.lastScanTimestamp && ` · Last scan: ${new Date(status.lastScanTimestamp).toLocaleString()}`}
+                {status?.lastScanTimestamp && ` · Last scan: ${new Date(status.lastScanTimestamp).toLocaleString()}`}
               </p>
             </div>
           </div>
-          <ScanButton />
+          <ScanButton onScanComplete={fetchData} />
         </div>
 
         {/* Metrics */}
@@ -95,7 +117,6 @@ export default function JpSourcingPage() {
             return (
               <div key={opp.id} className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-5 hover:border-primary/30 transition-all">
                 <div className="flex flex-col lg:flex-row lg:items-start gap-4">
-                  {/* Vehicle info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-2">
                       <h4 className="font-headline text-base sm:text-lg font-bold">{opp.vehicle?.make} {opp.vehicle?.model}</h4>
@@ -103,12 +124,18 @@ export default function JpSourcingPage() {
                       <span className={`text-[10px] font-bold uppercase ${RISK_STYLES[opp.risk?.compositeLevel]}`}>{opp.risk?.compositeLevel} RISK ({opp.risk?.compositeScore})</span>
                     </div>
                     <p className="text-sm text-on-surface-variant">
-                      {opp.vehicle?.year} · {opp.vehicle?.mileageKm?.toLocaleString()} km · {opp.vehicle?.driveSide} · {opp.vehicle?.exteriorColor} · Grade {opp.vehicle?.auctionGrade}
+                      {opp.vehicle?.year} · {opp.vehicle?.mileageKm?.toLocaleString()} km · {opp.vehicle?.driveSide} · {opp.vehicle?.exteriorColor || "—"}
+                      {opp.vehicle?.auctionGrade && ` · Grade ${opp.vehicle.auctionGrade}`}
                     </p>
                     <p className="text-xs text-on-surface-variant mt-1">
-                      {opp.source?.auctionHouse} · Lot {opp.source?.lotNumber} · {opp.vehicle?.serviceHistory?.replace("_", " ")}
+                      {opp.source?.auctionHouse}
+                      {opp.source?.lotNumber && ` · Lot ${opp.source.lotNumber}`}
+                      {opp.vehicle?.serviceHistory && ` · ${opp.vehicle.serviceHistory.replace("_", " ")}`}
                       {opp.vehicle?.accidentHistory && <span className="text-red-400 ml-1">· ACCIDENT</span>}
                     </p>
+                    {opp.vehicle?.listingUrl && (
+                      <a href={opp.vehicle.listingUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline mt-1 inline-block">View listing</a>
+                    )}
                     {opp.vehicle?.conditionNotes && (
                       <p className="text-xs text-on-surface-variant mt-1 italic">&quot;{opp.vehicle.conditionNotes}&quot;</p>
                     )}
@@ -119,7 +146,6 @@ export default function JpSourcingPage() {
                     )}
                   </div>
 
-                  {/* Financials */}
                   <div className="flex flex-wrap items-center gap-4 sm:gap-6 shrink-0">
                     <div className="text-center">
                       <p className="text-[10px] uppercase text-on-surface-variant tracking-wider">JP Price</p>
@@ -152,7 +178,6 @@ export default function JpSourcingPage() {
                   </div>
                 </div>
 
-                {/* Max bid + actions */}
                 {opp.maxBidJpy && (
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mt-3 pt-3 border-t border-outline-variant/10 gap-2">
                     <p className="text-xs text-on-surface-variant">
@@ -173,7 +198,6 @@ export default function JpSourcingPage() {
             );
           })}
 
-          {/* Passed vehicles (collapsed) */}
           {passes.length > 0 && (
             <details className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4">
               <summary className="cursor-pointer text-sm text-on-surface-variant flex items-center gap-2">
@@ -184,7 +208,8 @@ export default function JpSourcingPage() {
                 {passes.map((opp) => (
                   <div key={opp.id} className="flex items-center justify-between p-2 rounded-lg bg-surface-container-high/30 text-sm">
                     <span className="text-on-surface-variant">
-                      {opp.vehicle?.make} {opp.vehicle?.model} {opp.vehicle?.year} · {opp.vehicle?.driveSide} · Grade {opp.vehicle?.auctionGrade}
+                      {opp.vehicle?.make} {opp.vehicle?.model} {opp.vehicle?.year} · {opp.vehicle?.driveSide}
+                      {opp.vehicle?.auctionGrade && ` · Grade ${opp.vehicle.auctionGrade}`}
                     </span>
                     <span className="text-xs text-slate-400">{opp.passReason || `Margin ${fmt(opp.margin?.grossMarginEur)} (${opp.margin?.grossMarginPct}%)`}</span>
                   </div>
@@ -196,11 +221,11 @@ export default function JpSourcingPage() {
       )}
 
       {/* Scan History */}
-      {history.scans?.length > 0 && (
+      {scanHistory.length > 0 && (
         <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-6">
           <h3 className="font-headline font-bold text-lg mb-4">Scan History</h3>
           <div className="space-y-2">
-            {history.scans.slice(-5).reverse().map((s, i) => (
+            {scanHistory.slice(-5).reverse().map((s, i) => (
               <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-surface-container-high/30 text-sm">
                 <span className="text-on-surface-variant">{new Date(s.timestamp).toLocaleString()}</span>
                 <div className="flex gap-3 text-xs">
