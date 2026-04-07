@@ -35,10 +35,48 @@ export default function ValuationForm({ onSubmit, loading }) {
   });
   const [photos, setPhotos] = useState([]);
   const [auctionSheet, setAuctionSheet] = useState(null);
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState("");
   const fileRef = useRef(null);
 
   const update = (key, val) => setForm((f) => ({ ...f, [key]: val }));
   const updateNum = (key, val) => setForm((f) => ({ ...f, [key]: val === "" ? "" : parseInt(val) || f[key] }));
+
+  const handleAuctionSheetUpload = async (file) => {
+    setAuctionSheet(file);
+    if (!file) return;
+    setParsing(true);
+    setParseError("");
+    try {
+      const fd = new FormData();
+      fd.append("auctionSheet", file);
+      const res = await fetch("/api/agents/valuation/parse-sheet", { method: "POST", body: fd });
+      if (!res.ok) throw new Error("Failed to parse");
+      const { fields } = await res.json();
+      if (!fields) throw new Error("No data extracted");
+      setForm((prev) => {
+        const next = { ...prev };
+        if (fields.make && MAKES.includes(fields.make)) next.make = fields.make;
+        if (fields.model) next.model = fields.model;
+        if (fields.year) next.year = fields.year;
+        if (fields.mileageKm) next.mileageKm = fields.mileageKm;
+        if (fields.driveSide) next.driveSide = fields.driveSide;
+        if (fields.auctionGrade != null) next.auctionGrade = String(fields.auctionGrade);
+        if (fields.transmission) next.transmission = fields.transmission;
+        if (fields.fuelType) next.fuelType = fields.fuelType;
+        if (fields.exteriorColor) next.exteriorColor = fields.exteriorColor;
+        if (fields.interiorColor) next.interiorColor = fields.interiorColor;
+        if (fields.accidentHistory != null) next.accidentHistory = fields.accidentHistory;
+        if (fields.askingPriceJpy) next.askingPriceJpy = fields.askingPriceJpy;
+        if (fields.specificationNotes) next.specificationNotes = fields.specificationNotes;
+        return next;
+      });
+    } catch {
+      setParseError("Could not auto-fill from auction sheet. Please fill fields manually.");
+    } finally {
+      setParsing(false);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -168,12 +206,16 @@ export default function ValuationForm({ onSubmit, loading }) {
           </div>
           <div>
             <label className="block text-xs uppercase tracking-widest text-on-surface-variant mb-2">Auction Sheet</label>
-            <input type="file" accept="image/*,.pdf" onChange={(e) => setAuctionSheet(e.target.files?.[0] || null)} className="hidden" id="auction-sheet" />
+            <input type="file" accept="image/*,.pdf" onChange={(e) => handleAuctionSheetUpload(e.target.files?.[0] || null)} className="hidden" id="auction-sheet" />
             <label htmlFor="auction-sheet"
-              className="w-full py-6 sm:py-8 rounded-xl border-2 border-dashed border-outline-variant/30 text-on-surface-variant hover:border-secondary/50 hover:text-secondary transition-all flex flex-col items-center gap-2 cursor-pointer">
-              <span className="material-symbols-outlined text-3xl">description</span>
-              <span className="text-sm">{auctionSheet ? auctionSheet.name : "Click to upload auction sheet"}</span>
+              className={`w-full py-6 sm:py-8 rounded-xl border-2 border-dashed transition-all flex flex-col items-center gap-2 cursor-pointer ${parsing ? "border-secondary/50 text-secondary animate-pulse" : "border-outline-variant/30 text-on-surface-variant hover:border-secondary/50 hover:text-secondary"}`}>
+              <span className="material-symbols-outlined text-3xl">{parsing ? "hourglass_top" : "description"}</span>
+              <span className="text-sm">
+                {parsing ? "Scanning auction sheet..." : auctionSheet ? auctionSheet.name : "Click to upload auction sheet"}
+              </span>
+              {parsing && <span className="text-xs text-on-surface-variant">Auto-filling form fields via AI</span>}
             </label>
+            {parseError && <p className="text-xs text-red-400 mt-1">{parseError}</p>}
           </div>
         </div>
       </div>

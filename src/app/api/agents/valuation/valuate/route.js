@@ -87,9 +87,10 @@ export async function POST(request) {
     return Response.json(report);
   } catch (error) {
     console.error("Valuation failed:", error.message);
+    const status = error.code === "NO_MARKET_DATA" ? 404 : 500;
     return Response.json(
-      { error: `Valuation failed: ${error.message}` },
-      { status: 500 }
+      { error: error.message, code: error.code || "VALUATION_ERROR" },
+      { status }
     );
   }
 }

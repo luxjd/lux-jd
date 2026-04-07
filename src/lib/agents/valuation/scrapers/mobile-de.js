@@ -1,11 +1,9 @@
 /**
- * mobile.de scraper — uses ScrapingBee stealth proxy (only service that bypasses their Cloudflare).
- * Costs 75 credits per request.
+ * mobile.de scraper — uses Apify web-scraper actor (Puppeteer-based) to bypass Cloudflare.
  */
 
 import * as cheerio from "cheerio";
-
-const SCRAPINGBEE_URL = "https://app.scrapingbee.com/api/v1/";
+import { runActorAndGetItems } from "./apify-client";
 
 const MAKE_IDS = {
   "Ferrari": "8600", "Mercedes-AMG": "17200", "Porsche": "20100",
@@ -14,16 +12,11 @@ const MAKE_IDS = {
   "BMW": "3500", "Range Rover": "13200",
 };
 
-function getApiKey() {
-  return process.env.SCRAPINGBEE_API_KEY || "";
-}
-
 export async function scrapeMobileDe({ make, model, yearFrom, yearTo, maxMileage }) {
   const listings = [];
-  const apiKey = getApiKey();
 
-  if (!apiKey) {
-    console.warn("mobile.de: no SCRAPINGBEE_API_KEY, skipping");
+  if (!process.env.APIFY_API_KEY) {
+    console.warn("mobile.de: no APIFY_API_KEY, skipping");
     return listings;
   }
 
@@ -39,25 +32,24 @@ export async function scrapeMobileDe({ make, model, yearFrom, yearTo, maxMileage
 
     const targetUrl = `https://suchen.mobile.de/fahrzeuge/search.html?${searchParams}`;
 
-    const beeParams = new URLSearchParams({
-      api_key: apiKey,
-      url: targetUrl,
-      render_js: "false",
-      premium_proxy: "true",
-      stealth_proxy: "true",
-      country_code: "de",
+    console.log(`mobile.de: fetching via Apify web-scraper...`);
+    const items = await runActorAndGetItems("apify~web-scraper", {
+      startUrls: [{ url: targetUrl }],
+      pageFunction: `async function pageFunction(context) {
+        await context.waitFor(3000);
+        const html = await context.page.content();
+        await context.pushData({ html });
+      }`,
+      proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"] },
+      maxRequestsPerCrawl: 1,
     });
 
-    console.log(`mobile.de: fetching via ScrapingBee stealth...`);
-    const res = await fetch(`${SCRAPINGBEE_URL}?${beeParams}`, { signal: AbortSignal.timeout(45000) });
-
-    if (!res.ok) {
-      console.warn(`mobile.de: ScrapingBee returned ${res.status}`);
+    const html = items?.[0]?.html || "";
+    if (!html) {
+      console.warn("mobile.de: no HTML returned from Apify");
       return listings;
     }
 
-    console.log(`mobile.de: ${res.status}, credits: ${res.headers.get("spb-cost")}`);
-    const html = await res.text();
     const $ = cheerio.load(html);
 
     const seenUrls = new Set();

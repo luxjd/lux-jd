@@ -1,11 +1,9 @@
 /**
- * autoscout24.de scraper — uses ScrapingBee with JS rendering.
- * Costs 25 credits per request.
+ * autoscout24.de scraper — uses Apify cheerio-scraper actor.
  */
 
 import * as cheerio from "cheerio";
-
-const SCRAPINGBEE_URL = "https://app.scrapingbee.com/api/v1/";
+import { runActorAndGetItems } from "./apify-client";
 
 const MAKE_SLUGS = {
   "Ferrari": "ferrari", "Mercedes-AMG": "mercedes-benz", "Porsche": "porsche",
@@ -14,16 +12,11 @@ const MAKE_SLUGS = {
   "BMW": "bmw", "Range Rover": "land-rover",
 };
 
-function getApiKey() {
-  return process.env.SCRAPINGBEE_API_KEY || "";
-}
-
 export async function scrapeAutoScout24({ make, model, yearFrom, yearTo, maxMileage }) {
   const listings = [];
-  const apiKey = getApiKey();
 
-  if (!apiKey) {
-    console.warn("autoscout24: no SCRAPINGBEE_API_KEY, skipping");
+  if (!process.env.APIFY_API_KEY) {
+    console.warn("autoscout24: no APIFY_API_KEY, skipping");
     return listings;
   }
 
@@ -37,26 +30,23 @@ export async function scrapeAutoScout24({ make, model, yearFrom, yearTo, maxMile
 
     const targetUrl = `https://www.autoscout24.de/lst/${makeSlug}?${searchParams}`;
 
-    const beeParams = new URLSearchParams({
-      api_key: apiKey,
-      url: targetUrl,
-      render_js: "true",
-      premium_proxy: "true",
-      country_code: "de",
+    console.log(`autoscout24: fetching via Apify cheerio-scraper...`);
+    const items = await runActorAndGetItems("apify~cheerio-scraper", {
+      startUrls: [{ url: targetUrl }],
+      pageFunction: `async function pageFunction(context) {
+        await context.pushData({ html: context.body });
+      }`,
+      proxyConfiguration: { useApifyProxy: true },
+      maxRequestsPerCrawl: 1,
     });
 
-    console.log(`autoscout24: fetching via ScrapingBee...`);
-    const res = await fetch(`${SCRAPINGBEE_URL}?${beeParams}`, { signal: AbortSignal.timeout(45000) });
-
-    if (!res.ok) {
-      console.warn(`autoscout24: ScrapingBee returned ${res.status}`);
+    const html = items?.[0]?.html || "";
+    if (!html) {
+      console.warn("autoscout24: no HTML returned from Apify");
       return listings;
     }
 
-    console.log(`autoscout24: ${res.status}, credits: ${res.headers.get("spb-cost")}`);
-    const html = await res.text();
     const $ = cheerio.load(html);
-
     const modelWords = model.toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
 
     $("article").each((_, el) => {

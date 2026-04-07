@@ -125,71 +125,9 @@ export async function estimateMarketValue(input) {
 
   if (!stats || allListings.length === 0) {
     console.warn("No comparable listings found from scrapers");
-
-    // If scraping returned nothing, fall back to Claude-only estimation
-    if (!isAIAvailable()) {
-      throw new Error("No market data available: scrapers returned 0 results and AI is unavailable.");
-    }
-
-    // Ask Claude to estimate without scraped data (degraded but functional)
-    console.log("Using Claude-only market estimation (scrapers blocked/failed)...");
-    const aiOnlyResult = await callClaude({
-      prompt: `You are analyzing the current German luxury car market. Estimate the market value for this vehicle as it would appear on mobile.de and AutoScout24 today.
-
-Vehicle: ${input.year} ${input.make} ${input.model}
-Mileage: ${input.mileageKm.toLocaleString()} km
-Drive Side: ${input.driveSide}
-Color: ${input.exteriorColor}
-Interior: ${input.interiorColor || "Not specified"}
-Service: ${input.serviceHistory || "Unknown"}
-Accident: ${input.accidentHistory ? "Yes" : "No"}
-Grade: ${input.auctionGrade || "N/A"}
-Specs: ${input.specificationNotes || "None"}
-
-Return ONLY valid JSON:
-{
-  "estimated_sale_price_eur": <integer — realistic asking price>,
-  "price_statistics": {
-    "count": <integer — estimated comparable listings in Germany>,
-    "median": <integer>, "mean": <integer>,
-    "p25": <integer>, "p75": <integer>,
-    "min": <integer>, "max": <integer>
-  },
-  "comparable_count": <integer>,
-  "price_adjustments": [
-    {"factor": "Mileage adjustment", "adjustment_eur": <integer>, "reasoning": "explanation"},
-    {"factor": "Color premium/discount", "adjustment_eur": <integer>, "reasoning": "explanation"},
-    {"factor": "Drive side", "adjustment_eur": <integer>, "reasoning": "explanation"},
-    {"factor": "Service history", "adjustment_eur": <integer>, "reasoning": "explanation"},
-    {"factor": "Accident history", "adjustment_eur": <integer>, "reasoning": "explanation"}
-  ],
-  "avg_days_on_market": <integer>,
-  "market_liquidity": "HIGH" or "MEDIUM" or "LOW",
-  "trend_direction": "RISING" or "STABLE" or "DECLINING",
-  "engine_spec": "engine description",
-  "original_msrp_eur": <integer>,
-  "comparable_listings": [
-    {"title": "realistic listing title", "price": <integer>, "mileage": <integer>, "location": "German city", "platform": "mobile.de", "url": "https://www.mobile.de", "days_on_market": <integer>}
-  ],
-  "confidence": <number 0.4-0.7 — lower because this is AI-estimated without live data>
-}
-
-Provide 5-8 realistic comparable listings that would plausibly exist on mobile.de today. Be conservative with pricing.`,
-      system: ANALYSIS_SYSTEM,
-      jsonMode: true,
-    });
-
-    if (!aiOnlyResult?.estimated_sale_price_eur) {
-      throw new Error("Market estimation failed: scrapers returned 0 results and AI estimation produced no price.");
-    }
-
-    return {
-      ...aiOnlyResult,
-      comparable_listings: aiOnlyResult.comparable_listings || [],
-      data_source: "Claude AI estimation (scrapers were blocked — prices are AI-estimated, not live market data)",
-      scraped_count: { mobile_de: 0, autoscout24: 0 },
-      confidence: Math.min(aiOnlyResult.confidence || 0.5, 0.65), // Cap confidence since no real data
-    };
+    const err = new Error("No comparable listings found on mobile.de or AutoScout24. Try adjusting the vehicle details or check back later.");
+    err.code = "NO_MARKET_DATA";
+    throw err;
   }
 
   // Step 4: Claude analyzes real data for vehicle-specific adjustments
