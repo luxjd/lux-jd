@@ -33,6 +33,7 @@ export async function generateTVR(scan) {
   return {
     reportType: "TARGET_VEHICLE_REPORT",
     version: "1.0",
+    modelId: scan.modelId,
 
     vehicleSpec: {
       make: scan.make,
