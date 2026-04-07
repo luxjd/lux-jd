@@ -37,12 +37,12 @@ export default function Home() {
               >
                 Sign In
               </button>
-              <button
-                onClick={openSignup}
-                className="bg-primary-container text-on-primary-container px-6 py-2 rounded-xl font-bold scale-95 active:scale-90 transition-transform hover:shadow-[0_0_15px_rgba(248,113,113,0.4)]"
+              <a
+                href="/showroom"
+                className="bg-primary text-on-primary px-6 py-2 rounded-xl font-bold scale-95 active:scale-90 transition-transform hover:shadow-[0_0_15px_rgba(173,198,255,0.4)]"
               >
-                Get Started
-              </button>
+                Browse Cars
+              </a>
             </div>
           </nav>
 
@@ -78,18 +78,18 @@ export default function Home() {
                 />
               </div>
               <div className="anim-drift-text-4 flex flex-col md:flex-row gap-6 justify-center items-center">
-                <button
-                  onClick={openSignup}
-                  className="cursor-pointer px-10 py-4 bg-primary-container text-on-primary-container font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(248,113,113,0.5)] transition-all duration-300 hover:scale-105 active:scale-95"
+                <a
+                  href="/showroom"
+                  className="cursor-pointer px-10 py-4 bg-primary text-on-primary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(173,198,255,0.5)] transition-all duration-300 hover:scale-105 active:scale-95"
                 >
                   Explore Inventory
-                </button>
-                <button
-                  onClick={openLogin}
+                </a>
+                <a
+                  href="/register"
                   className="px-10 py-4 border-2 border-outline/30 text-on-surface font-bold rounded-xl text-lg backdrop-blur-sm hover:border-primary/50 hover:scale-105 active:scale-95 transition-all"
                 >
-                  View Strategy
-                </button>
+                  Create Account
+                </a>
               </div>
             </div>
           </section>
@@ -803,12 +803,12 @@ export default function Home() {
                     Access our closed-alpha platform and start sourcing high-yield
                     assets today.
                   </p>
-                  <button
-                    onClick={openSignup}
-                    className="bg-primary-container text-on-primary-container font-headline font-extrabold text-xl px-12 py-6 rounded-xl hover:shadow-[0_0_30px_rgba(248,113,113,0.6)] transition-all duration-500 scale-100 hover:scale-105 active:scale-95 uppercase tracking-widest"
+                  <a
+                    href="/showroom"
+                    className="inline-block bg-secondary text-on-secondary font-headline font-extrabold text-xl px-12 py-6 rounded-xl hover:shadow-[0_0_30px_rgba(234,193,105,0.6)] transition-all duration-500 scale-100 hover:scale-105 active:scale-95 uppercase tracking-widest"
                   >
-                    Get Started
-                  </button>
+                    Browse Showroom
+                  </a>
                 </div>
               </div>
             </ScrollReveal>

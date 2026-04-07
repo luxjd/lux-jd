@@ -411,6 +411,21 @@ model AgentStatus {
   updatedAt    DateTime @updatedAt
 }
 
+// ─── Customer Accounts ─────────────────────────────────
+
+model Customer {
+  id            String   @id @default(uuid())
+  name          String   @db.VarChar(200)
+  email         String   @unique @db.VarChar(200)
+  phone         String?  @db.VarChar(50)
+  passwordHash  String   @db.VarChar(64)
+  savedVehicles String[] @default([])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([email])
+}
+
 // ─── Audit Log ──────────────────────────────────────────────
 
 model AuditLog {
