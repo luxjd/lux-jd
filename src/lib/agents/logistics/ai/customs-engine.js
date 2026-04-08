@@ -93,6 +93,70 @@ function calculateCIF(vehicle) {
 }
 
 /**
+ * Track document upload status for a customs declaration.
+ * Returns which docs are uploaded, pending, or missing.
+ */
+export function getDocumentStatus(declaration) {
+  const required = [
+    { key: "commercialInvoice", label: "Commercial Invoice (Kaufvertrag)", critical: true },
+    { key: "billOfLading", label: "Bill of Lading (Konnossement)", critical: true },
+    { key: "exportPermissionCertificate", label: "Export Permission Certificate (EPC)", critical: true },
+    { key: "radiationCertificate", label: "Radiation Inspection Certificate", critical: true },
+    { key: "certificateOfOrigin", label: "Certificate of Origin", critical: false },
+    { key: "marineInsuranceCertificate", label: "Marine Insurance Certificate", critical: true },
+    { key: "vehicleRegistrationCopy", label: "Japanese Vehicle Registration Copy", critical: false },
+    { key: "deRegistrationCertificate", label: "Japanese De-Registration Certificate (抹消登録証明書)", critical: true },
+  ];
+
+  const docs = declaration.documents || {};
+  const uploaded = required.filter((d) => docs[d.key] === true);
+  const pending = required.filter((d) => !docs[d.key]);
+  const criticalMissing = pending.filter((d) => d.critical);
+
+  return {
+    total: required.length,
+    uploaded: uploaded.length,
+    pending: pending.length,
+    criticalMissing: criticalMissing.length,
+    readyForSubmission: criticalMissing.length === 0,
+    documents: required.map((d) => ({
+      ...d,
+      status: docs[d.key] ? "UPLOADED" : "PENDING",
+    })),
+    brokerReference: declaration.customsBroker?.reference || null,
+    estimatedProcessingDays: declaration.estimatedProcessingDays || 3,
+  };
+}
+
+/**
+ * Mark a document as uploaded.
+ */
+export function markDocumentUploaded(declaration, documentKey) {
+  if (!declaration.documents) declaration.documents = {};
+  declaration.documents[documentKey] = true;
+  declaration.documentsUpdatedAt = new Date().toISOString();
+
+  // Check if all critical docs are now present
+  const status = getDocumentStatus(declaration);
+  if (status.readyForSubmission) {
+    declaration.status = "READY_FOR_SUBMISSION";
+  }
+
+  return declaration;
+}
+
+/**
+ * Submit declaration to customs broker (simulated — v2 will integrate with ATLAS).
+ */
+export function submitToBroker(declaration) {
+  declaration.status = "SUBMITTED_TO_BROKER";
+  declaration.submittedAt = new Date().toISOString();
+  declaration.brokerStatus = "PROCESSING";
+  declaration.expectedClearanceDate = new Date(Date.now() + (declaration.estimatedProcessingDays || 3) * 24 * 60 * 60 * 1000).toISOString();
+  return declaration;
+}
+
+/**
  * AI-powered customs document review.
  */
 export async function reviewCustomsDocuments(declaration) {

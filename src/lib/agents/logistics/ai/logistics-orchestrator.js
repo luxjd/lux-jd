@@ -68,6 +68,14 @@ export async function advanceStage(vehicleId, targetStage, options = {}) {
 
   const currentStage = vehicle.currentStage;
 
+  // ─── Pre-validation: set flags for READY_FOR_SALE transition ───
+  if (targetStage === "READY_FOR_SALE") {
+    vehicle.tuvPassed = true;
+    const costItems = vehicle.landedCost || vehicle.costBreakdown || {};
+    const hasCosts = !!(costItems.purchasePriceEur || vehicle.purchasePriceJpy) && !!(costItems.freightEur);
+    vehicle.costsComplete = hasCosts || !!options.override;
+  }
+
   // ─── Validate transition ───
   const validation = validateTransition(currentStage, targetStage, vehicle, options.override);
   if (!validation.valid) {
@@ -117,11 +125,31 @@ export async function advanceStage(vehicleId, targetStage, options = {}) {
     sideEffects.tuvAppointment = appointment.appointmentId;
   }
 
-  // TUV → READY_FOR_SALE: Mark TUV as passed
+  // TUV → READY_FOR_SALE: Verify TUV passed + Finance costs confirmed
   if (targetStage === "READY_FOR_SALE") {
     vehicle.tuvPassed = true;
-    vehicle.costsComplete = true; // In production, Finance Agent confirms this
-    sideEffects.readyForSale = true;
+
+    // Check if Finance Agent has confirmed costs
+    // Costs are confirmed if: all major cost items have been recorded as transactions
+    const costItems = vehicle.landedCost || vehicle.costBreakdown || {};
+    const hasPurchaseCost = !!(costItems.purchasePriceEur || vehicle.purchasePriceJpy);
+    const hasFreightCost = !!(costItems.freightEur);
+
+    if (hasPurchaseCost && hasFreightCost) {
+      vehicle.costsComplete = true;
+      sideEffects.costsConfirmed = true;
+    } else if (options.override) {
+      // Allow override with explicit flag
+      vehicle.costsComplete = true;
+      sideEffects.costsOverridden = true;
+      sideEffects.costWarning = "Costs marked complete via manual override — Finance Agent should verify";
+    } else {
+      // Block if costs not tracked — Finance Agent must confirm
+      vehicle.costsComplete = false;
+      sideEffects.costsPending = true;
+      sideEffects.costWarning = "Finance Agent has not confirmed all costs. Use override to proceed.";
+    }
+    sideEffects.readyForSale = vehicle.costsComplete;
   }
 
   // ─── Update vehicle state ───

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { getPipelineVehicles, getPipelineEvents, getAgentStatus, getShipments, getTuvAppointments } from "@/lib/agents/logistics/storage";
-import { STAGE_KEYS as STAGES, STAGES as PIPELINE_STAGES } from "@/lib/agents/logistics/pipeline";
+import { STAGE_KEYS as STAGES, STAGES as PIPELINE_STAGES, isPhotoRequired } from "@/lib/agents/logistics/pipeline";
 import AdvanceStageButton from "./_components/AdvanceStageButton";
+import AutoAdvanceButton from "./_components/AutoAdvanceButton";
+import PhotoUploadButton from "./_components/PhotoUploadButton";
 
 export default function LogisticsAgentPage() {
   const status = getAgentStatus();
@@ -41,6 +43,11 @@ export default function LogisticsAgentPage() {
           </div>
         </div>
 
+        {/* Actions */}
+        <div className="flex items-center gap-3 mb-4">
+          <AutoAdvanceButton />
+        </div>
+
         {/* Stage summary */}
         {hasData && (
           <div className="grid grid-cols-5 sm:grid-cols-10 gap-1 sm:gap-2">
@@ -68,6 +75,7 @@ export default function LogisticsAgentPage() {
           {vehicles.map((v) => {
             const info = stageInfo.find((s) => s.key === v.currentStage);
             const daysInStage = Math.round((Date.now() - new Date(v.stageEnteredAt).getTime()) / (1000 * 60 * 60 * 24));
+            const photoRequired = isPhotoRequired(v.currentStage);
             return (
               <div key={v.id} className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -85,8 +93,16 @@ export default function LogisticsAgentPage() {
                       )}
                     </div>
                   </div>
-                  <AdvanceStageButton vehicleId={v.id} currentStage={v.currentStage} vehicleName={`${v.make} ${v.model}`} />
+                  <div className="flex items-center gap-2">
+                    {photoRequired && (
+                      <PhotoUploadButton vehicleId={v.id} stage={v.currentStage} vehicleName={`${v.make} ${v.model}`} />
+                    )}
+                    <AdvanceStageButton vehicleId={v.id} currentStage={v.currentStage} vehicleName={`${v.make} ${v.model}`} />
+                  </div>
                 </div>
+                {v.stagePhotos?.[v.currentStage]?.length > 0 && (
+                  <p className="text-[10px] text-emerald-400 mt-1">{v.stagePhotos[v.currentStage].length} photos documented at this stage</p>
+                )}
 
                 {/* Stage progress bar */}
                 <div className="flex gap-0.5 mt-3">
