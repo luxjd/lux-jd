@@ -156,6 +156,10 @@ export default function InquirySimulator() {
                 <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g. Max Müller" className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50" />
               </div>
               <div>
+                <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Customer Email</label>
+                <input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="e.g. max@example.de" className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50" />
+              </div>
+              <div>
                 <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Offer Price (optional)</label>
                 <input type="number" value={offerPrice} onChange={(e) => setOfferPrice(e.target.value)} placeholder="e.g. 85000" className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50" />
               </div>
@@ -214,6 +218,17 @@ export default function InquirySimulator() {
               </div>
             )}
           </div>
+
+          {/* Email Status */}
+          {result.email && (
+            <div className={`p-3 rounded-xl text-sm flex items-center gap-2 ${result.email.sent ? "bg-emerald-400/10 border border-emerald-400/20 text-emerald-400" : "bg-amber-400/10 border border-amber-400/20 text-amber-400"}`}>
+              <span className="material-symbols-outlined text-lg">{result.email.sent ? "mark_email_read" : "email"}</span>
+              {result.email.sent
+                ? `Email sent to ${result.email.to}${result.email.photosAttached > 0 ? ` with ${result.email.photosAttached} photos attached` : ""}`
+                : `Email not sent: ${result.email.reason}`
+              }
+            </div>
+          )}
 
           {/* Negotiation Details */}
           {result.negotiation && (

@@ -16,6 +16,7 @@ import { generateResponse } from "./auto-responder";
 import { evaluateOffer, generateNegotiationResponse } from "./negotiation-engine";
 import { checkEscalation } from "./escalation-handler";
 import { saveLead, addMessage, addEscalation, updateAgentStatus, getAllLeads } from "../storage";
+import { sendResponseEmail, isEmailConfigured } from "../email-service";
 
 /**
  * Handle an incoming customer inquiry — the main entry point.
@@ -144,6 +145,25 @@ export async function handleInquiry({
     addEscalation({ leadId, customerName, vehicle: vehicleName, triggers: escalation.triggers });
   }
 
+  // ─── Step 6: Send email with response + photos ───
+  let emailResult = null;
+  if (customerEmail && response.response_text) {
+    const includePhotos = response.suggested_next_action === "SEND_PHOTOS" ||
+      inquiry.toLowerCase().match(/photo|foto|bild|image|picture/);
+    try {
+      emailResult = await sendResponseEmail({
+        customerEmail,
+        customerName,
+        responseText: response.response_text,
+        vehicle,
+        language: classification.language || "EN",
+        includePhotos: !!includePhotos,
+      });
+    } catch (err) {
+      emailResult = { sent: false, reason: err.message };
+    }
+  }
+
   // ─── Update agent status ───
   const allLeads = getAllLeads();
   updateAgentStatus({
@@ -164,6 +184,7 @@ export async function handleInquiry({
     response,
     negotiation,
     escalation,
+    email: emailResult,
     duration: Date.now() - startTime,
     aiPowered: response.aiPowered !== false,
   };
