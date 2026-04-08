@@ -13,8 +13,9 @@
 import { isAIAvailable } from "@/lib/claude";
 import { createTransaction, generateTransactionsFromLandedCost, calculateCompleteness } from "../ledger";
 import { calculateVehiclePnL, calculatePortfolioPnL } from "./pnl-engine";
-import { checkFxRate, calculateFxImpact } from "./fx-monitor";
+import { checkFxRate, calculateFxImpact, calculatePortfolioFxExposure } from "./fx-monitor";
 import { compareTaxTreatments, generateVatDeclaration, reviewTaxCompliance } from "./tax-optimizer";
+import { runRegulatoryCheck } from "./regulatory-monitor";
 import { projectCashFlow } from "./cashflow-projector";
 import {
   addTransaction, addTransactions, getTransactionsByVehicle, getAllTransactions,
@@ -102,8 +103,14 @@ export async function runFinancialCheck(vehicles) {
   const now = new Date();
   const vatDeclaration = generateVatDeclaration(allTxns, now.getMonth() + 1, now.getFullYear());
 
+  // ─── Portfolio FX Exposure ───
+  const fxExposure = calculatePortfolioFxExposure(vehicles, fxCheck.current.rate);
+
   // ─── Cash Flow Projection ───
   const cashFlow = projectCashFlow(vehicles, allTxns, 8);
+
+  // ─── Regulatory Check ───
+  const regulatoryCheck = runRegulatoryCheck();
 
   // ─── AI Tax Review (if available) ───
   let taxReview = null;
@@ -113,12 +120,14 @@ export async function runFinancialCheck(vehicles) {
 
   const report = {
     fxCheck,
+    fxExposure,
     vehiclePnLs,
     portfolioPnL,
     taxComparisons,
     vatDeclaration,
     cashFlow,
     taxReview,
+    regulatoryCheck,
     duration: Date.now() - startTime,
     aiPowered: isAIAvailable(),
     generatedAt: new Date().toISOString(),

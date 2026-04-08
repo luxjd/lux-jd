@@ -98,6 +98,71 @@ export async function checkFxRate(rateHistory = []) {
 }
 
 /**
+ * Calculate portfolio-wide FX exposure — realized vs estimated rates across all vehicles.
+ * @param {Array} vehicles — all pipeline vehicles
+ * @param {number} currentRate — current EUR/JPY rate
+ * @returns {object} Portfolio FX exposure report
+ */
+export function calculatePortfolioFxExposure(vehicles, currentRate) {
+  const exposures = [];
+  let totalOriginalEur = 0;
+  let totalCurrentEur = 0;
+  let totalPurchaseJpy = 0;
+
+  for (const v of vehicles) {
+    const purchaseRate = v.fxRateAtPurchase || v.fxRateAtValuation || v.landedCost?.fxRateUsed;
+    const purchaseJpy = v.askingPriceJpy || v.purchasePriceJpy || v.landedCost?.purchasePriceJpy;
+    if (!purchaseRate || !purchaseJpy) continue;
+
+    const originalEur = Math.round(purchaseJpy / purchaseRate);
+    const currentEur = Math.round(purchaseJpy / currentRate);
+    const impact = originalEur - currentEur;
+
+    totalOriginalEur += originalEur;
+    totalCurrentEur += currentEur;
+    totalPurchaseJpy += purchaseJpy;
+
+    exposures.push({
+      vehicleId: v.id,
+      make: v.make,
+      model: v.model,
+      year: v.year,
+      stage: v.currentStage,
+      purchaseJpy: purchaseJpy,
+      purchaseRate: purchaseRate,
+      purchaseCostEur: originalEur,
+      currentCostEur: currentEur,
+      impactEur: impact,
+      impactPct: Number(((impact / originalEur) * 100).toFixed(1)),
+      direction: impact > 0 ? "FAVORABLE" : impact < 0 ? "UNFAVORABLE" : "NEUTRAL",
+    });
+  }
+
+  const totalImpact = totalOriginalEur - totalCurrentEur;
+  const weightedAvgPurchaseRate = totalPurchaseJpy > 0 ? totalPurchaseJpy / totalOriginalEur : currentRate;
+
+  return {
+    summary: {
+      vehiclesTracked: exposures.length,
+      totalJpyExposure: totalPurchaseJpy,
+      totalOriginalCostEur: totalOriginalEur,
+      totalCurrentCostEur: totalCurrentEur,
+      totalImpactEur: totalImpact,
+      totalImpactPct: totalOriginalEur > 0 ? Number(((totalImpact / totalOriginalEur) * 100).toFixed(1)) : 0,
+      direction: totalImpact > 0 ? "FAVORABLE" : totalImpact < 0 ? "UNFAVORABLE" : "NEUTRAL",
+      weightedAvgPurchaseRate: Number(weightedAvgPurchaseRate.toFixed(2)),
+      currentRate,
+      rateChange: Number(((currentRate - weightedAvgPurchaseRate) / weightedAvgPurchaseRate * 100).toFixed(1)),
+    },
+    perVehicle: exposures,
+    hedgingRecommendation: Math.abs(totalImpact) > 5000
+      ? `Portfolio FX exposure is €${Math.abs(totalImpact).toLocaleString()} ${totalImpact > 0 ? "favorable" : "unfavorable"}. Consider hedging ${totalPurchaseJpy > 10000000 ? "with forward contracts" : "by accumulating JPY during favorable windows"}.`
+      : "FX exposure within acceptable range. No hedging action needed.",
+    calculatedAt: new Date().toISOString(),
+  };
+}
+
+/**
  * Calculate FX impact on a specific vehicle.
  */
 export function calculateFxImpact(vehicle, currentRate) {

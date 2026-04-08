@@ -1,10 +1,16 @@
-import { checkFxRate } from "@/lib/agents/finance/ai/fx-monitor";
+import { checkFxRate, calculatePortfolioFxExposure } from "@/lib/agents/finance/ai/fx-monitor";
 import { getFxHistory } from "@/lib/agents/finance/storage";
+import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
 import { db } from "@/lib/db-storage";
 
 export async function GET() {
   const history = getFxHistory();
   const check = await checkFxRate(history.rates || []);
+
+  // Portfolio FX exposure
+  const data = getPipelineVehicles();
+  const vehicles = data.vehicles || [];
+  const exposure = calculatePortfolioFxExposure(vehicles, check.current.rate);
 
   // Save to PostgreSQL
   try {
@@ -14,5 +20,5 @@ export async function GET() {
     }
   } catch (e) { /* silent */ }
 
-  return Response.json(check);
+  return Response.json({ ...check, portfolioExposure: exposure });
 }

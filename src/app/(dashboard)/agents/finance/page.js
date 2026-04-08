@@ -46,9 +46,9 @@ export default function FinanceAgentPage() {
         {/* Quick metrics */}
         {hasData && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-            <div className="px-3 py-2 rounded-lg bg-emerald-400/5 border border-emerald-400/10">
-              <p className="font-headline font-bold text-lg text-emerald-400">{fmt(portfolio.summary.totalMargin)}</p>
-              <p className="text-[10px] text-emerald-400 uppercase">Total Margin</p>
+            <div className={`px-3 py-2 rounded-lg ${(portfolio.summary.totalMargin || 0) >= 0 ? "bg-emerald-400/5 border border-emerald-400/10" : "bg-red-400/5 border border-red-400/10"}`}>
+              <p className={`font-headline font-bold text-lg ${(portfolio.summary.totalMargin || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(portfolio.summary.totalMargin)}</p>
+              <p className={`text-[10px] uppercase ${(portfolio.summary.totalMargin || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>Total Margin</p>
             </div>
             <div className="px-3 py-2 rounded-lg bg-primary/5 border border-primary/10">
               <p className="font-headline font-bold text-lg text-primary">{fmt(portfolio.summary.totalCapitalDeployed)}</p>
@@ -101,15 +101,15 @@ export default function FinanceAgentPage() {
                   { label: "In Pipeline", value: portfolio.summary.inPipeline },
                   { label: "Sold", value: portfolio.summary.sold },
                   { label: "Total Revenue", value: fmt(portfolio.summary.totalRevenue) },
-                  { label: "Realized Margin", value: fmt(portfolio.summary.realizedMargin) },
-                  { label: "Unrealized Margin", value: fmt(portfolio.summary.unrealizedMargin) },
+                  { label: "Realized Margin", value: fmt(portfolio.summary.realizedMargin), colored: true, raw: portfolio.summary.realizedMargin },
+                  { label: "Unrealized Margin", value: fmt(portfolio.summary.unrealizedMargin), colored: true, raw: portfolio.summary.unrealizedMargin },
                   { label: "Avg Days to Sell", value: `${portfolio.summary.avgDaysToSell}d` },
                   { label: "Capital Turnover", value: `${portfolio.summary.capitalTurnover}x` },
                   { label: "VAT Reclaimable", value: fmt(portfolio.summary.totalVatReclaimable) },
                 ].map((r, i) => (
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-on-surface-variant">{r.label}</span>
-                    <span className="font-bold">{r.value}</span>
+                    <span className={`font-bold ${r.colored ? ((r.raw || 0) >= 0 ? "text-emerald-400" : "text-red-400") : ""}`}>{r.value}</span>
                   </div>
                 ))}
               </div>

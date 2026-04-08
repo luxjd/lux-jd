@@ -1,4 +1,5 @@
 import { savePipelineVehicle, addPipelineEvent } from "@/lib/agents/logistics/storage";
+import { recordLandedCosts } from "@/lib/agents/finance/ai/finance-orchestrator";
 
 export async function POST(request) {
   try {
@@ -84,6 +85,15 @@ export async function POST(request) {
     };
 
     savePipelineVehicle(vehicle);
+
+    // Record all costs as Finance Agent transactions
+    if (lc && Object.keys(lc).length > 0) {
+      try {
+        recordLandedCosts(vehicleId, lc, lc.fxRateUsed || 166.80);
+      } catch (e) {
+        console.warn("Finance transaction recording failed:", e.message);
+      }
+    }
 
     addPipelineEvent({
       vehicleId,
