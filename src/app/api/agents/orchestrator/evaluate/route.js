@@ -2,7 +2,10 @@ import { evaluateOpportunity } from "@/lib/agents/orchestrator/ai/decision-engin
 import { loadPortfolioState } from "@/lib/agents/orchestrator/ai/portfolio-manager";
 import { generateDecisionBrief } from "@/lib/agents/orchestrator/ai/brief-generator";
 import { saveDecision, updateAgentStatus } from "@/lib/agents/orchestrator/storage";
+import { savePipelineVehicle, addPipelineEvent } from "@/lib/agents/logistics/storage";
+import { recordLandedCosts } from "@/lib/agents/finance/ai/finance-orchestrator";
 import { db } from "@/lib/db-storage";
+import { after } from "next/server";
 
 export async function POST(request) {
   const body = await request.json();
@@ -22,6 +25,62 @@ export async function POST(request) {
   const fullDecision = { ...evaluation, brief, portfolio: { deployed: portfolio.deploymentPct, vehicles: portfolio.totalVehicles, health: portfolio.healthScore } };
 
   saveDecision(fullDecision);
+
+  // AUTO-APPROVE → Send to pipeline automatically
+  let pipelineResult = null;
+  if (evaluation.decision === "AUTO_APPROVE") {
+    const opp = body.opportunity;
+    const vehicleId = `veh-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const now = new Date().toISOString();
+
+    const vehicle = {
+      id: vehicleId,
+      make: opp.vehicle?.make,
+      model: opp.vehicle?.model,
+      year: opp.vehicle?.year,
+      mileageKm: opp.vehicle?.mileageKm,
+      driveSide: opp.vehicle?.driveSide || "RHD",
+      exteriorColor: opp.vehicle?.exteriorColor,
+      interiorColor: opp.vehicle?.interiorColor,
+      auctionGrade: opp.vehicle?.auctionGrade,
+      specification: { engineSpec: opp.vehicle?.engineSpec, specNotes: opp.vehicle?.specificationNotes },
+      currentStage: "SOURCED",
+      stageEnteredAt: now,
+      stageHistory: [{ stage: "SOURCED", enteredAt: now, agent: "orchestrator" }],
+      askingPriceJpy: opp.pricing?.askingPriceJpy,
+      fxRateAtValuation: opp.landedCost?.fxRateUsed,
+      landedCost: opp.landedCost || {},
+      estimatedSalePrice: opp.pricing?.deMarketMedian,
+      margin: opp.margin || {},
+      marginConfidence: opp.confidence,
+      verdict: "BUY",
+      maxBidJpy: evaluation.financials?.maxBidJpy,
+      orchestratorDecision: evaluation.decision,
+      opportunityId: opp.id,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    savePipelineVehicle(vehicle);
+    addPipelineEvent({
+      vehicleId,
+      fromStatus: null,
+      toStatus: "SOURCED",
+      agent: "orchestrator",
+      message: `AUTO-APPROVED: ${opp.vehicle?.make} ${opp.vehicle?.model} (${opp.vehicle?.year}). Margin €${evaluation.financials.margin.toLocaleString()} (${evaluation.financials.marginPct}%). Max bid ¥${evaluation.financials.maxBidJpy?.toLocaleString()}.`,
+    });
+
+    // Record financial transactions in background
+    if (opp.landedCost && Object.keys(opp.landedCost).length > 0) {
+      after(async () => {
+        try {
+          recordLandedCosts(vehicleId, opp.landedCost, opp.landedCost.fxRateUsed || 183);
+        } catch (e) { console.warn("Finance txn recording failed:", e.message); }
+      });
+    }
+
+    pipelineResult = { vehicleId, status: "SOURCED" };
+  }
 
   // Save to PostgreSQL
   try {
@@ -46,5 +105,5 @@ export async function POST(request) {
     totalDecisions: (body.totalDecisions || 0) + 1,
   });
 
-  return Response.json(fullDecision);
+  return Response.json({ ...fullDecision, pipelineResult });
 }

@@ -208,6 +208,26 @@ export function evaluateOpportunity(opportunity, portfolio) {
   });
   if (step7NeedsHuman) { hasFlag = true; flagReasons.push("Above value threshold — mandatory human approval"); }
 
+  // ─── STEP 8: PRICING DEVIATION CHECK ───
+  const deMarketMedian = opportunity.pricing?.deMarketMedian || 0;
+  const estimatedSalePrice = opportunity.pricing?.estimatedSalePrice || opportunity.margin?.estimatedSalePrice || deMarketMedian;
+  const listingPrice = opportunity.listingPrice || estimatedSalePrice;
+  const pricingDeviation = deMarketMedian > 0 ? Math.abs(listingPrice - deMarketMedian) / deMarketMedian * 100 : 0;
+  const step8Pass = pricingDeviation <= 10;
+  steps.push({
+    step: 8,
+    name: "PRICING DEVIATION",
+    icon: "price_change",
+    check: "Listing price within 10% of market median",
+    actual: `${pricingDeviation.toFixed(1)}% deviation (List: €${listingPrice.toLocaleString()} vs Median: €${deMarketMedian.toLocaleString()})`,
+    result: step8Pass ? "PASS" : "FLAG",
+    critical: false,
+    reasoning: step8Pass
+      ? `Pricing aligned with market — ${pricingDeviation.toFixed(1)}% deviation is within 10% tolerance.`
+      : `Pricing deviates ${pricingDeviation.toFixed(1)}% from market median. ${listingPrice > deMarketMedian ? "Overpriced — may sit too long." : "Underpriced — leaving margin on table."} Requires human pricing review.`,
+  });
+  if (!step8Pass) { hasFlag = true; flagReasons.push(`Pricing ${pricingDeviation.toFixed(1)}% off market median`); }
+
   // ─── FINAL DECISION ───
   let decision, decisionReason;
 
@@ -240,7 +260,7 @@ export function evaluateOpportunity(opportunity, portfolio) {
       passCount: steps.filter((s) => s.result === "PASS").length,
       failCount: steps.filter((s) => s.result === "FAIL").length,
       flagCount: steps.filter((s) => s.result === "FLAG").length,
-      totalSteps: 7,
+      totalSteps: 8,
     },
     financials: {
       margin,
