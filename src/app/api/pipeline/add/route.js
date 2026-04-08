@@ -84,18 +84,18 @@ export async function POST(request) {
       updatedAt: now,
     };
 
-    savePipelineVehicle(vehicle);
+    await savePipelineVehicle(vehicle);
 
     // Record all costs as Finance Agent transactions
     if (lc && Object.keys(lc).length > 0) {
       try {
-        recordLandedCosts(vehicleId, lc, lc.fxRateUsed || 166.80);
+        await recordLandedCosts(vehicleId, lc, lc.fxRateUsed || 166.80);
       } catch (e) {
         console.warn("Finance transaction recording failed:", e.message);
       }
     }
 
-    addPipelineEvent({
+    await addPipelineEvent({
       vehicleId,
       fromStatus: null,
       toStatus: "SOURCED",

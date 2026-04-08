@@ -7,9 +7,9 @@ import { getAllTransactions } from "@/lib/agents/finance/storage";
  * One-time utility to sync existing vehicles with the Finance Agent.
  */
 export async function POST() {
-  const data = getPipelineVehicles();
+  const data = await getPipelineVehicles();
   const vehicles = data.vehicles || [];
-  const existingTxns = getAllTransactions().transactions || [];
+  const existingTxns = (await getAllTransactions()).transactions || [];
 
   const results = [];
 
@@ -28,7 +28,7 @@ export async function POST() {
     }
 
     try {
-      const result = recordLandedCosts(v.id, lc, lc.fxRateUsed || 166.80);
+      const result = await recordLandedCosts(v.id, lc, lc.fxRateUsed || 166.80);
       results.push({ vehicleId: v.id, make: v.make, model: v.model, status: "BACKFILLED", transactionsCreated: result.recorded });
     } catch (err) {
       results.push({ vehicleId: v.id, make: v.make, model: v.model, status: "ERROR", error: err.message });

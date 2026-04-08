@@ -2,8 +2,8 @@ import { isAIAvailable } from "@/lib/claude";
 import { getAgentStatus, getDecisions } from "@/lib/agents/orchestrator/storage";
 
 export async function GET() {
-  const status = getAgentStatus();
-  const decisions = getDecisions();
+  const status = await getAgentStatus();
+  const decisions = await getDecisions();
   return Response.json({
     ...status,
     agentId: "orchestrator",

@@ -22,11 +22,11 @@ export async function GET(request) {
   }
 
   try {
-    const fxHistory = getFxHistory();
+    const fxHistory = await getFxHistory();
     const fxCheck = await checkFxRate(fxHistory.rates || []);
 
     // Save rate to history
-    addFxRate(fxCheck.current.rate);
+    await addFxRate(fxCheck.current.rate);
 
     // Save to PostgreSQL if available
     try {
@@ -40,7 +40,7 @@ export async function GET(request) {
     // Process alerts
     if (fxCheck.alerts.length > 0) {
       for (const alert of fxCheck.alerts) {
-        addFxAlert(alert);
+        await addFxAlert(alert);
         try {
           await db.fxAlerts.create({
             level: alert.level,
@@ -53,7 +53,7 @@ export async function GET(request) {
     }
 
     // Calculate FX impact on all pipeline vehicles
-    const data = getPipelineVehicles();
+    const data = await getPipelineVehicles();
     const vehicles = data.vehicles || [];
     const fxImpacts = vehicles
       .map((v) => {
@@ -65,7 +65,7 @@ export async function GET(request) {
     const totalExposure = fxImpacts.reduce((s, i) => s + (i.impactEur || 0), 0);
 
     // Update agent status
-    updateAgentStatus({
+    await updateAgentStatus({
       status: "ONLINE",
       lastAction: `FX auto-check: ¥${fxCheck.current.rate.toFixed(2)}/€ — ${fxCheck.alerts.length} alerts`,
       lastFxCheckTimestamp: new Date().toISOString(),

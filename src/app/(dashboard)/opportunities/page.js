@@ -9,8 +9,8 @@ const REC_STYLES = {
 };
 const RISK_STYLES = { LOW: "bg-emerald-400/10 text-emerald-400", MEDIUM: "bg-amber-400/10 text-amber-400", HIGH: "bg-red-400/10 text-red-400" };
 
-export default function OpportunitiesPage() {
-  const realData = getLatestOpportunities();
+export default async function OpportunitiesPage() {
+  const realData = await getLatestOpportunities();
   const hasRealData = realData?.opportunities?.length > 0;
 
   // Use real data from JP Sourcing Agent

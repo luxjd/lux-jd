@@ -13,7 +13,7 @@ export async function GET() {
   const notifications = [];
 
   // ─── Orchestrator: Pending HUMAN_REVIEW decisions ───
-  const decisions = getDecisions();
+  const decisions = await getDecisions();
   const pendingReviews = (decisions.decisions || []).filter((d) => d.decision === "HUMAN_REVIEW");
   for (const d of pendingReviews.slice(-5)) {
     notifications.push({
@@ -31,7 +31,7 @@ export async function GET() {
   }
 
   // ─── Concierge: Escalated leads ───
-  const escalations = getEscalations();
+  const escalations = await getEscalations();
   for (const e of (escalations.escalations || []).slice(-5)) {
     notifications.push({
       id: `esc-${e.timestamp}`,
@@ -47,7 +47,7 @@ export async function GET() {
   }
 
   // ─── Finance: FX alerts ───
-  const fxAlerts = getFxAlerts();
+  const fxAlerts = await getFxAlerts();
   for (const a of (fxAlerts.alerts || []).slice(-3)) {
     notifications.push({
       id: `fx-${a.timestamp}`,
@@ -63,7 +63,7 @@ export async function GET() {
   }
 
   // ─── Logistics: Delayed vehicles (stuck in stage too long) ───
-  const pipeline = getPipelineVehicles();
+  const pipeline = await getPipelineVehicles();
   for (const v of (pipeline.vehicles || [])) {
     const stageIdx = STAGES.indexOf(v.currentStage);
     if (stageIdx < 0) continue;
@@ -86,7 +86,7 @@ export async function GET() {
   }
 
   // ─── Listing: Price reduction triggers ───
-  const listings = getAllListings();
+  const listings = await getAllListings();
   for (const l of (listings.listings || [])) {
     if (l.status !== "ACTIVE") continue;
     const dom = l.daysOnMarket || 0;

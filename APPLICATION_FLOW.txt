@@ -1,0 +1,487 @@
+================================================================================
+  LUXJD — COMPLETE APPLICATION FLOW
+  AI-Powered Luxury Auto Arbitrage Platform (Japan → Germany)
+  Version 1.0 | April 2026
+================================================================================
+
+
+OVERVIEW
+--------
+After login, the user lands on the Dashboard which shows KPIs (active vehicles,
+portfolio value, P&L, active leads), pipeline overview, and agent health status
+for all 7 agents. From there, the flow follows a linear chain of specialized
+AI agents, each feeding into the next.
+
+
+================================================================================
+  AGENT #0 — VALUATION AGENT (Standalone)
+================================================================================
+
+  Purpose:   Quick standalone vehicle valuation — no other agent needed.
+  Location:  Dashboard → Valuate (or Agent Hub → Valuation Agent)
+
+  Input:     Upload vehicle specs (make, model, year, mileage, asking price JPY)
+             + optional photos (up to 30) + auction sheet + condition details
+
+  Process:   9-step pipeline running in 30-60 seconds:
+             1. Input validation & enrichment (Claude Haiku)
+             2. Photo & condition analysis (Claude Vision Sonnet) — parallel
+             3. Market research / scraping (mobile.de + AutoScout24) — parallel
+             4. FX rate fetch (JPY/EUR) — parallel
+             5. Landed cost calculation (15+ line items, pure arithmetic)
+             6. Margin calculation (pessimistic / base / optimistic)
+             7. Risk assessment (6 dimensions, LLM-scored)
+             8. Final recommendation (LLM, depends on step 7)
+             9. Report assembly
+
+  Output:    ValuationReport containing:
+             - German market price estimate (adjusted, not just median)
+             - Full landed cost breakdown (purchase → registration)
+             - Gross margin analysis (3 scenarios)
+             - Risk assessment (condition, provenance, TUV, market, currency, capital)
+             - BUY / REVIEW / PASS recommendation
+             - max_bid_jpy (maximum auction bid price)
+             - Top 5-10 comparable listings from German market
+
+  Rules:     BUY  = margin >= EUR15k AND >= 20% AND confidence >= 0.70 AND risk <= 3.0
+             REVIEW = meets margin but low confidence, or borderline risk
+             PASS = below thresholds or multiple high risks
+
+  Action:    "Send to Pipeline" button adds approved vehicles to Logistics.
+
+  Why first: Immediate standalone value, validates core capabilities,
+             can be used before any other agent is running.
+
+
+================================================================================
+  AGENT #1 — DE MARKET AGENT (Must Run First for Pipeline)
+================================================================================
+
+  Purpose:   Build real-time German market intelligence for all target models.
+  Location:  Dashboard → AI Agents → DE Market Agent
+  Depends:   Nothing — this is the data foundation.
+
+  Input:     "Full Scan" button triggers scraping of all 14 target models.
+
+  Target Models:
+             Ferrari      — 488 GTB, F12, Roma
+             Mercedes-AMG — GT, G63, C63, E63
+             Porsche      — 911, 718 GT4
+             Jaguar       — F-Type
+             Bentley      — Continental GT
+             Lamborghini  — Huracan
+             Aston Martin — DB11, Vantage
+             BMW M        — M3, M4
+             Range Rover  — Sport SVR
+
+  Process:   Scrapes mobile.de + AutoScout24 via Apify proxy:
+             - Collects current listings (price, mileage, year, spec, location)
+             - Calculates price statistics (mean, median, P25, P75, min, max)
+             - Scores demand velocity (0-100)
+             - Detects trends (7d / 30d / 90d)
+             - Identifies spec premiums via Claude (color, options, editions)
+
+  Output:    MarketSnapshot per model stored in DB:
+             - Market value range (EUR)
+             - Velocity / demand score
+             - Confidence percentage
+             - Trend direction
+             - Competitor intelligence
+
+  Schedule:  Designed to run every 6 hours (cron).
+
+  Why first: JP Sourcing, Listing, and Orchestrator all need German market
+             pricing data to calculate margins, set listing prices, and
+             make purchase decisions.
+
+
+================================================================================
+  AGENT #2 — JP SOURCING AGENT
+================================================================================
+
+  Purpose:   Find undervalued luxury vehicles at Japanese auctions.
+  Location:  Dashboard → AI Agents → JP Sourcing Agent
+  Depends:   DE Market Agent (needs German prices to calculate margins).
+
+  Input:     "Scan Japanese Auctions" button triggers auction search.
+
+  Process:
+             1. Load target models from DE Market data
+             2. Scan Japanese auctions (USS, HAA, broker APIs, Goo-net)
+             3. Parse auction sheets via Claude Vision OCR
+                - Extract condition grades, damage notes, service history
+                - Score condition confidence (0-1)
+             4. Calculate full landed cost per vehicle:
+                - Purchase price (JPY → EUR)
+                - Auction fees (~5%)
+                - Japan inland transport
+                - Export documentation
+                - Ocean freight (RORO or container)
+                - Marine insurance
+                - CIF value
+                - EU customs duty (6.5%)
+                - Import VAT (19%, reclaimable)
+                - Port handling
+                - TUV inspection cost
+                - German registration
+                - Germany inland transport
+                - Detailing & preparation
+                - Professional photography
+             5. Calculate margins against DE Market prices
+             6. Apply risk flags:
+                - RHD penalty (-15% market value)
+                - Auction grade < 4.0
+                - Missing service history
+                - Non-EU spec issues
+             7. Rank all candidates by margin & confidence
+
+  Output:    Per vehicle:
+             - STRONG_BUY / BUY / REVIEW / PASS recommendation
+             - JP auction price + DE market value
+             - Full landed cost breakdown
+             - Expected margin (EUR + %)
+             - Risk score (5 dimensions)
+             - AI investment thesis
+             - Recommended max bid (JPY)
+
+  Metrics:   Count of Strong Buys, Buys, Reviews, Passes per scan.
+
+
+================================================================================
+  AGENT #3 — ORCHESTRATOR (Supreme Agent — Decision Gateway)
+================================================================================
+
+  Purpose:   Makes the final purchase decision. Central command and control.
+  Location:  Dashboard → AI Agents → Orchestrator
+  Depends:   JP Sourcing (recommendations) + DE Market (prices) + Finance (capital).
+
+  Input:     Takes BUY and STRONG_BUY recommendations from JP Sourcing.
+             "Evaluate" button runs the decision engine.
+
+  7-Step Decision Engine:
+             Step 1: Margin Check      — margin >= EUR 15,000 AND >= 20%?
+             Step 2: Confidence Check   — confidence score >= 0.70?
+             Step 3: Brand Concentration — brand < 30% of portfolio?
+             Step 4: Capital Check      — total deployed < 80% of available?
+             Step 5: Risk Flags         — no critical risk flags?
+             Step 6: Value Threshold    — within acceptable value range?
+             Step 7: Final Verdict      — all steps pass?
+
+  Output:    Per vehicle:
+             - AUTO_APPROVE → proceed to purchase with max_bid_jpy
+             - HUMAN_REVIEW → flag for manual decision
+             - REJECT → do not pursue
+
+  Displays:
+             - Agent Health Monitor (all 7 agents: HEALTHY/DEGRADED/DOWN/IDLE)
+             - Portfolio State (vehicles count, capital deployed, remaining capacity)
+             - Brand Concentration chart (>30% triggers warning)
+             - Decision History with full 7-step breakdown
+
+  Human-in-the-loop required for:
+             - Purchases > EUR 80,000
+             - Any risk flags present
+             - Price deviation > 10% from market
+             - Offers below 92% of asking
+             - Complaints or legal issues
+             - Process deviations
+
+  All decisions logged to audit_logs table for compliance.
+
+
+================================================================================
+  AGENT #4 — LOGISTICS AGENT (10-Stage Import Pipeline)
+================================================================================
+
+  Purpose:   Track each vehicle through the entire import process.
+  Location:  Dashboard → AI Agents → Logistics Agent (or Pipeline page for Kanban)
+  Depends:   Orchestrator (approved vehicles enter the pipeline).
+
+  10 Pipeline Stages:
+             Stage 1:  INBOUND        — Purchased at Japanese auction
+             Stage 2:  INSPECTION     — Japan-side condition verification
+             Stage 3:  SHIPPING       — Container booking, vessel tracking
+             Stage 4:  CUSTOMS        — Import documentation, duty payment
+             Stage 5:  ARRIVAL        — Port of Hamburg/Bremen
+             Stage 6:  TUV            — Einzelabnahme technical inspection
+             Stage 7:  MAINTENANCE    — Any required mechanical work
+             Stage 8:  DETAILING      — Professional preparation
+             Stage 9:  PHOTOGRAPHY    — Listing-ready photo set
+             Stage 10: READY_FOR_SALE — Cleared for listing
+
+  Features:
+             - Stage summary with vehicle counts per stage
+             - Individual vehicle cards with progress bars
+             - "Advance Stage" buttons for manual progression
+             - "Auto Advance" for bulk stage progression
+             - Shipment tracking (vessel name, container, route, insurance)
+             - TUV appointment management
+             - Photo upload requirements for certain stages
+             - ETA calculations per route
+
+  Timeline:  Typically 6-12 weeks per vehicle (end to end).
+
+  Output:    Vehicle status updates, pipeline events logged to DB.
+             Vehicles reaching Stage 10 become available to Listing Agent.
+
+
+================================================================================
+  AGENT #5 — LISTING AGENT (Multi-Platform Publishing)
+================================================================================
+
+  Purpose:   Create and manage listings across European marketplaces.
+  Location:  Dashboard → AI Agents → Listing Agent (or Listings page)
+  Depends:   Logistics Agent (vehicle must reach READY_FOR_SALE stage).
+             DE Market Agent (for competitive pricing data).
+
+  Process:
+             1. Takes READY_FOR_SALE vehicles from Logistics
+             2. Generates descriptions via Claude Sonnet:
+                - 800-1200 words, German + English
+                - Platform-optimized formatting
+                - SEO keywords
+                - Highlights and notable options
+                - Prompts loaded from external .txt files
+             3. Sets pricing strategy:
+                - Initial price at P60-P75 of market (competitive but profitable)
+                - Graduated reduction schedule:
+                  Day 0-14:  Hold price
+                  Day 14-28: Reduce 3-5%
+                  Day 28-42: Reduce another 3-5%
+                  Day 42+:   Strategic review / manual intervention
+             4. Publishes to platforms:
+                - mobile.de (primary)
+                - AutoScout24 (primary)
+                - Elferspot (Porsche/enthusiast)
+                - ClassicDriver (premium/collector)
+                - Company website (secondary)
+
+  Output:    Active listings with:
+             - Platform links
+             - Price history
+             - View/inquiry counts
+             - Days on market
+
+  Metrics:   Active listings, sold count, total created.
+
+
+================================================================================
+  AGENT #6 — CONCIERGE AGENT (Customer Interaction)
+================================================================================
+
+  Purpose:   Handle all buyer inquiries with AI-powered expert responses.
+  Location:  Dashboard → AI Agents → Concierge Agent (or Leads page)
+  Depends:   Listing Agent (inquiries come from listed vehicles).
+
+  Process:
+             1. Receives inquiry from marketplace platform
+             2. Classifies buyer type:
+                - COLLECTOR — high value, enthusiast knowledge
+                - TRADE — dealer/reseller
+                - BROWSER — casual interest
+                - UNKNOWN — insufficient data
+             3. Scores lead (0-100) based on:
+                - Inquiry depth and specificity
+                - Vehicle match quality
+                - Buyer type classification
+             4. Generates expert response via Claude Sonnet:
+                - Enthusiast-level vehicle knowledge
+                - Brand-specific terminology
+                - Multi-language (DE / EN / FR / IT / NL)
+                - Responds within 10 minutes
+             5. Handles negotiation within parameters
+             6. Sends response via email (SMTP)
+
+  Escalation triggers (requires human):
+             - Offers below 90% of listing price
+             - Part-exchange / trade-in proposals
+             - Independent inspection requests
+             - Complaints or legal language
+             - Vehicle history documentation requests
+
+  Output:    Lead records with conversation threads, scores, status.
+
+  Lead Statuses: NEW → QUALIFIED → CONTACTED → CONVERTED → LOST
+                 (or ESCALATED at any point)
+
+
+================================================================================
+  AGENT #7 — FINANCE AGENT (Runs Continuously)
+================================================================================
+
+  Purpose:   Track all financial aspects across the entire portfolio.
+  Location:  Dashboard → AI Agents → Finance AI (or Finance page)
+  Depends:   All other agents (aggregates financial data from entire pipeline).
+
+  Capabilities:
+
+  1. Per-Vehicle P&L:
+             - Purchase cost (JPY + EUR equivalent)
+             - All landed costs itemized
+             - Listing price / sale price
+             - Gross margin (EUR + %)
+             - Net margin after operational expenses
+
+  2. Portfolio Dashboard:
+             - Total vehicles in pipeline
+             - Capital deployed vs available
+             - Realized P&L (sold vehicles)
+             - Unrealized P&L (in-pipeline vehicles)
+             - Portfolio health score
+
+  3. FX Monitoring:
+             - Hourly JPY/EUR rate fetch
+             - Moving averages (7d, 30d)
+             - Alert thresholds:
+               > 2% deviation from moving average
+               Threshold crossing (e.g., Y160/EUR)
+               > 1% daily movement
+
+  4. Tax Optimization:
+             - Differenzbesteuerung (§25a UStG) — margin scheme, no VAT reclaim
+             - Regelbesteuerung — standard taxation, reclaim import VAT
+             - Models both options per vehicle, recommends optimal
+
+  5. Cash Flow:
+             - VAT reclaim timeline (4-8 week gap)
+             - Capital turnover rate
+             - Projected cash position
+
+  Output:    Financial reports, FX alerts, tax recommendations.
+  Metrics:   Revenue, margins, capital deployed, FX rates, compliance status.
+
+
+================================================================================
+  SUPPORTING PAGES (Not Agents — Dashboard Views)
+================================================================================
+
+  Dashboard (/dashboard)
+             - Landing page after login
+             - KPI cards: active vehicles, portfolio value, P&L, leads
+             - Pipeline overview (10 stages with counts)
+             - Agent health status (all 7 agents)
+
+  Pipeline (/pipeline)
+             - Kanban board view of Logistics Agent's 10 stages
+             - Drag-style visual of vehicle progression
+             - Color coded: green (on track), amber (delayed)
+
+  Opportunities (/opportunities)
+             - Filtered view of JP Sourcing Agent results
+             - Shows only actionable items (excludes PASS)
+             - Quick approve/review buttons
+
+  Listings (/listings)
+             - Table view of all Listing Agent output
+             - Filter by status: ACTIVE, SOLD, DRAFT
+             - Platform distribution and pricing
+
+  Leads (/leads)
+             - Table view of all Concierge Agent leads
+             - Filter tabs: ALL, NEW, QUALIFIED, ESCALATED, CONTACTED, CONVERTED, LOST
+             - Contact info, vehicle, source, score, status
+
+  Finance (/finance)
+             - Summary view of Finance Agent data
+             - Portfolio metrics, FX alerts, tax status, transactions
+
+  Notifications (/notifications)
+             - System alerts from all agents
+             - Escalations, FX alerts, pipeline delays, etc.
+
+  Settings (/settings)
+             - Agent configuration
+             - Decision thresholds
+             - API keys and preferences
+
+
+================================================================================
+  VISUAL FLOW DIAGRAM
+================================================================================
+
+                    ┌─────────────────────┐
+                    │   VALUATION AGENT    │  ← Standalone (Agent #0)
+                    │  Upload → BUY/PASS   │     Can be used anytime
+                    └──────────┬──────────┘
+                               │ (optional: send to pipeline)
+                               ▼
+                    ┌─────────────────────┐
+                    │   DE MARKET AGENT    │  ← MUST run first
+                    │  Scan German market  │     Builds price database
+                    │  14 target models    │     Runs every 6 hours
+                    └──────────┬──────────┘
+                               │ market prices + demand scores
+                               ▼
+                    ┌─────────────────────┐
+                    │  JP SOURCING AGENT   │  ← Find opportunities
+                    │  Scan JP auctions    │     Calculate landed costs
+                    │  OCR auction sheets  │     Score margins + risks
+                    └──────────┬──────────┘
+                               │ BUY / STRONG_BUY recommendations
+                               ▼
+                    ┌─────────────────────┐
+         Finance ──►│    ORCHESTRATOR      │  ← Decision gateway
+        (capital    │  7-step evaluation   │     Approve / Review / Reject
+         check)     │  Portfolio rules     │     Sets max bid price
+                    └──────────┬──────────┘
+                               │ approved vehicles
+                               ▼
+                    ┌─────────────────────┐
+                    │  LOGISTICS AGENT     │  ← Import pipeline
+                    │  10 stages           │     6-12 weeks per vehicle
+                    │  Shipping → TUV      │     Track every step
+                    └──────────┬──────────┘
+                               │ READY_FOR_SALE
+                               ▼
+                    ┌─────────────────────┐
+         DE Market─►│   LISTING AGENT      │  ← Sell the car
+        (pricing    │  AI descriptions     │     5 platforms
+         data)      │  Graduated pricing   │     Auto price reductions
+                    └──────────┬──────────┘
+                               │ buyer inquiries
+                               ▼
+                    ┌─────────────────────┐
+                    │  CONCIERGE AGENT     │  ← Handle buyers
+                    │  Auto-respond <10min │     Score & classify leads
+                    │  Negotiate / Escalate│     Multi-language
+                    └──────────┬──────────┘
+                               │ sales data
+                               ▼
+                    ┌─────────────────────┐
+                    │   FINANCE AGENT      │  ← Track everything
+                    │  P&L per vehicle     │     FX monitoring
+                    │  Tax optimization    │     Cash flow projections
+                    │  Portfolio health    │     Runs continuously
+                    └─────────────────────┘
+
+
+================================================================================
+  TYPICAL TIMELINE PER VEHICLE
+================================================================================
+
+  Week 1:     DE Market scan → JP Sourcing finds opportunity
+  Week 1-2:   Orchestrator approves → Purchase at auction
+  Week 2-3:   Japan inspection + export documentation
+  Week 3-7:   Ocean shipping (4-6 weeks Japan → Hamburg/Bremen)
+  Week 7-8:   Customs clearance + port handling
+  Week 8-9:   TUV Einzelabnahme inspection
+  Week 9-10:  Maintenance + detailing + photography
+  Week 10:    Listing Agent publishes to all platforms
+  Week 10-16: Listed for sale (target: sell within 6 weeks)
+  Week 16:    Sold → Finance Agent closes P&L
+
+  Total cycle: 10-16 weeks per vehicle
+  Target margin: EUR 15,000-60,000 per vehicle (20-50%)
+
+
+================================================================================
+  SCALING PROJECTIONS
+================================================================================
+
+  Month 1-3:    1-2 vehicles/month    EUR 100-250k capital    35-45% AI automation
+  Month 4-8:    3-5 vehicles/month    EUR 300-600k capital    55-65% AI automation
+  Month 9-18:   5-10 vehicles/month   EUR 500k-1.5M capital   70-80% AI automation
+  Month 19-24:  12-20 vehicles/month  EUR 1-3M capital        80-90% AI automation
+
+
+================================================================================

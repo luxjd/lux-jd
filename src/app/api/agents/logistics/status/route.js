@@ -3,7 +3,7 @@ import { getAgentStatus } from "@/lib/agents/logistics/storage";
 
 export async function GET() {
   return Response.json({
-    ...getAgentStatus(),
+    ...(await getAgentStatus()),
     agentId: "logistics",
     name: "Logistics Agent",
     aiPowered: isAIAvailable(),

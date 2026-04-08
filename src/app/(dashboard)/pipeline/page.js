@@ -2,8 +2,8 @@ import Link from "next/link";
 import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
 import { STAGES as PIPELINE_STAGES } from "@/lib/agents/logistics/pipeline";
 
-export default function PipelinePage() {
-  const realData = getPipelineVehicles();
+export default async function PipelinePage() {
+  const realData = await getPipelineVehicles();
 
   const allVehicles = (realData?.vehicles || []).map((v) => ({
     id: v.id, make: v.make, model: v.model, year: v.year,

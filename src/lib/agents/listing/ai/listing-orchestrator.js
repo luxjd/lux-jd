@@ -28,11 +28,11 @@ export async function createListing(vehicle, { onProgress = null } = {}) {
   }
 
   const startTime = Date.now();
-  updateAgentStatus({ status: "CREATING_LISTING" });
+  await updateAgentStatus({ status: "CREATING_LISTING" });
 
   // ─── Step 1: Find matching TVR ───
   onProgress?.("tvr", "Loading market data from DE Market Agent...");
-  const tvrData = getLatestTVRs();
+  const tvrData = await getLatestTVRs();
   const tvr = tvrData?.reports?.find((t) => {
     const tvrMake = t.vehicleSpec?.make?.toLowerCase();
     const tvrModel = t.vehicleSpec?.model?.toLowerCase();
@@ -54,7 +54,7 @@ export async function createListing(vehicle, { onProgress = null } = {}) {
   ]);
 
   if (!content) {
-    updateAgentStatus({ status: "ERROR" });
+    await updateAgentStatus({ status: "ERROR" });
     return { error: "Content generation failed", aiPowered: true };
   }
 
@@ -96,16 +96,16 @@ export async function createListing(vehicle, { onProgress = null } = {}) {
     aiPowered: true,
   };
 
-  saveListing(listing);
+  await saveListing(listing);
 
   // Update agent status
-  const prevStatus = getAgentStatus();
-  updateAgentStatus({
+  const prevStatus = await getAgentStatus();
+  await updateAgentStatus({
     status: "ONLINE",
     lastActionTimestamp: new Date().toISOString(),
     lastAction: `Created listing for ${vehicle.make} ${vehicle.model}`,
     listingsCreatedTotal: (prevStatus.listingsCreatedTotal || 0) + 1,
-    activeListings: getAllListings().listings?.filter((l) => l.status === "ACTIVE").length || 0,
+    activeListings: (await getAllListings()).listings?.filter((l) => l.status === "ACTIVE").length || 0,
   });
 
   onProgress?.("complete", "Listing created successfully!");
@@ -132,8 +132,8 @@ export async function createListing(vehicle, { onProgress = null } = {}) {
  * Run price reduction check on all active listings.
  * Called periodically to enforce the dynamic pricing schedule.
  */
-export function runPriceReductionCheck() {
-  const data = getAllListings();
+export async function runPriceReductionCheck() {
+  const data = await getAllListings();
   const activeListings = data.listings?.filter((l) => l.status === "ACTIVE") || [];
   const actions = [];
 
@@ -141,7 +141,7 @@ export function runPriceReductionCheck() {
     const check = checkPriceReduction(listing);
 
     if (check.shouldReduce) {
-      updateListingPrice(listing.id, check.newPrice, check.reason);
+      await updateListingPrice(listing.id, check.newPrice, check.reason);
       updatePriceOnAllPlatforms(listing, check.newPrice);
       actions.push({
         listingId: listing.id,

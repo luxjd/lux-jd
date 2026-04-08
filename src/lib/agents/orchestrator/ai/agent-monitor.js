@@ -24,14 +24,14 @@ const AGENTS = [
 /**
  * Check health of all agents.
  */
-export function checkAllAgents() {
+export async function checkAllAgents() {
   const results = [];
   let overallHealth = "HEALTHY";
 
   for (const agent of AGENTS) {
     let status;
     try {
-      status = agent.getStatus();
+      status = await agent.getStatus();
     } catch {
       status = { status: "ERROR", error: "Failed to read agent status" };
     }

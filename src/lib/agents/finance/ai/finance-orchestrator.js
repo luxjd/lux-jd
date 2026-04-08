@@ -26,27 +26,27 @@ import {
 /**
  * Record a single cost transaction.
  */
-export function recordTransaction(data) {
+export async function recordTransaction(data) {
   const txn = createTransaction(data);
-  addTransaction(txn);
-  updateAgentStatus({ status: "ONLINE", lastAction: `Recorded ${data.category} for ${data.vehicleId}` });
+  await addTransaction(txn);
+  await updateAgentStatus({ status: "ONLINE", lastAction: `Recorded ${data.category} for ${data.vehicleId}` });
   return txn;
 }
 
 /**
  * Record all costs from a landed cost breakdown (when vehicle enters pipeline).
  */
-export function recordLandedCosts(vehicleId, landedCost, fxRate) {
+export async function recordLandedCosts(vehicleId, landedCost, fxRate) {
   const txns = generateTransactionsFromLandedCost(vehicleId, landedCost, fxRate);
-  addTransactions(txns);
-  updateAgentStatus({ status: "ONLINE", lastAction: `Recorded ${txns.length} transactions for ${vehicleId}` });
+  await addTransactions(txns);
+  await updateAgentStatus({ status: "ONLINE", lastAction: `Recorded ${txns.length} transactions for ${vehicleId}` });
   return { recorded: txns.length, transactions: txns };
 }
 
 /**
  * Record a vehicle sale.
  */
-export function recordSale(vehicleId, salePrice, date) {
+export async function recordSale(vehicleId, salePrice, date) {
   const txn = createTransaction({
     vehicleId,
     category: "SALE_PROCEEDS",
@@ -54,8 +54,8 @@ export function recordSale(vehicleId, salePrice, date) {
     description: `Vehicle sold for €${salePrice.toLocaleString()}`,
     date,
   });
-  addTransaction(txn);
-  updateAgentStatus({ status: "ONLINE", lastAction: `Recorded sale of ${vehicleId} for €${salePrice.toLocaleString()}` });
+  await addTransaction(txn);
+  await updateAgentStatus({ status: "ONLINE", lastAction: `Recorded sale of ${vehicleId} for €${salePrice.toLocaleString()}` });
   return txn;
 }
 
@@ -64,18 +64,18 @@ export function recordSale(vehicleId, salePrice, date) {
  */
 export async function runFinancialCheck(vehicles) {
   const startTime = Date.now();
-  updateAgentStatus({ status: "ANALYZING" });
+  await updateAgentStatus({ status: "ANALYZING" });
 
-  const allTxns = getAllTransactions().transactions || [];
+  const allTxns = (await getAllTransactions()).transactions || [];
 
   // ─── FX Check ───
-  const fxHistory = getFxHistory();
+  const fxHistory = await getFxHistory();
   const fxCheck = await checkFxRate(fxHistory.rates || []);
-  addFxRate(fxCheck.current.rate);
+  await addFxRate(fxCheck.current.rate);
 
   if (fxCheck.alerts.length > 0) {
     for (const alert of fxCheck.alerts) {
-      addFxAlert(alert);
+      await addFxAlert(alert);
     }
   }
 
@@ -87,7 +87,7 @@ export async function runFinancialCheck(vehicles) {
 
   // ─── Portfolio P&L ───
   const portfolioPnL = calculatePortfolioPnL(vehiclePnLs);
-  savePortfolio(portfolioPnL);
+  await savePortfolio(portfolioPnL);
 
   // ─── Tax Comparison (for sold vehicles) ───
   const taxComparisons = vehiclePnLs
@@ -133,9 +133,9 @@ export async function runFinancialCheck(vehicles) {
     generatedAt: new Date().toISOString(),
   };
 
-  saveTaxReport({ taxComparisons, vatDeclaration, taxReview, generatedAt: report.generatedAt });
+  await saveTaxReport({ taxComparisons, vatDeclaration, taxReview, generatedAt: report.generatedAt });
 
-  updateAgentStatus({
+  await updateAgentStatus({
     status: "ONLINE",
     lastAction: `Financial check complete — ${vehiclePnLs.length} vehicles analyzed`,
     lastCheckTimestamp: new Date().toISOString(),

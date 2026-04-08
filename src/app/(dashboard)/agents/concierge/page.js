@@ -3,10 +3,10 @@ import { getAllLeads, getEscalations, getAgentStatus } from "@/lib/agents/concie
 import InquirySimulator from "./_components/InquirySimulator";
 import LeadsPanel from "./_components/LeadsPanel";
 
-export default function ConciergeAgentPage() {
-  const status = getAgentStatus();
-  const data = getAllLeads();
-  const escalations = getEscalations();
+export default async function ConciergeAgentPage() {
+  const status = await getAgentStatus();
+  const data = await getAllLeads();
+  const escalations = await getEscalations();
   const leads = data.leads || [];
   const hasLeads = leads.length > 0;
 

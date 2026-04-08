@@ -2,7 +2,7 @@ import { TRACKED_MODELS } from "@/lib/agents/de-market/constants";
 import { getLatestTVRs } from "@/lib/agents/de-market/storage";
 
 export async function GET() {
-  const realData = getLatestTVRs();
+  const realData = await getLatestTVRs();
 
   // Merge tracked models config with any real scan data
   const models = TRACKED_MODELS.map((m) => {

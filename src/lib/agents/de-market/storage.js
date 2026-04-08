@@ -1,90 +1,91 @@
 /**
- * DE Market Agent Storage — persists scan results, TVRs, and history.
- *
- * Uses JSON files on disk for v1. In production, this would be PostgreSQL.
- * Files stored in /data/de-market/
+ * DE Market Agent Storage — scan results, TVRs, history.
+ * Uses PostgreSQL via Prisma (no local JSON files).
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join } from "path";
+import { getDb } from "@/lib/db";
 
-const DATA_DIR = join(process.cwd(), "data", "de-market");
+// ─── Scan Results (KeyValueStore) ───
 
-function ensureDir() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+export async function getLatestScanResults() {
+  const db = await getDb();
+  if (!db) return null;
+  const row = await db.keyValueStore.findUnique({ where: { key: "de-market-latest-scan" } });
+  return row?.value || null;
 }
 
-function readJson(filename) {
-  const path = join(DATA_DIR, filename);
-  if (!existsSync(path)) return null;
-  try {
-    return JSON.parse(readFileSync(path, "utf-8"));
-  } catch {
-    return null;
-  }
-}
-
-function writeJson(filename, data) {
-  ensureDir();
-  writeFileSync(join(DATA_DIR, filename), JSON.stringify(data, null, 2), "utf-8");
-}
-
-// ─── Scan Results ───
-
-export function getLatestScanResults() {
-  return readJson("latest-scan.json");
-}
-
-export function saveScanResults(results) {
-  writeJson("latest-scan.json", {
-    results,
-    scannedAt: new Date().toISOString(),
-    count: results.length,
+export async function saveScanResults(results) {
+  const db = await getDb();
+  if (!db) return;
+  const value = { results, scannedAt: new Date().toISOString(), count: results.length };
+  await db.keyValueStore.upsert({
+    where: { key: "de-market-latest-scan" },
+    update: { value },
+    create: { key: "de-market-latest-scan", value },
   });
-
-  // Also append to scan history
-  appendScanHistory(results);
+  await appendScanHistory(results);
 }
 
-// ─── TVRs ───
+// ─── TVRs (KeyValueStore) ───
 
-export function getLatestTVRs() {
-  return readJson("latest-tvrs.json");
+export async function getLatestTVRs() {
+  const db = await getDb();
+  if (!db) return null;
+  const row = await db.keyValueStore.findUnique({ where: { key: "de-market-latest-tvrs" } });
+  return row?.value || null;
 }
 
-export function saveTVRs(tvrs) {
-  writeJson("latest-tvrs.json", {
-    reports: tvrs,
-    generatedAt: new Date().toISOString(),
-    count: tvrs.length,
+export async function saveTVRs(tvrs) {
+  const db = await getDb();
+  if (!db) return;
+  const value = { reports: tvrs, generatedAt: new Date().toISOString(), count: tvrs.length };
+  await db.keyValueStore.upsert({
+    where: { key: "de-market-latest-tvrs" },
+    update: { value },
+    create: { key: "de-market-latest-tvrs", value },
   });
 }
 
-export function getTVRByModel(modelId) {
-  const data = getLatestTVRs();
+export async function getTVRByModel(modelId) {
+  const data = await getLatestTVRs();
   if (!data?.reports) return null;
-  return data.reports.find((t) => t.vehicleSpec?.make?.toLowerCase().replace(/\s+/g, "-") + "-" + t.vehicleSpec?.model?.toLowerCase().replace(/[\s()]+/g, "-") === modelId || t.modelId === modelId);
+  return data.reports.find((t) =>
+    t.vehicleSpec?.make?.toLowerCase().replace(/\s+/g, "-") + "-" + t.vehicleSpec?.model?.toLowerCase().replace(/[\s()]+/g, "-") === modelId || t.modelId === modelId
+  );
 }
 
-// ─── Competitors ───
+// ─── Competitors (KeyValueStore) ───
 
-export function getLatestCompetitors() {
-  return readJson("competitors.json");
+export async function getLatestCompetitors() {
+  const db = await getDb();
+  if (!db) return null;
+  const row = await db.keyValueStore.findUnique({ where: { key: "de-market-competitors" } });
+  return row?.value || null;
 }
 
-export function saveCompetitors(data) {
-  writeJson("competitors.json", data);
+export async function saveCompetitors(data) {
+  const db = await getDb();
+  if (!db) return;
+  await db.keyValueStore.upsert({
+    where: { key: "de-market-competitors" },
+    update: { value: data },
+    create: { key: "de-market-competitors", value: data },
+  });
 }
 
-// ─── Scan History (for trend tracking) ───
+// ─── Scan History (KeyValueStore) ───
 
-export function getScanHistory() {
-  return readJson("scan-history.json") || { scans: [] };
+export async function getScanHistory() {
+  const db = await getDb();
+  if (!db) return { scans: [] };
+  const row = await db.keyValueStore.findUnique({ where: { key: "de-market-scan-history" } });
+  return row?.value || { scans: [] };
 }
 
-function appendScanHistory(results) {
-  const history = getScanHistory();
-
+async function appendScanHistory(results) {
+  const db = await getDb();
+  if (!db) return;
+  const history = await getScanHistory();
   history.scans.push({
     timestamp: new Date().toISOString(),
     modelCount: results.length,
@@ -98,24 +99,27 @@ function appendScanHistory(results) {
       error: r.error || null,
     })),
   });
-
-  // Keep last 100 scans
-  if (history.scans.length > 100) {
-    history.scans = history.scans.slice(-100);
-  }
-
-  writeJson("scan-history.json", history);
+  if (history.scans.length > 100) history.scans = history.scans.slice(-100);
+  await db.keyValueStore.upsert({
+    where: { key: "de-market-scan-history" },
+    update: { value: history },
+    create: { key: "de-market-scan-history", value: history },
+  });
 }
 
-// ─── Price History (per model, for charts) ───
+// ─── Price History (KeyValueStore, per model) ───
 
-export function getPriceHistory(modelId) {
-  return readJson(`price-history-${modelId}.json`) || { modelId, history: [] };
+export async function getPriceHistory(modelId) {
+  const db = await getDb();
+  if (!db) return { modelId, history: [] };
+  const row = await db.keyValueStore.findUnique({ where: { key: `de-market-price-history-${modelId}` } });
+  return row?.value || { modelId, history: [] };
 }
 
-export function appendPriceHistory(modelId, scanResult) {
-  const data = getPriceHistory(modelId);
-
+export async function appendPriceHistory(modelId, scanResult) {
+  const db = await getDb();
+  if (!db) return;
+  const data = await getPriceHistory(modelId);
   data.history.push({
     date: new Date().toISOString().split("T")[0],
     timestamp: new Date().toISOString(),
@@ -126,42 +130,57 @@ export function appendPriceHistory(modelId, scanResult) {
     velocity: scanResult.demand?.velocity_score,
     trend: scanResult.trend?.direction,
   });
-
-  // Keep last 180 days
-  if (data.history.length > 180) {
-    data.history = data.history.slice(-180);
-  }
-
-  writeJson(`price-history-${modelId}.json`, data);
+  if (data.history.length > 180) data.history = data.history.slice(-180);
+  await db.keyValueStore.upsert({
+    where: { key: `de-market-price-history-${modelId}` },
+    update: { value: data },
+    create: { key: `de-market-price-history-${modelId}`, value: data },
+  });
 }
 
 // ─── Agent Status ───
 
-export function getAgentStatus() {
-  return readJson("agent-status.json") || {
-    status: "IDLE",
-    lastScanTimestamp: null,
-    scansConductedToday: 0,
-    totalListingsTracked: 0,
-    errorCount24h: 0,
-  };
+export async function getAgentStatus() {
+  const db = await getDb();
+  if (!db) return { status: "IDLE", lastScanTimestamp: null, scansConductedToday: 0, totalListingsTracked: 0, errorCount24h: 0 };
+  const s = await db.agentStatus.findUnique({ where: { id: "de-market" } });
+  if (!s) return { status: "IDLE", lastScanTimestamp: null, scansConductedToday: 0, totalListingsTracked: 0, errorCount24h: 0 };
+  return { ...s.metadata, status: s.status, lastAction: s.lastAction, lastActionAt: s.lastActionAt?.toISOString(), errorCount24h: s.errorCount24h, updatedAt: s.updatedAt.toISOString() };
 }
 
-export function updateAgentStatus(updates) {
-  const current = getAgentStatus();
-  writeJson("agent-status.json", { ...current, ...updates, updatedAt: new Date().toISOString() });
+export async function updateAgentStatus(updates) {
+  const db = await getDb();
+  if (!db) return;
+  const current = await getAgentStatus();
+  const { status, lastAction, lastActionAt, errorCount24h, ...rest } = { ...current, ...updates };
+  await db.agentStatus.upsert({
+    where: { id: "de-market" },
+    update: { name: "DE Market", status: status || "IDLE", lastAction, lastActionAt: lastActionAt ? new Date(lastActionAt) : new Date(), errorCount24h: errorCount24h || 0, metadata: rest },
+    create: { id: "de-market", name: "DE Market", status: status || "IDLE", lastAction, lastActionAt: lastActionAt ? new Date(lastActionAt) : new Date(), errorCount24h: errorCount24h || 0, metadata: rest },
+  });
 }
 
-// ─── Scan Progress (for background scan tracking) ───
+// ─── Scan Progress (KeyValueStore) ───
 
-export function getScanProgress() {
-  return readJson("scan-progress.json") || null;
+export async function getScanProgress() {
+  const db = await getDb();
+  if (!db) return null;
+  const row = await db.keyValueStore.findUnique({ where: { key: "de-market-scan-progress" } });
+  return row?.value || null;
 }
 
-export function saveScanProgress(data) {
-  writeJson("scan-progress.json", data);
+export async function saveScanProgress(data) {
+  const db = await getDb();
+  if (!db) return;
+  await db.keyValueStore.upsert({
+    where: { key: "de-market-scan-progress" },
+    update: { value: data || {} },
+    create: { key: "de-market-scan-progress", value: data || {} },
+  });
 }
 
-export function clearScanProgress() {
-  writeJson("scan-progress.json", null);
+export async function clearScanProgress() {
+  const db = await getDb();
+  if (!db) return;
+  await db.keyValueStore.delete({ where: { key: "de-market-scan-progress" } }).catch(() => {});
 }

@@ -2,7 +2,7 @@ import { isAIAvailable } from "@/lib/claude";
 import { getAgentStatus } from "@/lib/agents/listing/storage";
 
 export async function GET() {
-  const status = getAgentStatus();
+  const status = await getAgentStatus();
   return Response.json({
     ...status,
     agentId: "listing",

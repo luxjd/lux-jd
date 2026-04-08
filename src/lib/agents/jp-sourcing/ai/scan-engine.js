@@ -22,13 +22,13 @@ import { saveOpportunities, updateAgentStatus, getAgentStatus, saveScanProgress,
  */
 export async function runFullScan({ deepAnalysis = true } = {}) {
   const startTime = Date.now();
-  updateAgentStatus({ status: "SCANNING" });
+  await updateAgentStatus({ status: "SCANNING" });
 
-  const writeProgress = (step, detail, extra = {}) => {
-    const current = getScanProgress();
+  const writeProgress = async (step, detail, extra = {}) => {
+    const current = await getScanProgress();
     // Don't overwrite if stopped
     if (current?.state === "stopped") return;
-    saveScanProgress({
+    await saveScanProgress({
       ...current,
       state: current?.state === "paused" ? "paused" : "scanning",
       step,
@@ -38,34 +38,34 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
     });
   };
 
-  const checkState = () => getScanProgress()?.state;
+  const checkState = async () => (await getScanProgress())?.state;
 
   // ─── Step 1: Load TVRs ───
-  writeProgress("loading", "Loading Target Vehicle Reports from DE Market Agent...");
+  await writeProgress("loading", "Loading Target Vehicle Reports from DE Market Agent...");
 
-  const tvrData = getLatestTVRs();
+  const tvrData = await getLatestTVRs();
   if (!tvrData?.reports?.length) {
-    updateAgentStatus({ status: "ERROR", lastError: "No TVRs available" });
-    saveScanProgress({ state: "error", error: "No Target Vehicle Reports. Run DE Market Agent scan first." });
+    await updateAgentStatus({ status: "ERROR", lastError: "No TVRs available" });
+    await saveScanProgress({ state: "error", error: "No Target Vehicle Reports. Run DE Market Agent scan first." });
     return { error: "No Target Vehicle Reports available. Run DE Market Agent scan first.", aiPowered: true };
   }
 
   const tvrs = tvrData.reports;
-  writeProgress("loading", `Loaded ${tvrs.length} Target Vehicle Reports`, { totalModels: tvrs.length });
+  await writeProgress("loading", `Loaded ${tvrs.length} Target Vehicle Reports`, { totalModels: tvrs.length });
 
   // Check for stop before scraping
-  if (checkState() === "stopped") return { error: "Scan stopped by user" };
+  if (await checkState() === "stopped") return { error: "Scan stopped by user" };
 
   // ─── Step 2: Scrape Japanese platforms (with pause/resume) ───
-  writeProgress("scraping", `Scraping goo-net + carsensor for ${tvrs.length} models...`, {
+  await writeProgress("scraping", `Scraping goo-net + carsensor for ${tvrs.length} models...`, {
     totalModels: tvrs.length,
     completedModels: 0,
     vehiclesFound: 0,
   });
 
   const auctionResult = await scanAuctions(tvrs, {
-    onProgress: (modelIdx, total, make, model, vehiclesSoFar) => {
-      writeProgress("scraping", `Scraping ${make} ${model} (${modelIdx + 1}/${total})...`, {
+    onProgress: async (modelIdx, total, make, model, vehiclesSoFar) => {
+      await writeProgress("scraping", `Scraping ${make} ${model} (${modelIdx + 1}/${total})...`, {
         totalModels: total,
         completedModels: modelIdx,
         currentModel: `${make} ${model}`,
@@ -76,19 +76,19 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
   });
 
   if (!auctionResult || auctionResult.error) {
-    updateAgentStatus({ status: "ERROR", lastError: auctionResult?.error || "Scan failed" });
-    saveScanProgress({ state: "error", error: auctionResult?.error || "Scan failed" });
+    await updateAgentStatus({ status: "ERROR", lastError: auctionResult?.error || "Scan failed" });
+    await saveScanProgress({ state: "error", error: auctionResult?.error || "Scan failed" });
     return { error: auctionResult?.error || "Auction scan failed", aiPowered: true };
   }
 
   // Check if stopped during scraping
-  if (checkState() === "stopped") {
-    updateAgentStatus({ status: "ONLINE" });
+  if (await checkState() === "stopped") {
+    await updateAgentStatus({ status: "ONLINE" });
     return { error: "Scan stopped by user" };
   }
 
   const vehicles = auctionResult.vehicles;
-  writeProgress("scraping", `Found ${vehicles.length} vehicles from Japanese platforms`, {
+  await writeProgress("scraping", `Found ${vehicles.length} vehicles from Japanese platforms`, {
     totalModels: tvrs.length,
     completedModels: auctionResult.completedModels?.length || tvrs.length,
     vehiclesFound: vehicles.length,
@@ -96,13 +96,13 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
 
   if (vehicles.length === 0) {
     const elapsed = Date.now() - startTime;
-    updateAgentStatus({ status: "ONLINE", lastScanTimestamp: new Date().toISOString() });
-    saveScanProgress({ state: "done", detail: "No vehicles found matching target models", vehiclesFound: 0, completedAt: new Date().toISOString() });
+    await updateAgentStatus({ status: "ONLINE", lastScanTimestamp: new Date().toISOString() });
+    await saveScanProgress({ state: "done", detail: "No vehicles found matching target models", vehiclesFound: 0, completedAt: new Date().toISOString() });
     return { aiPowered: true, status: "COMPLETED", duration: elapsed, results: { total: 0 } };
   }
 
   // ─── Step 3: Evaluate ───
-  writeProgress("evaluating", `Evaluating ${vehicles.length} candidates against DE market data...`, { vehiclesFound: vehicles.length });
+  await writeProgress("evaluating", `Evaluating ${vehicles.length} candidates against DE market data...`, { vehiclesFound: vehicles.length });
 
   const opportunities = evaluateAllOpportunities(vehicles, tvrs, auctionResult.fxRate);
 
@@ -111,7 +111,7 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
   const reviews = opportunities.filter((o) => o.recommendation === "REVIEW");
   const passes = opportunities.filter((o) => o.recommendation === "PASS");
 
-  writeProgress("evaluating", `${strongBuys.length} STRONG_BUY, ${buys.length} BUY, ${reviews.length} REVIEW, ${passes.length} PASS`, {
+  await writeProgress("evaluating", `${strongBuys.length} STRONG_BUY, ${buys.length} BUY, ${reviews.length} REVIEW, ${passes.length} PASS`, {
     vehiclesFound: vehicles.length,
     results: { strongBuy: strongBuys.length, buy: buys.length, review: reviews.length, pass: passes.length },
   });
@@ -120,12 +120,12 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
   let deepAnalyses = [];
   const qualifyingCount = strongBuys.length + buys.length;
   if (deepAnalysis && qualifyingCount > 0 && isAIAvailable()) {
-    if (checkState() === "stopped") {
-      updateAgentStatus({ status: "ONLINE" });
+    if (await checkState() === "stopped") {
+      await updateAgentStatus({ status: "ONLINE" });
       return { error: "Scan stopped by user" };
     }
 
-    writeProgress("analyzing", `Deep-analyzing ${qualifyingCount} qualifying candidates via AI...`, {
+    await writeProgress("analyzing", `Deep-analyzing ${qualifyingCount} qualifying candidates via AI...`, {
       vehiclesFound: vehicles.length,
       results: { strongBuy: strongBuys.length, buy: buys.length, review: reviews.length, pass: passes.length },
     });
@@ -144,7 +144,7 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
   // ─── Step 5: Persist ───
   const elapsed = Date.now() - startTime;
 
-  saveOpportunities({
+  await saveOpportunities({
     opportunities,
     deepAnalyses,
     scanSummary: {
@@ -165,8 +165,8 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
     scannedAt: new Date().toISOString(),
   });
 
-  const prevStatus = getAgentStatus();
-  updateAgentStatus({
+  const prevStatus = await getAgentStatus();
+  await updateAgentStatus({
     status: "ONLINE",
     lastScanTimestamp: new Date().toISOString(),
     lastScanDuration: elapsed,
@@ -177,7 +177,7 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
     buyCount: buys.length,
   });
 
-  saveScanProgress({
+  await saveScanProgress({
     state: "done",
     step: "complete",
     detail: `Scan complete. ${vehicles.length} vehicles found, ${strongBuys.length + buys.length} opportunities.`,

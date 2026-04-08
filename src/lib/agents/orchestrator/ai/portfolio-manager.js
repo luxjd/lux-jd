@@ -11,10 +11,10 @@ import { getAllTransactions } from "@/lib/agents/finance/storage";
 /**
  * Load current portfolio state from all agent data.
  */
-export function loadPortfolioState() {
-  const pipelineData = getPipelineVehicles();
+export async function loadPortfolioState() {
+  const pipelineData = await getPipelineVehicles();
   const vehicles = pipelineData.vehicles || [];
-  const allTxns = getAllTransactions().transactions || [];
+  const allTxns = (await getAllTransactions()).transactions || [];
 
   // Calculate capital deployed per vehicle
   let totalCapitalDeployed = 0;

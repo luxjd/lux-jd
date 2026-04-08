@@ -7,11 +7,11 @@ export async function GET(request) {
   const vehicleId = searchParams.get("vehicleId");
 
   if (vehicleId) {
-    const txns = getTransactionsByVehicle(vehicleId);
+    const txns = await getTransactionsByVehicle(vehicleId);
     return Response.json({ transactions: txns, count: txns.length });
   }
 
-  const all = getAllTransactions();
+  const all = await getAllTransactions();
   return Response.json({ transactions: all.transactions?.slice(-100) || [], count: all.transactions?.length || 0 });
 }
 
@@ -20,18 +20,18 @@ export async function POST(request) {
 
   // Record landed costs bulk
   if (body.action === "RECORD_LANDED_COSTS") {
-    const result = recordLandedCosts(body.vehicleId, body.landedCost, body.fxRate);
+    const result = await recordLandedCosts(body.vehicleId, body.landedCost, body.fxRate);
     return Response.json(result);
   }
 
   // Record sale
   if (body.action === "RECORD_SALE") {
-    const txn = recordSale(body.vehicleId, body.salePrice, body.date);
+    const txn = await recordSale(body.vehicleId, body.salePrice, body.date);
     return Response.json({ success: true, transaction: txn });
   }
 
   // Record single transaction
-  const txn = recordTransaction(body);
+  const txn = await recordTransaction(body);
 
   // Also save to PostgreSQL
   try {

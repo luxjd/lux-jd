@@ -4,12 +4,12 @@ import RunCheckButton from "./_components/RunCheckButton";
 
 const fmt = (n) => n != null && !isNaN(n) ? `€${n.toLocaleString()}` : "—";
 
-export default function FinanceAgentPage() {
-  const status = getAgentStatus();
-  const portfolio = getLatestPortfolio();
-  const taxReport = getLatestTaxReport();
-  const fxAlerts = getFxAlerts();
-  const allTxns = getAllTransactions();
+export default async function FinanceAgentPage() {
+  const status = await getAgentStatus();
+  const portfolio = await getLatestPortfolio();
+  const taxReport = await getLatestTaxReport();
+  const fxAlerts = await getFxAlerts();
+  const allTxns = await getAllTransactions();
   const hasData = !!portfolio?.summary;
 
   return (

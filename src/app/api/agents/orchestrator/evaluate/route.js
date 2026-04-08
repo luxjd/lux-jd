@@ -11,9 +11,9 @@ export async function POST(request) {
   const body = await request.json();
   if (!body.opportunity) return Response.json({ error: "Missing opportunity data" }, { status: 400 });
 
-  updateAgentStatus({ status: "EVALUATING" });
+  await updateAgentStatus({ status: "EVALUATING" });
 
-  const portfolio = loadPortfolioState();
+  const portfolio = await loadPortfolioState();
   const evaluation = evaluateOpportunity(body.opportunity, portfolio);
 
   // Generate AI brief for HUMAN_REVIEW decisions
@@ -24,7 +24,7 @@ export async function POST(request) {
 
   const fullDecision = { ...evaluation, brief, portfolio: { deployed: portfolio.deploymentPct, vehicles: portfolio.totalVehicles, health: portfolio.healthScore } };
 
-  saveDecision(fullDecision);
+  await saveDecision(fullDecision);
 
   // AUTO-APPROVE → Send to pipeline automatically
   let pipelineResult = null;
@@ -61,8 +61,8 @@ export async function POST(request) {
       updatedAt: now,
     };
 
-    savePipelineVehicle(vehicle);
-    addPipelineEvent({
+    await savePipelineVehicle(vehicle);
+    await addPipelineEvent({
       vehicleId,
       fromStatus: null,
       toStatus: "SOURCED",
@@ -74,7 +74,7 @@ export async function POST(request) {
     if (opp.landedCost && Object.keys(opp.landedCost).length > 0) {
       after(async () => {
         try {
-          recordLandedCosts(vehicleId, opp.landedCost, opp.landedCost.fxRateUsed || 183);
+          await recordLandedCosts(vehicleId, opp.landedCost, opp.landedCost.fxRateUsed || 183);
         } catch (e) { console.warn("Finance txn recording failed:", e.message); }
       });
     }
@@ -98,7 +98,7 @@ export async function POST(request) {
     });
   } catch (e) { console.warn("DB save decision failed:", e.message); }
 
-  updateAgentStatus({
+  await updateAgentStatus({
     status: "ONLINE",
     lastAction: `${evaluation.decision}: ${evaluation.vehicleName}`,
     lastDecision: evaluation.decision,

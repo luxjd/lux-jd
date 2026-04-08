@@ -5,7 +5,7 @@ export async function GET(request) {
   const filter = searchParams.get("filter"); // STRONG_BUY, BUY, REVIEW, PASS, ALL
   const minMargin = parseInt(searchParams.get("minMargin") || "0");
 
-  const data = getLatestOpportunities();
+  const data = await getLatestOpportunities();
 
   if (!data?.opportunities?.length) {
     return Response.json({
@@ -33,7 +33,7 @@ export async function GET(request) {
     count: filtered.length,
     totalCount: data.count,
     scannedAt: data.scannedAt,
-    scanHistory: (getScanHistory()?.scans || []).slice(-5),
+    scanHistory: ((await getScanHistory())?.scans || []).slice(-5),
     aiPowered: true,
   });
 }

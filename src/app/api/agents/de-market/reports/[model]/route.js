@@ -3,8 +3,8 @@ import { getLatestTVRs, getLatestScanResults, getPriceHistory } from "@/lib/agen
 export async function GET(request, { params }) {
   const { model } = await params;
 
-  const realTVRs = getLatestTVRs();
-  const realScans = getLatestScanResults();
+  const realTVRs = await getLatestTVRs();
+  const realScans = await getLatestScanResults();
 
   if (realTVRs?.reports?.length > 0) {
     const tvr = realTVRs.reports.find((r) => {
@@ -13,7 +13,7 @@ export async function GET(request, { params }) {
     });
 
     const scan = realScans?.results?.find((r) => r.modelId === model);
-    const history = getPriceHistory(model);
+    const history = await getPriceHistory(model);
 
     if (tvr) {
       return Response.json({

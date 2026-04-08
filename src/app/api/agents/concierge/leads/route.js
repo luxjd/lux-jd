@@ -6,12 +6,12 @@ export async function GET(request) {
   const leadId = searchParams.get("leadId");
 
   if (leadId) {
-    const lead = getLeadById(leadId);
-    const conv = getConversation(leadId);
+    const lead = await getLeadById(leadId);
+    const conv = await getConversation(leadId);
     return Response.json({ lead, messages: conv.messages || [] });
   }
 
-  const data = getAllLeads();
+  const data = await getAllLeads();
   let leads = data.leads || [];
   if (status && status !== "ALL") leads = leads.filter((l) => l.status === status);
 
@@ -22,7 +22,7 @@ export async function PUT(request) {
   const body = await request.json();
   if (!body.leadId || !body.status) return Response.json({ error: "Missing leadId or status" }, { status: 400 });
 
-  const lead = updateLeadStatus(body.leadId, body.status);
+  const lead = await updateLeadStatus(body.leadId, body.status);
   if (!lead) return Response.json({ error: "Lead not found" }, { status: 404 });
   return Response.json({ success: true, lead });
 }

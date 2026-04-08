@@ -3,7 +3,7 @@ import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
 
 export async function GET() {
   const overview = getPipelineOverview();
-  const data = getPipelineVehicles();
+  const data = await getPipelineVehicles();
 
   return Response.json({
     ...overview,

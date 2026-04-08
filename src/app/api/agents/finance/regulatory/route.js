@@ -20,7 +20,7 @@ export async function POST(request) {
     return Response.json({ error: "Missing field or newValue" }, { status: 400 });
   }
 
-  const data = getPipelineVehicles();
+  const data = await getPipelineVehicles();
   const vehicles = data.vehicles || [];
   const impact = simulateRegulatoryChange(change, vehicles);
 

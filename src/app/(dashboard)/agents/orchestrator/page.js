@@ -9,15 +9,15 @@ const DECISION_STYLES = { AUTO_APPROVE: "bg-emerald-400/15 text-emerald-400", HU
 const STEP_STYLES = { PASS: "text-emerald-400", FAIL: "text-red-400", FLAG: "text-amber-400" };
 const HEALTH_STYLES = { HEALTHY: "bg-emerald-400", DEGRADED: "bg-amber-400", STALE: "bg-amber-400", DOWN: "bg-red-400", IDLE: "bg-slate-400" };
 
-export default function OrchestratorPage() {
-  const status = getAgentStatus();
-  const decisionsData = getDecisions();
+export default async function OrchestratorPage() {
+  const status = await getAgentStatus();
+  const decisionsData = await getDecisions();
   const decisions = decisionsData.decisions || [];
-  const agentHealth = checkAllAgents();
-  const portfolio = loadPortfolioState();
+  const agentHealth = await checkAllAgents();
+  const portfolio = await loadPortfolioState();
 
   // Get actionable opportunities (BUY/STRONG_BUY that haven't been evaluated)
-  const oppData = getLatestOpportunities();
+  const oppData = await getLatestOpportunities();
   const opportunities = (oppData?.opportunities || []).filter((o) =>
     o.recommendation === "STRONG_BUY" || o.recommendation === "BUY"
   );

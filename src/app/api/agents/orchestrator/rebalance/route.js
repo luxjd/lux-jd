@@ -10,8 +10,8 @@ const MAX_DEPLOYMENT_PCT = parseInt(process.env.MAX_CAPITAL_DEPLOYMENT_PCT || "8
  * Returns alerts and recommendations for portfolio health.
  */
 export async function GET() {
-  const portfolio = loadPortfolioState();
-  const vehicles = (getPipelineVehicles().vehicles || []);
+  const portfolio = await loadPortfolioState();
+  const vehicles = ((await getPipelineVehicles()).vehicles || []);
   const alerts = [];
   const recommendations = [];
 
@@ -127,7 +127,7 @@ export async function GET() {
     checkedAt: new Date().toISOString(),
   };
 
-  savePortfolioSnapshot(result);
+  await savePortfolioSnapshot(result);
 
   return Response.json(result);
 }

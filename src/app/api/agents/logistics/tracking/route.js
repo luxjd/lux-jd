@@ -5,7 +5,7 @@ import { trackShipmentLive } from "@/lib/agents/logistics/ai/vessel-tracker";
  * GET — Get live tracking data for all active shipments.
  */
 export async function GET() {
-  const data = getShipments();
+  const data = await getShipments();
   const shipments = data.shipments || [];
 
   if (shipments.length === 0) {

@@ -4,11 +4,11 @@ import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
 import { db } from "@/lib/db-storage";
 
 export async function GET() {
-  const history = getFxHistory();
+  const history = await getFxHistory();
   const check = await checkFxRate(history.rates || []);
 
   // Portfolio FX exposure
-  const data = getPipelineVehicles();
+  const data = await getPipelineVehicles();
   const vehicles = data.vehicles || [];
   const exposure = calculatePortfolioFxExposure(vehicles, check.current.rate);
 

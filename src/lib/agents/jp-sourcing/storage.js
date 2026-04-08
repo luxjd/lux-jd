@@ -1,53 +1,50 @@
 /**
- * JP Sourcing Agent Storage — persists opportunities, scan history.
+ * JP Sourcing Agent Storage — opportunities, scan history.
+ * Uses PostgreSQL via Prisma (no local JSON files).
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join } from "path";
+import { getDb } from "@/lib/db";
 
-const DATA_DIR = join(process.cwd(), "data", "jp-sourcing");
+// ─── Opportunities (KeyValueStore) ───
 
-function ensureDir() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+export async function getLatestOpportunities() {
+  const db = await getDb();
+  if (!db) return null;
+  const row = await db.keyValueStore.findUnique({ where: { key: "jp-sourcing-latest-opportunities" } });
+  return row?.value || null;
 }
 
-function readJson(filename) {
-  const path = join(DATA_DIR, filename);
-  if (!existsSync(path)) return null;
-  try { return JSON.parse(readFileSync(path, "utf-8")); } catch { return null; }
-}
-
-function writeJson(filename, data) {
-  ensureDir();
-  writeFileSync(join(DATA_DIR, filename), JSON.stringify(data, null, 2), "utf-8");
-}
-
-// ─── Opportunities ───
-
-export function getLatestOpportunities() {
-  return readJson("latest-opportunities.json");
-}
-
-export function saveOpportunities(data) {
-  writeJson("latest-opportunities.json", {
+export async function saveOpportunities(data) {
+  const db = await getDb();
+  if (!db) return;
+  const value = {
     opportunities: data.opportunities,
     deepAnalyses: data.deepAnalyses || [],
     scanSummary: data.scanSummary,
     scannedAt: data.scannedAt || new Date().toISOString(),
     count: data.opportunities?.length || 0,
+  };
+  await db.keyValueStore.upsert({
+    where: { key: "jp-sourcing-latest-opportunities" },
+    update: { value },
+    create: { key: "jp-sourcing-latest-opportunities", value },
   });
-
-  appendScanHistory(data);
+  await appendScanHistory(data);
 }
 
-// ─── Scan History ───
+// ─── Scan History (KeyValueStore) ───
 
-export function getScanHistory() {
-  return readJson("scan-history.json") || { scans: [] };
+export async function getScanHistory() {
+  const db = await getDb();
+  if (!db) return { scans: [] };
+  const row = await db.keyValueStore.findUnique({ where: { key: "jp-sourcing-scan-history" } });
+  return row?.value || { scans: [] };
 }
 
-function appendScanHistory(data) {
-  const history = getScanHistory();
+async function appendScanHistory(data) {
+  const db = await getDb();
+  if (!db) return;
+  const history = await getScanHistory();
   history.scans.push({
     timestamp: new Date().toISOString(),
     vehiclesFound: data.scanSummary?.matchingVehicles || data.opportunities?.length || 0,
@@ -57,32 +54,51 @@ function appendScanHistory(data) {
     pass: data.opportunities?.filter((o) => o.recommendation === "PASS").length || 0,
     deepAnalyzed: data.deepAnalyses?.length || 0,
   });
-
   if (history.scans.length > 50) history.scans = history.scans.slice(-50);
-  writeJson("scan-history.json", history);
+  await db.keyValueStore.upsert({
+    where: { key: "jp-sourcing-scan-history" },
+    update: { value: history },
+    create: { key: "jp-sourcing-scan-history", value: history },
+  });
 }
 
 // ─── Agent Status ───
 
-export function getAgentStatus() {
-  return readJson("agent-status.json") || {
-    status: "IDLE",
-    lastScanTimestamp: null,
-    scansConductedToday: 0,
-  };
+export async function getAgentStatus() {
+  const db = await getDb();
+  if (!db) return { status: "IDLE", lastScanTimestamp: null, scansConductedToday: 0 };
+  const s = await db.agentStatus.findUnique({ where: { id: "jp-sourcing" } });
+  if (!s) return { status: "IDLE", lastScanTimestamp: null, scansConductedToday: 0 };
+  return { ...s.metadata, status: s.status, lastAction: s.lastAction, lastActionAt: s.lastActionAt?.toISOString(), updatedAt: s.updatedAt.toISOString() };
 }
 
-export function updateAgentStatus(updates) {
-  const current = getAgentStatus();
-  writeJson("agent-status.json", { ...current, ...updates, updatedAt: new Date().toISOString() });
+export async function updateAgentStatus(updates) {
+  const db = await getDb();
+  if (!db) return;
+  const current = await getAgentStatus();
+  const { status, lastAction, lastActionAt, ...rest } = { ...current, ...updates };
+  await db.agentStatus.upsert({
+    where: { id: "jp-sourcing" },
+    update: { name: "JP Sourcing", status: status || "IDLE", lastAction, lastActionAt: lastActionAt ? new Date(lastActionAt) : new Date(), metadata: rest },
+    create: { id: "jp-sourcing", name: "JP Sourcing", status: status || "IDLE", lastAction, lastActionAt: lastActionAt ? new Date(lastActionAt) : new Date(), metadata: rest },
+  });
 }
 
-// ─── Scan Progress ───
+// ─── Scan Progress (KeyValueStore) ───
 
-export function getScanProgress() {
-  return readJson("scan-progress.json") || null;
+export async function getScanProgress() {
+  const db = await getDb();
+  if (!db) return null;
+  const row = await db.keyValueStore.findUnique({ where: { key: "jp-sourcing-scan-progress" } });
+  return row?.value || null;
 }
 
-export function saveScanProgress(data) {
-  writeJson("scan-progress.json", data);
+export async function saveScanProgress(data) {
+  const db = await getDb();
+  if (!db) return;
+  await db.keyValueStore.upsert({
+    where: { key: "jp-sourcing-scan-progress" },
+    update: { value: data || {} },
+    create: { key: "jp-sourcing-scan-progress", value: data || {} },
+  });
 }

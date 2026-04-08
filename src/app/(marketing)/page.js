@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import AuthModals from "../components/AuthModals";
+
 import ScrollReveal from "../components/ScrollReveal";
 import FAQ from "../components/FAQ";
 import HeroDrift, { HeroCarousel, TypingText } from "../components/HeroDrift";
@@ -9,9 +9,7 @@ import ScrollCar from "../components/ScrollCar";
 
 export default function Home() {
   return (
-    <AuthModals>
-      {({ openLogin, openSignup }) => (
-        <>
+    <>
           {/* Scroll-linked car animation — fixed bottom */}
           <ScrollCar />
 
@@ -35,17 +33,11 @@ export default function Home() {
               </a>
             </div>
             <div className="flex items-center gap-3">
-              <button
-                onClick={openLogin}
+              <a
+                href="/login"
                 className="text-slate-300 hover:text-white px-4 py-2 rounded-xl font-bold transition-colors"
               >
-                Sign In
-              </button>
-              <a
-                href="/showroom"
-                className="bg-primary text-on-primary px-6 py-2 rounded-xl font-bold scale-95 active:scale-90 transition-transform hover:shadow-[0_0_15px_rgba(173,198,255,0.4)]"
-              >
-                Browse Cars
+                Dashboard
               </a>
             </div>
           </nav>
@@ -83,16 +75,10 @@ export default function Home() {
               </div>
               <div className="anim-drift-text-4 flex flex-col md:flex-row gap-6 justify-center items-center">
                 <a
-                  href="/showroom"
+                  href="/dashboard"
                   className="cursor-pointer px-10 py-4 bg-primary text-on-primary font-bold rounded-xl text-lg hover:shadow-[0_0_25px_rgba(173,198,255,0.5)] transition-all duration-300 hover:scale-105 active:scale-95"
                 >
-                  Explore Inventory
-                </a>
-                <a
-                  href="/register"
-                  className="px-10 py-4 border-2 border-outline/30 text-on-surface font-bold rounded-xl text-lg backdrop-blur-sm hover:border-primary/50 hover:scale-105 active:scale-95 transition-all"
-                >
-                  Create Account
+                  Enter Dashboard
                 </a>
               </div>
             </div>
@@ -808,10 +794,10 @@ export default function Home() {
                     assets today.
                   </p>
                   <a
-                    href="/showroom"
+                    href="/dashboard"
                     className="inline-block bg-secondary text-on-secondary font-headline font-extrabold text-xl px-12 py-6 rounded-xl hover:shadow-[0_0_30px_rgba(234,193,105,0.6)] transition-all duration-500 scale-100 hover:scale-105 active:scale-95 uppercase tracking-widest"
                   >
-                    Browse Showroom
+                    Enter Dashboard
                   </a>
                 </div>
               </div>
@@ -840,17 +826,15 @@ export default function Home() {
                 >
                   <span className="material-symbols-outlined">language</span>
                 </a>
-                <button
-                  onClick={openLogin}
+                <a
+                  href="/login"
                   className="text-primary font-bold transition-all hover:shadow-[0_0_15px_rgba(248,113,113,0.4)]"
                 >
                   <span className="material-symbols-outlined">account_circle</span>
-                </button>
+                </a>
               </div>
             </footer>
           </ScrollReveal>
-        </>
-      )}
-    </AuthModals>
+    </>
   );
 }

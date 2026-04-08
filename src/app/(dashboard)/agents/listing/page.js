@@ -5,9 +5,9 @@ import CreateListingButton from "./_components/CreateListingButton";
 
 const STATUS_STYLES = { ACTIVE: "bg-emerald-400/15 text-emerald-400", SOLD: "bg-primary/15 text-primary", DRAFT: "bg-amber-400/15 text-amber-400", PAUSED: "bg-slate-400/10 text-slate-400" };
 
-export default function ListingAgentPage() {
-  const status = getAgentStatus();
-  const data = getAllListings();
+export default async function ListingAgentPage() {
+  const status = await getAgentStatus();
+  const data = await getAllListings();
   const listings = data.listings || [];
   const hasData = listings.length > 0;
 
@@ -15,7 +15,7 @@ export default function ListingAgentPage() {
   const soldListings = listings.filter((l) => l.status === "SOLD");
 
   // Vehicles available for listing from Logistics Agent pipeline
-  const pipelineData = getPipelineVehicles();
+  const pipelineData = await getPipelineVehicles();
   const readyVehicles = (pipelineData?.vehicles || []).filter((v) => v.currentStage === "READY_FOR_SALE" || v.currentStage === "TUV");
 
   const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";

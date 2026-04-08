@@ -2,7 +2,7 @@ import { runFinancialCheck } from "@/lib/agents/finance/ai/finance-orchestrator"
 import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
 
 export async function POST() {
-  const vehicles = getPipelineVehicles().vehicles || [];
+  const vehicles = (await getPipelineVehicles()).vehicles || [];
 
   try {
     const report = await runFinancialCheck(vehicles);

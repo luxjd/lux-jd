@@ -5,12 +5,12 @@ import AdvanceStageButton from "./_components/AdvanceStageButton";
 import AutoAdvanceButton from "./_components/AutoAdvanceButton";
 import PhotoUploadButton from "./_components/PhotoUploadButton";
 
-export default function LogisticsAgentPage() {
-  const status = getAgentStatus();
-  const data = getPipelineVehicles();
-  const events = getPipelineEvents();
-  const shipments = getShipments();
-  const tuvAppts = getTuvAppointments();
+export default async function LogisticsAgentPage() {
+  const status = await getAgentStatus();
+  const data = await getPipelineVehicles();
+  const events = await getPipelineEvents();
+  const shipments = await getShipments();
+  const tuvAppts = await getTuvAppointments();
   const vehicles = data.vehicles || [];
   const hasData = vehicles.length > 0;
 

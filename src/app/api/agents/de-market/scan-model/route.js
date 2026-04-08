@@ -33,7 +33,7 @@ export async function POST(request) {
   }
 
   // Check if scan already running
-  const existing = getScanProgress();
+  const existing = await getScanProgress();
   if (existing?.state === "scanning") {
     return Response.json({ error: "Scan already running", progress: existing }, { status: 409 });
   }
@@ -48,27 +48,27 @@ export async function POST(request) {
     startedAt: new Date().toISOString(),
     total: models.length,
   };
-  saveScanProgress(progress);
-  updateAgentStatus({ status: "SCANNING" });
+  await saveScanProgress(progress);
+  await updateAgentStatus({ status: "SCANNING" });
 
   // Run scan in background after response is sent
   after(async () => {
     for (const model of models) {
       // Check for pause/stop
-      const current = getScanProgress();
+      const current = await getScanProgress();
       if (!current || current.state === "stopped") break;
 
       // Wait while paused
-      while (current && getScanProgress()?.state === "paused") {
+      while (current && (await getScanProgress())?.state === "paused") {
         await new Promise((r) => setTimeout(r, 500));
-        const check = getScanProgress();
+        const check = await getScanProgress();
         if (!check || check.state === "stopped") break;
       }
-      const recheckState = getScanProgress()?.state;
+      const recheckState = (await getScanProgress())?.state;
       if (recheckState === "stopped" || !recheckState) break;
 
       // Update current model
-      saveScanProgress({ ...getScanProgress(), currentModelId: model.id, state: "scanning" });
+      await saveScanProgress({ ...(await getScanProgress()), currentModelId: model.id, state: "scanning" });
 
       try {
         const result = await scanModel(model);
@@ -76,26 +76,26 @@ export async function POST(request) {
         let tvr = null;
         if (result && !result.error) {
           tvr = await generateTVR(result);
-          appendPriceHistory(result.modelId, result);
+          await appendPriceHistory(result.modelId, result);
         }
 
         // Merge into stored scan results
-        const existingScans = getLatestScanResults();
+        const existingScans = await getLatestScanResults();
         const existingResults = existingScans?.results || [];
         const updatedResults = existingResults.filter((r) => r.modelId !== model.id);
         if (result) updatedResults.push(result);
-        saveScanResults(updatedResults);
+        await saveScanResults(updatedResults);
 
         if (tvr) {
-          const existingTVRs = getLatestTVRs();
+          const existingTVRs = await getLatestTVRs();
           const existingReports = existingTVRs?.reports || [];
           const updatedReports = existingReports.filter((r) => r.modelId !== model.id);
           updatedReports.push(tvr);
-          saveTVRs(updatedReports);
+          await saveTVRs(updatedReports);
         }
 
         // Update progress
-        const p = getScanProgress();
+        const p = await getScanProgress();
         if (p) {
           p.completed.push(model.id);
           p.queue = p.queue.filter((id) => id !== model.id);
@@ -110,31 +110,31 @@ export async function POST(request) {
             error: result?.error || null,
           };
           p.currentModelId = null;
-          saveScanProgress(p);
+          await saveScanProgress(p);
         }
       } catch (err) {
-        const p = getScanProgress();
+        const p = await getScanProgress();
         if (p) {
           p.completed.push(model.id);
           p.queue = p.queue.filter((id) => id !== model.id);
           p.results[model.id] = { modelId: model.id, error: err.message };
           p.currentModelId = null;
-          saveScanProgress(p);
+          await saveScanProgress(p);
         }
       }
     }
 
     // Mark done
-    const final = getScanProgress();
+    const final = await getScanProgress();
     if (final && final.state !== "stopped") {
       final.state = "done";
       final.currentModelId = null;
       final.completedAt = new Date().toISOString();
-      saveScanProgress(final);
+      await saveScanProgress(final);
     }
 
-    const prev = getAgentStatus();
-    updateAgentStatus({
+    const prev = await getAgentStatus();
+    await updateAgentStatus({
       status: "ONLINE",
       lastScanTimestamp: new Date().toISOString(),
       scansConductedToday: (prev.scansConductedToday || 0) + 1,
@@ -148,7 +148,7 @@ export async function POST(request) {
  * GET — Poll scan progress.
  */
 export async function GET() {
-  const progress = getScanProgress();
+  const progress = await getScanProgress();
   if (!progress) {
     return Response.json({ state: "idle" });
   }
@@ -160,7 +160,7 @@ export async function GET() {
  */
 export async function PATCH(request) {
   const { action } = await request.json();
-  const progress = getScanProgress();
+  const progress = await getScanProgress();
 
   if (!progress) {
     return Response.json({ error: "No scan running" }, { status: 404 });
@@ -168,21 +168,21 @@ export async function PATCH(request) {
 
   if (action === "pause" && progress.state === "scanning") {
     progress.state = "paused";
-    saveScanProgress(progress);
+    await saveScanProgress(progress);
     return Response.json({ state: "paused" });
   }
 
   if (action === "resume" && progress.state === "paused") {
     progress.state = "scanning";
-    saveScanProgress(progress);
+    await saveScanProgress(progress);
     return Response.json({ state: "scanning" });
   }
 
   if (action === "stop") {
     progress.state = "stopped";
     progress.currentModelId = null;
-    saveScanProgress(progress);
-    updateAgentStatus({ status: "ONLINE" });
+    await saveScanProgress(progress);
+    await updateAgentStatus({ status: "ONLINE" });
     return Response.json({ state: "stopped" });
   }
 

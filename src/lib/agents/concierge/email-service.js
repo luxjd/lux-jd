@@ -116,7 +116,7 @@ function buildEmailHtml(responseText, vehicle, customerName) {
     <div class="content">${responseText}</div>
 
     <div class="footer">
-      <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/showroom" class="cta">View Vehicle Details</a>
+      <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}" class="cta">Visit Our Website</a>
       <p>
         LuxJD GmbH · Premium Vehicle Import<br>
         Musterstraße 1 · 28195 Bremen · Germany<br>

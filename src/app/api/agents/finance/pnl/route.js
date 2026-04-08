@@ -7,8 +7,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const vehicleId = searchParams.get("vehicleId");
 
-  const allTxns = getAllTransactions().transactions || [];
-  const vehicles = getPipelineVehicles().vehicles || [];
+  const allTxns = (await getAllTransactions()).transactions || [];
+  const vehicles = (await getPipelineVehicles()).vehicles || [];
 
   if (vehicleId) {
     const vehicle = vehicles.find((v) => v.id === vehicleId);
@@ -18,7 +18,7 @@ export async function GET(request) {
   }
 
   // Portfolio P&L
-  const cached = getLatestPortfolio();
+  const cached = await getLatestPortfolio();
   if (cached) return Response.json(cached);
 
   // Calculate fresh

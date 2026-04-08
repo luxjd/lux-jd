@@ -27,7 +27,7 @@ export async function POST(request) {
       return Response.json({ error: "No photos provided" }, { status: 400 });
     }
 
-    const vehicle = getVehicleById(vehicleId);
+    const vehicle = await getVehicleById(vehicleId);
     if (!vehicle) {
       return Response.json({ error: "Vehicle not found" }, { status: 404 });
     }
@@ -59,10 +59,10 @@ export async function POST(request) {
     if (!vehicle.stagePhotos) vehicle.stagePhotos = {};
     if (!vehicle.stagePhotos[stage]) vehicle.stagePhotos[stage] = [];
     vehicle.stagePhotos[stage].push(...savedPhotos);
-    savePipelineVehicle(vehicle);
+    await savePipelineVehicle(vehicle);
 
     // Log event
-    addPipelineEvent({
+    await addPipelineEvent({
       vehicleId,
       type: "PHOTO_UPLOAD",
       fromStage: stage,
@@ -95,7 +95,7 @@ export async function GET(request) {
     return Response.json({ error: "Missing vehicleId" }, { status: 400 });
   }
 
-  const vehicle = getVehicleById(vehicleId);
+  const vehicle = await getVehicleById(vehicleId);
   if (!vehicle) {
     return Response.json({ error: "Vehicle not found" }, { status: 404 });
   }
