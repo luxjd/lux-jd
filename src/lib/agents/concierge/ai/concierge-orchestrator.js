@@ -16,7 +16,7 @@ import { generateResponse } from "./auto-responder";
 import { evaluateOffer, generateNegotiationResponse } from "./negotiation-engine";
 import { checkEscalation } from "./escalation-handler";
 import { saveLead, addMessage, addEscalation, updateAgentStatus, getAllLeads } from "../storage";
-import { sendResponseEmail, isEmailConfigured } from "../email-service";
+import { sendResponseEmail, isEmailConfigured, getVehiclePhotos } from "../email-service";
 
 /**
  * Handle an incoming customer inquiry — the main entry point.
@@ -176,6 +176,16 @@ export async function handleInquiry({
     avgResponseTime: Date.now() - startTime,
   });
 
+  // ─── Get vehicle photos for inline display ───
+  let photos = [];
+  if (vehicle.id) {
+    photos = getVehiclePhotos(vehicle.id).map((p) => ({
+      filename: p.filename,
+      stage: p.stage,
+      url: `/api/agents/logistics/photos/serve?vehicleId=${vehicle.id}&stage=${p.stage}&file=${p.filename}`,
+    }));
+  }
+
   return {
     leadId,
     action: escalation.shouldEscalate ? "RESPONDED_AND_ESCALATED" : "RESPONDED",
@@ -185,6 +195,7 @@ export async function handleInquiry({
     negotiation,
     escalation,
     email: emailResult,
+    photos,
     duration: Date.now() - startTime,
     aiPowered: response.aiPowered !== false,
   };

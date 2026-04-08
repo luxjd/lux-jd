@@ -110,6 +110,7 @@ export default function InquirySimulator() {
     }
   };
 
+  const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
   const RISK_STYLES = { PRIORITY: "text-emerald-400", STANDARD: "text-primary", LOW: "text-slate-400" };
 
   if (loadingVehicles) {
@@ -219,6 +220,44 @@ export default function InquirySimulator() {
             )}
           </div>
 
+          {/* Vehicle Photos */}
+          {result.photos?.length > 0 && (
+            <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-5">
+              <h4 className="text-xs uppercase tracking-widest text-on-surface-variant mb-3 flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm">photo_library</span> Vehicle Photos ({result.photos.length})
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {result.photos.map((photo, i) => (
+                  <div key={i} className="rounded-xl overflow-hidden border border-outline-variant/10 bg-surface-container-high group relative">
+                    <img src={photo.url} alt={photo.filename} className="w-full h-32 object-cover" />
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-2">
+                      <a href={photo.url} download={photo.filename} className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-all" title="Download">
+                        <span className="material-symbols-outlined text-white text-sm">download</span>
+                      </a>
+                      <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(window.location.origin + photo.url); }} className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-all" title="Copy link">
+                        <span className="material-symbols-outlined text-white text-sm">content_copy</span>
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); navigator.share?.({ title: photo.filename, url: window.location.origin + photo.url }).catch(() => {}); }} className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-all" title="Share">
+                        <span className="material-symbols-outlined text-white text-sm">share</span>
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setFullscreenPhoto(photo); }} className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-all" title="View fullscreen">
+                        <span className="material-symbols-outlined text-white text-sm">fullscreen</span>
+                      </button>
+                    </div>
+                    <p className="text-[9px] text-on-surface-variant p-1.5 truncate">{photo.stage} — {photo.filename}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.photos?.length === 0 && result.response?.suggested_next_action === "SEND_PHOTOS" && (
+            <div className="p-3 rounded-xl bg-amber-400/10 border border-amber-400/20 text-amber-400 text-sm flex items-center gap-2">
+              <span className="material-symbols-outlined text-lg">photo_camera</span>
+              No photos uploaded yet for this vehicle. Upload photos via the Logistics Agent to auto-include them in responses.
+            </div>
+          )}
+
           {/* Email Status */}
           {result.email && (
             <div className={`p-3 rounded-xl text-sm flex items-center gap-2 ${result.email.sent ? "bg-emerald-400/10 border border-emerald-400/20 text-emerald-400" : "bg-amber-400/10 border border-amber-400/20 text-amber-400"}`}>
@@ -245,6 +284,24 @@ export default function InquirySimulator() {
 
       {result?.error && (
         <div className="p-3 rounded-xl bg-red-400/10 border border-red-400/20 text-red-400 text-sm">{result.error}</div>
+      )}
+
+      {/* Fullscreen Photo Modal */}
+      {fullscreenPhoto && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setFullscreenPhoto(null)}>
+          <div className="relative max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <img src={fullscreenPhoto.url} alt={fullscreenPhoto.filename} className="max-w-full max-h-[85vh] object-contain rounded-xl" />
+            <div className="absolute top-3 right-3 flex gap-2">
+              <a href={fullscreenPhoto.url} download={fullscreenPhoto.filename} className="w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition-all" title="Download">
+                <span className="material-symbols-outlined text-white">download</span>
+              </a>
+              <button onClick={() => setFullscreenPhoto(null)} className="w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition-all" title="Close">
+                <span className="material-symbols-outlined text-white">close</span>
+              </button>
+            </div>
+            <p className="text-center text-sm text-white/60 mt-3">{fullscreenPhoto.filename}</p>
+          </div>
+        </div>
       )}
     </div>
   );

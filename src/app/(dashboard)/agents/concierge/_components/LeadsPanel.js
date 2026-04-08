@@ -52,7 +52,7 @@ export default function LeadsPanel({ leads = [] }) {
                   )}
                 </div>
                 <p className="text-xs text-on-surface-variant truncate">
-                  {lead.vehicle?.make && `${lead.vehicle.make} ${lead.vehicle.model} · `}{lead.source || "platform"} · {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : ""}
+                  {lead.vehicle?.make && `${lead.vehicle.make} ${lead.vehicle.model} · `}{lead.source || "platform"} · {lead.createdAt ? lead.createdAt.split("T")[0] : ""}
                 </p>
               </div>
             </div>
