@@ -5,6 +5,7 @@
 
 import { handleInquiry } from "@/lib/agents/concierge/ai/concierge-orchestrator";
 import { getListingById } from "@/lib/agents/listing/storage";
+import { getVehicleById } from "@/lib/agents/logistics/storage";
 import { db } from "@/lib/db-storage";
 
 export async function POST(request) {
@@ -18,19 +19,31 @@ export async function POST(request) {
     return Response.json({ error: "Name and email are required" }, { status: 400 });
   }
 
-  // Get vehicle data from listing
+  // Get vehicle data from listing or pipeline
   const listing = getListingById(body.listingId);
-  if (!listing) {
+  const pipelineVehicle = !listing ? getVehicleById(body.listingId) : null;
+
+  if (!listing && !pipelineVehicle) {
     return Response.json({ error: "Vehicle not found" }, { status: 404 });
   }
 
-  const vehicle = {
+  const vehicle = listing ? {
     ...listing.vehicle,
     listingPrice: listing.currentPrice,
     currentPrice: listing.currentPrice,
     id: listing.vehicleId || listing.id,
     conditionNotes: "Excellent condition, meticulously maintained",
     specNotes: listing.content?.specification_sheet?.notable_options?.join(", ") || "",
+  } : {
+    make: pipelineVehicle.make,
+    model: pipelineVehicle.model,
+    year: pipelineVehicle.year,
+    exteriorColor: pipelineVehicle.exteriorColor,
+    driveSide: pipelineVehicle.driveSide,
+    mileageKm: pipelineVehicle.mileageKm,
+    engineSpec: pipelineVehicle.specification?.engineSpec,
+    listingPrice: pipelineVehicle.estimatedSalePrice || 0,
+    id: pipelineVehicle.id,
   };
 
   try {

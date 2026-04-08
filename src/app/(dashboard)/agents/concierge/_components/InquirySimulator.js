@@ -1,30 +1,89 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-const SAMPLE_VEHICLES = [
-  { id: "v001", make: "Ferrari", model: "488 GTB", year: 2017, exteriorColor: "Rosso Corsa", interiorColor: "Nero", driveSide: "LHD", mileageKm: 18000, engineSpec: "3.9L Twin-Turbo V8, 670 PS", serviceHistory: "FULL_DEALER", listingPrice: 238000, specNotes: "Daytona seats, carbon fibre package" },
-  { id: "v002", make: "Porsche", model: "911 GT3", year: 2021, exteriorColor: "GT Silver", interiorColor: "Black", driveSide: "LHD", mileageKm: 12000, engineSpec: "4.0L Flat-6, 510 PS", serviceHistory: "FULL_DEALER", listingPrice: 218000, specNotes: "PCCB, Sport Chrono, full bucket seats" },
-  { id: "v003", make: "Mercedes-AMG", model: "GT R", year: 2019, exteriorColor: "Selenite Grey", interiorColor: "Black", driveSide: "LHD", mileageKm: 25000, engineSpec: "4.0L Twin-Turbo V8, 585 PS", serviceHistory: "FULL_DEALER", listingPrice: 168000, specNotes: "AMG Aerodynamics Package, carbon pack" },
-];
-
 export default function InquirySimulator() {
-  const [vehicleId, setVehicleId] = useState(SAMPLE_VEHICLES[0].id);
-  const [customerName, setCustomerName] = useState("Max Müller");
-  const [customerEmail, setCustomerEmail] = useState("max@example.de");
+  const [vehicles, setVehicles] = useState([]);
+  const [vehicleId, setVehicleId] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [source, setSource] = useState("mobile.de");
   const [inquiry, setInquiry] = useState("");
   const [offerPrice, setOfferPrice] = useState("");
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [loadingVehicles, setLoadingVehicles] = useState(true);
   const router = useRouter();
 
-  const vehicle = SAMPLE_VEHICLES.find((v) => v.id === vehicleId);
+  // Load real vehicles from pipeline + listings
+  useEffect(() => {
+    async function loadVehicles() {
+      try {
+        const [pipelineRes, listingsRes] = await Promise.all([
+          fetch("/api/agents/logistics/vehicles").then((r) => r.json()).catch(() => ({ vehicles: [] })),
+          fetch("/api/agents/listing/listings").then((r) => r.json()).catch(() => ({ listings: [] })),
+        ]);
+
+        const realVehicles = [];
+
+        // Add pipeline vehicles
+        const pipelineVehicles = pipelineRes.vehicles || [];
+
+        for (const v of pipelineVehicles) {
+          realVehicles.push({
+            id: v.id,
+            make: v.make,
+            model: v.model,
+            year: v.year,
+            exteriorColor: v.exteriorColor || v.color,
+            interiorColor: v.interiorColor || null,
+            driveSide: v.driveSide || "LHD",
+            mileageKm: v.mileageKm || v.mileage || 0,
+            engineSpec: v.specification?.engineSpec || v.engineSpec || null,
+            serviceHistory: v.serviceHistory || "UNKNOWN",
+            listingPrice: v.listingPriceEur || v.estimatedSalePrice || v.margin?.estimatedSalePrice || 0,
+            specNotes: v.specification?.specNotes || v.specNotes || null,
+            source: "pipeline",
+          });
+        }
+
+        // Add listed vehicles
+        for (const l of (listingsRes.listings || [])) {
+          if (realVehicles.some((v) => v.id === l.vehicleId)) continue;
+          realVehicles.push({
+            id: l.vehicleId || l.id,
+            make: l.make,
+            model: l.model,
+            year: l.year,
+            exteriorColor: l.exteriorColor,
+            interiorColor: l.interiorColor,
+            driveSide: l.driveSide || "LHD",
+            mileageKm: l.mileageKm || 0,
+            engineSpec: l.engineSpec || null,
+            serviceHistory: l.serviceHistory || "UNKNOWN",
+            listingPrice: l.currentPrice || l.initialPrice || 0,
+            specNotes: l.specNotes || null,
+            source: "listing",
+          });
+        }
+
+        setVehicles(realVehicles);
+        if (realVehicles.length > 0) setVehicleId(realVehicles[0].id);
+      } catch {
+        setVehicles([]);
+      } finally {
+        setLoadingVehicles(false);
+      }
+    }
+    loadVehicles();
+  }, []);
+
+  const vehicle = vehicles.find((v) => v.id === vehicleId);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!inquiry.trim()) return;
+    if (!inquiry.trim() || !vehicle) return;
     setProcessing(true);
     setResult(null);
 
@@ -53,45 +112,74 @@ export default function InquirySimulator() {
 
   const RISK_STYLES = { PRIORITY: "text-emerald-400", STANDARD: "text-primary", LOW: "text-slate-400" };
 
+  if (loadingVehicles) {
+    return (
+      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6 text-center">
+        <span className="material-symbols-outlined text-primary animate-spin">progress_activity</span>
+        <p className="text-sm text-on-surface-variant mt-2">Loading vehicles...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <form onSubmit={handleSubmit} className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-6 space-y-4">
         <h3 className="font-headline font-bold text-lg flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">chat</span> Inquiry Simulator
+          <span className="material-symbols-outlined text-primary">chat</span> Customer Inquiry
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Vehicle</label>
-            <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm focus:outline-none focus:border-primary/50">
-              {SAMPLE_VEHICLES.map((v) => <option key={v.id} value={v.id}>{v.make} {v.model} {v.year} — €{v.listingPrice.toLocaleString()}</option>)}
-            </select>
+        {vehicles.length === 0 ? (
+          <div className="p-4 rounded-xl bg-amber-400/10 border border-amber-400/20 text-amber-400 text-sm">
+            No vehicles in pipeline or listings. Send a vehicle to pipeline from the Valuation Agent first.
           </div>
-          <div>
-            <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Source</label>
-            <select value={source} onChange={(e) => setSource(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm focus:outline-none focus:border-primary/50">
-              {["mobile.de", "AutoScout24", "ClassicDriver", "email", "phone", "Instagram"].map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Customer Name</label>
-            <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm focus:outline-none focus:border-primary/50" />
-          </div>
-          <div>
-            <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Offer Price (optional)</label>
-            <input type="number" value={offerPrice} onChange={(e) => setOfferPrice(e.target.value)} placeholder="e.g. 225000" className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50" />
-          </div>
-        </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Vehicle</label>
+                <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm focus:outline-none focus:border-primary/50">
+                  {vehicles.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.make} {v.model} {v.year} — {v.listingPrice ? `€${v.listingPrice.toLocaleString()}` : "No price"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Source</label>
+                <select value={source} onChange={(e) => setSource(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm focus:outline-none focus:border-primary/50">
+                  {["mobile.de", "AutoScout24", "ClassicDriver", "Website", "email", "phone", "Instagram"].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Customer Name</label>
+                <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g. Max Müller" className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50" />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Offer Price (optional)</label>
+                <input type="number" value={offerPrice} onChange={(e) => setOfferPrice(e.target.value)} placeholder="e.g. 85000" className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50" />
+              </div>
+            </div>
 
-        <div>
-          <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Customer Inquiry</label>
-          <textarea value={inquiry} onChange={(e) => setInquiry(e.target.value)} rows={3} placeholder="e.g. Guten Tag, ich interessiere mich für den Ferrari 488. Ist das Fahrzeug noch verfügbar? Können Sie mir mehr über die Ausstattung und die Servicehistorie sagen?" className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 resize-none" />
-        </div>
+            {vehicle && (
+              <div className="p-3 rounded-xl bg-surface-container-high/30 text-xs text-on-surface-variant">
+                {vehicle.make} {vehicle.model} {vehicle.year} · {vehicle.exteriorColor} · {vehicle.driveSide} · {(vehicle.mileageKm || 0).toLocaleString()} km
+                {vehicle.engineSpec && ` · ${vehicle.engineSpec}`}
+                {vehicle.specNotes && ` · ${vehicle.specNotes}`}
+              </div>
+            )}
 
-        <button type="submit" disabled={processing || !inquiry.trim()} className="w-full py-3 bg-primary text-on-primary font-bold rounded-xl text-sm hover:shadow-[0_0_20px_rgba(248,113,113,0.4)] transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-          <span className={`material-symbols-outlined text-lg ${processing ? "animate-spin" : ""}`}>{processing ? "progress_activity" : "send"}</span>
-          {processing ? "Generating Expert Response..." : "Send Inquiry"}
-        </button>
+            <div>
+              <label className="block text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Customer Inquiry</label>
+              <textarea value={inquiry} onChange={(e) => setInquiry(e.target.value)} rows={3} placeholder="e.g. Guten Tag, ich interessiere mich für den Mercedes-AMG GT. Ist das Fahrzeug noch verfügbar? Können Sie mir mehr über die Servicehistorie sagen?" className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 resize-none" />
+            </div>
+
+            <button type="submit" disabled={processing || !inquiry.trim() || !vehicle} className="w-full py-3 bg-primary text-on-primary font-bold rounded-xl text-sm hover:shadow-[0_0_20px_rgba(248,113,113,0.4)] transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+              <span className={`material-symbols-outlined text-lg ${processing ? "animate-spin" : ""}`}>{processing ? "progress_activity" : "send"}</span>
+              {processing ? "Generating Expert Response..." : "Send Inquiry"}
+            </button>
+          </>
+        )}
       </form>
 
       {/* Result */}

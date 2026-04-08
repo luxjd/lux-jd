@@ -1,4 +1,4 @@
-import { getAllLeads, getConversation, updateLeadStatus } from "@/lib/agents/concierge/storage";
+import { getAllLeads, getLeadById, getConversation, updateLeadStatus } from "@/lib/agents/concierge/storage";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -6,8 +6,9 @@ export async function GET(request) {
   const leadId = searchParams.get("leadId");
 
   if (leadId) {
+    const lead = getLeadById(leadId);
     const conv = getConversation(leadId);
-    return Response.json(conv);
+    return Response.json({ lead, messages: conv.messages || [] });
   }
 
   const data = getAllLeads();

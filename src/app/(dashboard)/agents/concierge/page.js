@@ -1,9 +1,7 @@
 import Link from "next/link";
 import { getAllLeads, getEscalations, getAgentStatus } from "@/lib/agents/concierge/storage";
 import InquirySimulator from "./_components/InquirySimulator";
-
-const STATUS_STYLES = { NEW: "bg-primary/15 text-primary", QUALIFIED: "bg-emerald-400/15 text-emerald-400", ESCALATED: "bg-red-400/15 text-red-400", CONTACTED: "bg-amber-400/15 text-amber-400", CONVERTED: "bg-primary/15 text-primary", LOST: "bg-slate-400/10 text-slate-400" };
-const BUYER_STYLES = { COLLECTOR: "text-secondary", SERIOUS: "text-emerald-400", TRADE: "text-primary", BROWSER: "text-on-surface-variant", COMPETITOR: "text-red-400" };
+import LeadsPanel from "./_components/LeadsPanel";
 
 export default function ConciergeAgentPage() {
   const status = getAgentStatus();
@@ -62,7 +60,7 @@ export default function ConciergeAgentPage() {
         )}
       </div>
 
-      {/* Inquiry Simulator */}
+      {/* Inquiry Form — uses real vehicles from pipeline */}
       <InquirySimulator />
 
       {/* Escalations */}
@@ -87,35 +85,8 @@ export default function ConciergeAgentPage() {
         </div>
       )}
 
-      {/* Recent Leads */}
-      {hasLeads && (
-        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-6">
-          <h3 className="font-headline font-bold text-lg mb-4">Recent Leads ({leads.length})</h3>
-          <div className="space-y-2">
-            {leads.slice(-10).reverse().map((l) => (
-              <div key={l.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-surface-container-high/30 gap-2">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
-                    <span className="text-primary text-xs font-bold">{l.name?.charAt(0) || "?"}</span>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-bold">{l.name}</p>
-                      <span className={`text-[10px] font-bold ${BUYER_STYLES[l.buyerType] || ""}`}>{l.buyerType}</span>
-                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${STATUS_STYLES[l.status] || STATUS_STYLES.NEW}`}>{l.status}</span>
-                    </div>
-                    <p className="text-xs text-on-surface-variant truncate">{l.vehicle} · {l.source} · Score {l.score}/100</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-on-surface-variant shrink-0">
-                  {l.offerPrice && <span className="font-bold text-secondary">€{l.offerPrice.toLocaleString()}</span>}
-                  <span>{new Date(l.createdAt).toLocaleTimeString()}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Leads with conversation threading */}
+      <LeadsPanel leads={leads.slice(-15).reverse()} />
     </div>
   );
 }
