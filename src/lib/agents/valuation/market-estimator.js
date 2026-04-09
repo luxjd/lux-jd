@@ -191,69 +191,8 @@ export async function estimateMarketValue(input) {
   const stats = calcStats(filteredListings);
 
   if (!stats || filteredListings.length === 0) {
-    console.warn("No comparable listings found from scrapers — falling back to AI estimation");
-
-    // Fallback: use Claude's market knowledge to estimate value
-    if (isAIAvailable()) {
-      const fallbackResult = await callClaude({
-        prompt: `No comparable listings were found on mobile.de or AutoScout24 for this vehicle. Use your knowledge of the German luxury car market to estimate its fair value.
-
-VEHICLE: ${input.make} ${input.model} (${input.year})
-Mileage: ${input.mileageKm?.toLocaleString()} km | ${input.driveSide} | ${input.exteriorColor}
-Transmission: ${input.transmission || "Unknown"} | Fuel: ${input.fuelType || "Unknown"}
-Condition/Grade: ${input.auctionGrade || "Unknown"} | Accident: ${input.accidentHistory ? "Yes" : "No"}
-Specs: ${input.specificationNotes || "None"}
-
-Estimate what this car would sell for on the German market (mobile.de/AutoScout24) based on:
-1. Your knowledge of current market prices for this make/model
-2. Typical depreciation curves for this vehicle
-3. Supply/demand dynamics for this model in Germany
-
-Return ONLY valid JSON:
-{
-  "estimated_sale_price_eur": <integer — your best estimate>,
-  "price_range_low": <integer — conservative estimate>,
-  "price_range_high": <integer — optimistic estimate>,
-  "avg_days_on_market": <integer>,
-  "market_liquidity": "HIGH" or "MEDIUM" or "LOW",
-  "trend_direction": "RISING" or "STABLE" or "DECLINING",
-  "engine_spec": "engine description",
-  "original_msrp_eur": <integer>,
-  "confidence": <0.0-1.0 — should be LOW since no real data>,
-  "reasoning": "1-2 sentences explaining your estimate"
-}`,
-        system: ANALYSIS_SYSTEM,
-        jsonMode: true,
-      });
-
-      if (fallbackResult?.estimated_sale_price_eur) {
-        const est = fallbackResult.estimated_sale_price_eur;
-        const low = fallbackResult.price_range_low || Math.round(est * 0.85);
-        const high = fallbackResult.price_range_high || Math.round(est * 1.15);
-        console.log(`AI fallback estimate: €${est.toLocaleString()} (${low}-${high})`);
-        return {
-          estimated_sale_price_eur: est,
-          price_statistics: { count: 0, mean: est, median: est, p25: low, p75: high, min: low, max: high },
-          comparable_count: 0,
-          price_adjustments: [],
-          avg_days_on_market: fallbackResult.avg_days_on_market || 45,
-          market_liquidity: fallbackResult.market_liquidity || "LOW",
-          trend_direction: fallbackResult.trend_direction || "STABLE",
-          engine_spec: fallbackResult.engine_spec || null,
-          original_msrp_eur: fallbackResult.original_msrp_eur || null,
-          confidence: Math.min(fallbackResult.confidence || 0.35, 0.45), // Cap at 0.45 — no real data
-          outliers_removed: 0,
-          search_widened: searchWidened,
-          comparable_listings: [],
-          data_source: "AI estimation (no scraped data available)",
-          scraped_count: { mobile_de: mobileListings.length, autoscout24: autoscoutListings.length },
-          ai_fallback: true,
-          ai_fallback_reasoning: fallbackResult.reasoning || null,
-        };
-      }
-    }
-
-    const err = new Error("No comparable listings found on mobile.de or AutoScout24, and AI fallback estimation also failed. Try adjusting the vehicle details or check back later.");
+    console.warn("No comparable listings found from scrapers");
+    const err = new Error("No comparable listings found on mobile.de or AutoScout24. Try adjusting the vehicle details or check back later.");
     err.code = "NO_MARKET_DATA";
     throw err;
   }

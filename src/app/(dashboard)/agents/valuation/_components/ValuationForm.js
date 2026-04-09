@@ -2,7 +2,12 @@
 
 import { useState, useRef, useCallback } from "react";
 
-const MAKES = ["Ferrari", "Mercedes-AMG", "Porsche", "Lamborghini", "Bentley", "Aston Martin", "Jaguar", "Maserati", "BMW M", "Range Rover"];
+const MAKES = [
+  "Ferrari", "Porsche", "Lamborghini", "Mercedes-Benz", "Mercedes-AMG",
+  "BMW", "BMW M", "Bentley", "Aston Martin", "Jaguar", "Maserati",
+  "Range Rover", "Land Rover", "Rolls-Royce", "McLaren", "Lotus",
+  "Alfa Romeo", "Bugatti",
+];
 
 const FIELD_LABELS = {
   make: "Make",

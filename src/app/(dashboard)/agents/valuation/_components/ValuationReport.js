@@ -94,22 +94,6 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
         </div>
       </div>
 
-      {/* AI Fallback Warning */}
-      {mkt.dataSource?.includes("AI estimation") && (
-        <div className="bg-surface-container rounded-2xl border border-amber-400/20 p-4 flex items-start gap-3">
-          <span className="material-symbols-outlined text-amber-400 mt-0.5 print:hidden">info</span>
-          <div>
-            <p className="text-sm font-bold text-amber-400">No live market data available</p>
-            <p className="text-xs text-on-surface-variant mt-1">
-              Scrapers returned 0 listings from mobile.de and AutoScout24. The market value estimate below is based on AI knowledge only (not live listings) and has reduced confidence. Verify pricing manually before bidding.
-            </p>
-            {r.marketAnalysis?.ai_fallback_reasoning && (
-              <p className="text-xs text-on-surface-variant mt-1 italic">{r.marketAnalysis.ai_fallback_reasoning}</p>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Margin Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 print:grid-cols-4">
         <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-5 print:p-3 print:border-gray-200">

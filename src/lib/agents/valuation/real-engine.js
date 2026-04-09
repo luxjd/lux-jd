@@ -35,7 +35,7 @@ const OPEX_PER_VEHICLE = 500;
 // ══════════════════════════════════════════
 
 function getTuvCost(make, driveSide, hasModifications, tuvRiskFlags = []) {
-  const euBrands = ["Ferrari", "Mercedes-AMG", "Porsche", "Lamborghini", "Bentley", "Aston Martin", "BMW M", "Maserati"];
+  const euBrands = ["Ferrari", "Mercedes-Benz", "Mercedes-AMG", "Porsche", "Lamborghini", "Bentley", "Aston Martin", "BMW", "BMW M", "Maserati", "Rolls-Royce", "McLaren", "Bugatti", "Lotus", "Alfa Romeo"];
   const isEuSpec = euBrands.includes(make);
   const highRiskFlags = tuvRiskFlags.length;
 

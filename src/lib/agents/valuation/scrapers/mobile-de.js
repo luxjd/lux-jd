@@ -6,10 +6,18 @@ import * as cheerio from "cheerio";
 import { runActorAndGetItems } from "./apify-client";
 
 const MAKE_IDS = {
-  "Ferrari": "8600", "Mercedes-AMG": "17200", "Porsche": "20100",
-  "Jaguar": "11400", "Bentley": "3500", "Aston Martin": "1900",
-  "Lamborghini": "12600", "Maserati": "14100", "BMW M": "3500",
-  "BMW": "3500", "Range Rover": "13200",
+  "Ferrari": "8600", "Porsche": "20100", "Lamborghini": "12600",
+  "Bentley": "3500", "Aston Martin": "1900", "Jaguar": "11400",
+  "Maserati": "14100", "Range Rover": "13200",
+  // Mercedes variants all use same ID
+  "Mercedes-AMG": "17200", "Mercedes-Benz": "17200", "Mercedes": "17200",
+  // BMW variants
+  "BMW M": "3500", "BMW": "3500",
+  // Land Rover / Range Rover
+  "Land Rover": "13200",
+  // Additional luxury brands
+  "Rolls-Royce": "21700", "McLaren": "45400", "Bugatti": "4100",
+  "Lotus": "13900", "Alfa Romeo": "900",
 };
 
 export async function scrapeMobileDe({ make, model, yearFrom, yearTo, maxMileage }) {

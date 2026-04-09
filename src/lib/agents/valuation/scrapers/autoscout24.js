@@ -6,10 +6,18 @@ import * as cheerio from "cheerio";
 import { runActorAndGetItems } from "./apify-client";
 
 const MAKE_SLUGS = {
-  "Ferrari": "ferrari", "Mercedes-AMG": "mercedes-benz", "Porsche": "porsche",
-  "Jaguar": "jaguar", "Bentley": "bentley", "Aston Martin": "aston-martin",
-  "Lamborghini": "lamborghini", "Maserati": "maserati", "BMW M": "bmw",
-  "BMW": "bmw", "Range Rover": "land-rover",
+  "Ferrari": "ferrari", "Porsche": "porsche", "Lamborghini": "lamborghini",
+  "Bentley": "bentley", "Aston Martin": "aston-martin", "Jaguar": "jaguar",
+  "Maserati": "maserati",
+  // Mercedes variants
+  "Mercedes-AMG": "mercedes-benz", "Mercedes-Benz": "mercedes-benz", "Mercedes": "mercedes-benz",
+  // BMW variants
+  "BMW M": "bmw", "BMW": "bmw",
+  // Land Rover / Range Rover
+  "Range Rover": "land-rover", "Land Rover": "land-rover",
+  // Additional luxury brands
+  "Rolls-Royce": "rolls-royce", "McLaren": "mclaren", "Bugatti": "bugatti",
+  "Lotus": "lotus", "Alfa Romeo": "alfa-romeo",
 };
 
 export async function scrapeAutoScout24({ make, model, yearFrom, yearTo, maxMileage }) {
