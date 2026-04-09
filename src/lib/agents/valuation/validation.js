@@ -1,17 +1,27 @@
 /**
  * Input/output validation for the Valuation Agent.
  * Validates all data flowing through the pipeline to catch garbage early.
+ *
+ * Enhanced with:
+ * - Per-field confidence support for sheet output
+ * - Richer damage code validation
+ * - Extraction output validation for upload flow
+ * - Cross-validation helpers
  */
 
-const SUPPORTED_MAKES = ["Ferrari", "Mercedes-AMG", "Porsche", "Lamborghini", "Bentley", "Aston Martin", "Jaguar", "Maserati", "BMW M", "Range Rover"];
+const SUPPORTED_MAKES = ["Ferrari", "Mercedes-AMG", "Mercedes-Benz", "Porsche", "Lamborghini", "Bentley", "Aston Martin", "Jaguar", "Maserati", "BMW M", "BMW", "Range Rover", "Land Rover", "Rolls-Royce", "McLaren", "Lotus", "Alfa Romeo", "Bugatti", "Audi"];
 const VALID_DRIVE_SIDES = ["LHD", "RHD"];
 const VALID_TRANSMISSIONS = ["MANUAL", "AUTOMATIC", "DCT", "PDK", "SMG", ""];
-const VALID_FUEL_TYPES = ["PETROL", "DIESEL", "HYBRID", "ELECTRIC", ""];
+const VALID_FUEL_TYPES = ["PETROL", "DIESEL", "HYBRID", "ELECTRIC", "LPG", "CNG", ""];
 const VALID_SERVICE_HISTORY = ["FULL_DEALER", "PARTIAL_DEALER", "INDEPENDENT", "UNKNOWN"];
 const VALID_VERDICTS = ["BUY", "REVIEW", "PASS"];
 const VALID_RISK_LEVELS = ["LOW", "MEDIUM", "HIGH"];
 const VALID_LIQUIDITY = ["HIGH", "MEDIUM", "LOW"];
 const VALID_TRENDS = ["RISING", "STABLE", "DECLINING"];
+const VALID_INTERIOR_GRADES = ["A", "B", "C", "D"];
+const VALID_SEVERITIES = ["MINOR", "MODERATE", "MAJOR"];
+const VALID_DAMAGE_DISTRIBUTIONS = ["SYMMETRIC", "LEFT_BIASED", "RIGHT_BIASED", "FRONT_BIASED", "REAR_BIASED", "SCATTERED", "CLEAN"];
+const VALID_REPAIR_COST_CATEGORIES = ["NONE", "LOW", "MEDIUM", "HIGH", "VERY_HIGH"];
 
 /**
  * Validate and sanitize valuation input. Throws on invalid required fields.
@@ -145,25 +155,196 @@ export function validateMarketOutput(result) {
 }
 
 /**
- * Validate sheet parser output.
+ * Validate sheet parser output — enhanced for multi-pass extraction.
+ * Handles both new enriched format and backward-compatible fields.
  */
 export function validateSheetOutput(result) {
   if (!result || typeof result !== "object") return null;
 
+  // ── Grade validation ──
   if (result.overall_grade != null) {
     result.overall_grade = clampNumber(result.overall_grade, 1, 6.5, null);
   }
+
+  // ── Interior grade ──
+  if (result.interior_grade && !VALID_INTERIOR_GRADES.includes(result.interior_grade)) {
+    result.interior_grade = null;
+  }
+
+  // ── Mileage validation ──
   if (result.mileage_reading != null) {
     result.mileage_reading = Math.max(0, Math.round(result.mileage_reading));
     if (result.mileage_reading > 999999) result.mileage_reading = null;
   }
+
+  // ── Displacement validation ──
+  if (result.displacement_cc != null) {
+    result.displacement_cc = clampNumber(result.displacement_cc, 500, 16000, null);
+  }
+
+  // ── Year validation ──
+  if (result.year != null) {
+    if (result.year < 1970 || result.year > new Date().getFullYear() + 1) {
+      result.year = null;
+    }
+  }
+
+  // ── Price validation ──
+  if (result.start_price_jpy != null) {
+    result.start_price_jpy = Math.max(0, Math.round(result.start_price_jpy));
+    if (result.start_price_jpy > 500000000) result.start_price_jpy = null;
+  }
+  if (result.sold_price_jpy != null) {
+    result.sold_price_jpy = Math.max(0, Math.round(result.sold_price_jpy));
+    if (result.sold_price_jpy > 500000000) result.sold_price_jpy = null;
+  }
+
+  // ── Confidence ──
   result.confidence = clampNumber(result.confidence, 0, 1, 0.5);
+
+  // ── Ensure arrays ──
   result.mechanical_notes = Array.isArray(result.mechanical_notes) ? result.mechanical_notes : [];
   result.modification_notes = Array.isArray(result.modification_notes) ? result.modification_notes : [];
-  result.damage_codes = Array.isArray(result.damage_codes) ? result.damage_codes : [];
   result.equipment_notes = Array.isArray(result.equipment_notes) ? result.equipment_notes : [];
+  result.sales_points = Array.isArray(result.sales_points) ? result.sales_points : [];
+  result.caution_notes = Array.isArray(result.caution_notes) ? result.caution_notes : [];
+  result.inspector_notes = Array.isArray(result.inspector_notes) ? result.inspector_notes : [];
+
+  // ── Damage codes validation ──
+  if (Array.isArray(result.damage_codes)) {
+    result.damage_codes = result.damage_codes.map((d) => {
+      if (!d || typeof d !== "object") return null;
+      return {
+        location: d.location || d.panel || "unknown",
+        code: d.code || "?",
+        meaning: d.meaning || d.code || "Unknown damage",
+        severity: VALID_SEVERITIES.includes(d.severity) ? d.severity : "MODERATE",
+        category: d.category || "unknown",
+        tuvRelevant: !!d.tuvRelevant,
+        structural: !!d.structural || !!d.is_structural,
+      };
+    }).filter(Boolean);
+  } else {
+    result.damage_codes = [];
+  }
+
+  // ── Validate enriched fields (from multi-pass) ──
+  if (result._damage_severity_score != null) {
+    result._damage_severity_score = clampNumber(result._damage_severity_score, 0, 10, 0);
+  }
+  if (result._damage_distribution && !VALID_DAMAGE_DISTRIBUTIONS.includes(result._damage_distribution)) {
+    result._damage_distribution = null;
+  }
+  if (result._repair_cost_category && !VALID_REPAIR_COST_CATEGORIES.includes(result._repair_cost_category)) {
+    result._repair_cost_category = null;
+  }
+  if (result._field_confidence && typeof result._field_confidence === "object") {
+    for (const key of Object.keys(result._field_confidence)) {
+      result._field_confidence[key] = clampNumber(result._field_confidence[key], 0, 1, 0.5);
+    }
+  }
+  if (result._anomalies && !Array.isArray(result._anomalies)) {
+    result._anomalies = [];
+  }
+
+  // ── Ensure backward-compatible fields exist ──
+  if (result.panel_conditions && typeof result.panel_conditions !== "object") {
+    result.panel_conditions = null;
+  }
+  if (result.accident_indicator === undefined) {
+    result.accident_indicator = result.accident_history ?? null;
+  }
+  if (!result.service_history_indicator) {
+    result.service_history_indicator = null;
+  }
+  if (!result.overall_assessment) {
+    result.overall_assessment = null;
+  }
 
   return result;
+}
+
+/**
+ * Validate extraction output for the upload/extract-data flow.
+ * Ensures extracted fields are properly typed and identifies missing data.
+ */
+export function validateExtractionOutput(result) {
+  if (!result || typeof result !== "object") return null;
+
+  const extracted = result.extracted || {};
+
+  // Type-coerce known fields
+  if (extracted.year != null) {
+    extracted.year = parseInt(extracted.year);
+    if (isNaN(extracted.year) || extracted.year < 1970 || extracted.year > new Date().getFullYear() + 1) {
+      extracted.year = null;
+    }
+  }
+  if (extracted.mileageKm != null) {
+    extracted.mileageKm = parseInt(extracted.mileageKm);
+    if (isNaN(extracted.mileageKm) || extracted.mileageKm < 0 || extracted.mileageKm > 999999) {
+      extracted.mileageKm = null;
+    }
+  }
+  if (extracted.askingPriceJpy != null) {
+    extracted.askingPriceJpy = parseInt(extracted.askingPriceJpy);
+    if (isNaN(extracted.askingPriceJpy) || extracted.askingPriceJpy <= 0) {
+      extracted.askingPriceJpy = null;
+    }
+  }
+  if (extracted.auctionGrade != null) {
+    const g = String(extracted.auctionGrade).toUpperCase();
+    extracted.auctionGrade = g === "S" ? 6 : (parseFloat(g) || null);
+  }
+  if (extracted.accidentHistory != null) {
+    extracted.accidentHistory = !!extracted.accidentHistory;
+  }
+
+  // Normalize drive side
+  if (extracted.driveSide && !VALID_DRIVE_SIDES.includes(extracted.driveSide)) {
+    extracted.driveSide = null;
+  }
+
+  // Normalize transmission
+  if (extracted.transmission && !VALID_TRANSMISSIONS.includes(extracted.transmission)) {
+    extracted.transmission = null;
+  }
+
+  // Normalize fuel type
+  if (extracted.fuelType && !VALID_FUEL_TYPES.includes(extracted.fuelType)) {
+    extracted.fuelType = null;
+  }
+
+  // Identify missing required fields
+  const requiredFields = [
+    { key: "make", label: "Vehicle brand/make", question: "What is the vehicle brand? (e.g. Ferrari, Porsche, Mercedes-Benz)" },
+    { key: "model", label: "Model name", question: "What is the exact model name? (e.g. 488 GTB, 911 Turbo S, SL550)" },
+    { key: "year", label: "Year of manufacture", question: "What year was the vehicle manufactured?" },
+    { key: "mileageKm", label: "Mileage in km", question: "What is the current mileage in kilometers?" },
+    { key: "driveSide", label: "Drive side", question: "Is the vehicle LHD (left-hand drive) or RHD (right-hand drive)?" },
+    { key: "askingPriceJpy", label: "Asking price in JPY", question: "What is the asking price in Japanese Yen (JPY)?" },
+    { key: "exteriorColor", label: "Exterior color", question: "What is the exterior color of the vehicle?" },
+  ];
+
+  const optionalFields = [
+    { key: "interiorColor", label: "Interior color", question: "What is the interior color/material?" },
+    { key: "transmission", label: "Transmission type", question: "What transmission does it have? (Automatic, Manual, DCT, PDK, SMG)" },
+    { key: "fuelType", label: "Fuel type", question: "What fuel type? (Petrol, Diesel, Hybrid, Electric)" },
+    { key: "auctionGrade", label: "Auction grade", question: "What is the auction inspection grade? (e.g. 3.5, 4, 4.5, 5)" },
+    { key: "accidentHistory", label: "Accident history", question: "Does the vehicle have any accident/repair history?" },
+    { key: "specificationNotes", label: "Notable specifications", question: "Any notable specifications or options? (e.g. carbon brakes, sport exhaust, special edition)" },
+  ];
+
+  const missingRequired = requiredFields.filter((f) => !extracted[f.key] && extracted[f.key] !== false && extracted[f.key] !== 0);
+  const missingOptional = optionalFields.filter((f) => !extracted[f.key] && extracted[f.key] !== false && extracted[f.key] !== 0);
+
+  return {
+    extracted,
+    summary: result.summary || null,
+    missingRequired,
+    missingOptional,
+    complete: missingRequired.length === 0,
+  };
 }
 
 /**

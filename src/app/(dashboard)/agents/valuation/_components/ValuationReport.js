@@ -29,8 +29,16 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
     <div className="space-y-6 print:space-y-4 print:text-black" id="valuation-report">
       {/* Print-only header */}
       <div className="hidden print:block print:mb-6">
-        <h1 className="text-2xl font-bold">LuxJD Valuation Report</h1>
-        <p className="text-sm text-gray-500">{r.valuationId} | {new Date(r.timestamp).toLocaleString()}</p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-bold font-headline tracking-tight">LuxJD</h1>
+            <p className="text-xs text-gray-400 uppercase tracking-widest mt-0.5">Vehicle Valuation Report</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-500 font-mono">{r.valuationId}</p>
+            <p className="text-xs text-gray-400">{new Date(r.timestamp).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</p>
+          </div>
+        </div>
       </div>
 
       {/* Verdict Banner */}

@@ -146,6 +146,7 @@ function gradeToScore(grade) {
 // ══════════════════════════════════════════
 // PHOTO + SHEET MERGE LOGIC
 // Spec: sheet precedence for mechanical, photos for cosmetic
+// Enhanced: leverages multi-pass sheet data (damage severity, structural analysis, anomalies)
 // ══════════════════════════════════════════
 
 function mergeConditionData(photoResult, sheetResult, auctionGrade) {
@@ -154,19 +155,22 @@ function mergeConditionData(photoResult, sheetResult, auctionGrade) {
   const gradeExt = gradeToScore(auctionGrade);
   const gradeInt = gradeToScore(auctionGrade);
 
-  // Exterior: photo takes precedence if available, grade as fallback
+  // ── Exterior score: photo > damage severity > grade ──
   let exteriorScore;
+  const damageSeverity = sheetResult?._damage_severity_score;
   if (photoExt && gradeExt) {
-    // Weighted: 70% photo (visual truth), 30% grade (structural assessment)
     exteriorScore = photoExt * 0.7 + gradeExt * 0.3;
+    // Penalize if sheet damage analysis reveals significant damage not caught by photo
+    if (damageSeverity != null && damageSeverity > 5) {
+      exteriorScore = Math.min(exteriorScore, 10 - damageSeverity * 0.5);
+    }
   } else {
     exteriorScore = photoExt || gradeExt || 5.0;
   }
 
-  // Interior: photo takes precedence
+  // ── Interior score: photo > interior grade letter > overall grade ──
   let interiorScore;
   if (photoInt && gradeInt) {
-    // If sheet has interior grade, factor it in
     const sheetIntGrade = sheetResult?.interior_grade;
     const intGradeScore = sheetIntGrade === "A" ? 9 : sheetIntGrade === "B" ? 7 : sheetIntGrade === "C" ? 5 : sheetIntGrade === "D" ? 3 : null;
     if (intGradeScore) {
@@ -178,40 +182,56 @@ function mergeConditionData(photoResult, sheetResult, auctionGrade) {
     interiorScore = photoInt || gradeInt || 5.0;
   }
 
-  // Mechanical notes: sheet takes precedence (photos can't see mechanical)
+  // ── Mechanical notes: sheet takes precedence ──
   const mechanicalNotes = sheetResult?.mechanical_notes?.length
     ? sheetResult.mechanical_notes
     : (auctionGrade && auctionGrade >= 4.0 ? ["No mechanical issues noted on auction sheet"] : ["Mechanical condition unknown — no auction sheet"]);
 
-  // Modifications: merge both sources, deduplicate
+  // ── Modifications: merge both sources, deduplicate ──
   const mods = new Set([
     ...(photoResult?.visible_modifications || []),
     ...(sheetResult?.modification_notes || []),
   ]);
 
-  // Damage: merge photo damage + sheet damage codes
+  // ── Damage: merge photo damage + enriched sheet damage codes ──
   const visibleDamage = [
     ...(photoResult?.visible_damage || []),
-    ...(sheetResult?.damage_codes?.map((d) => `${d.location}: ${d.meaning} [${d.severity || ""}]`) || []),
+    ...(sheetResult?.damage_codes?.map((d) => `${d.location}: ${d.meaning} [${d.severity}]${d.tuvRelevant ? " ⚠ TUV" : ""}`) || []),
   ];
 
-  // TUV risk flags from photos
-  const tuvRiskFlags = photoResult?.tuv_risk_flags || [];
+  // ── TUV risk flags: merge photo TUV flags + sheet TUV-relevant damage ──
+  const tuvRiskFlags = [...(photoResult?.tuv_risk_flags || [])];
+  if (sheetResult?._tuv_relevant_damage?.length) {
+    for (const d of sheetResult._tuv_relevant_damage) {
+      tuvRiskFlags.push(`${d.location}: ${d.meaning} (${d.code}) — may affect TUV inspection`);
+    }
+  }
+  if (sheetResult?._structural_concern) {
+    tuvRiskFlags.push(`Structural damage concern: ${sheetResult._structural_reasoning}`);
+  }
+  if (sheetResult?._respray_detected) {
+    tuvRiskFlags.push(`Respray detected on panels: ${sheetResult._respray_panels?.join(", ") || "unknown panels"}`);
+  }
 
-  // Confidence: use minimum (weakest link)
+  // ── Confidence: weighted by per-field confidence when available ──
   const photoConf = photoResult?.confidence || 0;
   const sheetConf = sheetResult?.confidence || 0;
+  const fieldConf = sheetResult?._field_confidence || {};
   let conditionConf;
   if (photoConf && sheetConf) {
-    conditionConf = (photoConf + sheetConf) / 2; // Both sources = higher confidence
+    // Use per-field confidence from multi-pass if available
+    const avgFieldConf = Object.values(fieldConf).length
+      ? Object.values(fieldConf).reduce((a, b) => a + b, 0) / Object.values(fieldConf).length
+      : sheetConf;
+    conditionConf = (photoConf * 0.5 + avgFieldConf * 0.5);
   } else if (photoConf) {
-    conditionConf = photoConf * 0.85; // Photo only = slightly lower
+    conditionConf = photoConf * 0.85;
   } else if (sheetConf) {
-    conditionConf = sheetConf * 0.80; // Sheet only
+    conditionConf = sheetConf * 0.80;
   } else if (auctionGrade) {
-    conditionConf = auctionGrade >= 4.5 ? 0.65 : 0.50; // Grade only
+    conditionConf = auctionGrade >= 4.5 ? 0.65 : 0.50;
   } else {
-    conditionConf = 0.30; // No condition data
+    conditionConf = 0.30;
   }
 
   return {
@@ -225,12 +245,24 @@ function mergeConditionData(photoResult, sheetResult, auctionGrade) {
     exteriorNotes: photoResult?.exterior_notes || (auctionGrade >= 4.5 ? ["Paint in excellent condition based on grade"] : ["Exterior assessment based on grade only"]),
     interiorNotes: photoResult?.interior_notes || ["Interior assessment based on grade only"],
     interiorOriginality: photoResult?.interior_originality || "UNKNOWN",
-    driveSideObserved: photoResult?.drive_side_observed || null,
+    driveSideObserved: photoResult?.drive_side_observed || sheetResult?.drive_side || null,
     panelConditions: sheetResult?.panel_conditions || null,
     damageCodes: sheetResult?.damage_codes || [],
     accidentContradiction: sheetResult?.accident_contradiction || null,
     serviceBookPresent: sheetResult?.service_book_present ?? null,
     serviceHistoryIndicator: sheetResult?.service_history_indicator || null,
+    // New enriched fields from multi-pass analysis
+    damageSeverityScore: sheetResult?._damage_severity_score ?? null,
+    damageDistribution: sheetResult?._damage_distribution || null,
+    structuralConcern: sheetResult?._structural_concern || false,
+    structuralReasoning: sheetResult?._structural_reasoning || null,
+    resprayDetected: sheetResult?._respray_detected || false,
+    repairCostCategory: sheetResult?._repair_cost_category || null,
+    anomalies: sheetResult?._anomalies || [],
+    fieldConfidence: sheetResult?._field_confidence || null,
+    extractionMode: sheetResult?._extraction_mode || null,
+    passesCompleted: sheetResult?._passes_completed || null,
+    auctionHouse: sheetResult?.auction_house || null,
   };
 }
 
@@ -493,6 +525,18 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       conditionConfidence: condition.conditionConfidence,
       photoCount: input.images?.length || 0,
       auctionSheetParsed: sheetResult || null,
+      // Enriched multi-pass analysis data
+      damageSeverityScore: condition.damageSeverityScore,
+      damageDistribution: condition.damageDistribution,
+      structuralConcern: condition.structuralConcern,
+      structuralReasoning: condition.structuralReasoning,
+      resprayDetected: condition.resprayDetected,
+      repairCostCategory: condition.repairCostCategory,
+      anomalies: condition.anomalies,
+      fieldConfidence: condition.fieldConfidence,
+      extractionMode: condition.extractionMode,
+      passesCompleted: condition.passesCompleted,
+      auctionHouse: condition.auctionHouse,
     },
 
     marketAnalysis: {

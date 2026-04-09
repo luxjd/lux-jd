@@ -410,45 +410,168 @@ body {
 
 /* ─── Print / PDF Export ─── */
 @media print {
-  body { background: white !important; color: black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  nav, aside, header, footer, .no-print { display: none !important; }
-  /* Hide action buttons but keep report content */
-  .print\:hidden { display: none !important; }
-  main { padding: 0 !important; margin: 0 !important; }
-  /* Reset dark theme for print */
-  .bg-surface-container, .bg-surface-container-high, .bg-surface-container-highest {
-    background: white !important;
-    border-color: #ddd !important;
+
+  /* ── 1. Flip entire theme to light by overriding CSS variables ── */
+  :root, html, html.dark {
+    --color-background: #ffffff !important;
+    --color-surface: #ffffff !important;
+    --color-surface-dim: #fafafa !important;
+    --color-surface-bright: #ffffff !important;
+    --color-surface-container-lowest: #ffffff !important;
+    --color-surface-container-low: #f8f9fa !important;
+    --color-surface-container: #f3f4f6 !important;
+    --color-surface-container-high: #e5e7eb !important;
+    --color-surface-container-highest: #d1d5db !important;
+    --color-surface-variant: #e5e7eb !important;
+    --color-surface-tint: #c62828 !important;
+    --color-on-surface: #111827 !important;
+    --color-on-surface-variant: #4b5563 !important;
+    --color-on-background: #111827 !important;
+    --color-primary: #b91c1c !important;
+    --color-primary-container: #fecaca !important;
+    --color-on-primary: #ffffff !important;
+    --color-secondary: #c2410c !important;
+    --color-on-secondary: #ffffff !important;
+    --color-outline: #9ca3af !important;
+    --color-outline-variant: #d1d5db !important;
   }
-  /* Keep verdict colors readable in print */
-  .bg-emerald-400\/15 { background: #e8f5e9 !important; }
-  .bg-amber-400\/15 { background: #fff8e1 !important; }
-  .bg-slate-400\/10 { background: #f5f5f5 !important; }
-  .text-emerald-400 { color: #2e7d32 !important; }
-  .text-amber-400 { color: #f57f17 !important; }
-  .text-red-400 { color: #c62828 !important; }
-  .text-primary { color: #c62828 !important; }
-  .text-on-surface { color: #1a1a1a !important; }
-  .text-on-surface-variant { color: #555 !important; }
-  /* Risk score cards: preserve background tints */
-  .bg-emerald-400\/10 { background: #e8f5e9 !important; }
-  .bg-amber-400\/10 { background: #fff8e1 !important; }
-  .bg-red-400\/10 { background: #ffebee !important; }
-  /* Fonts */
-  .font-headline { font-family: "Space Grotesk", Arial, sans-serif !important; }
-  .font-mono { font-family: "Courier New", monospace !important; }
-  /* Page breaks */
-  #valuation-report > div { break-inside: avoid; page-break-inside: avoid; }
-  /* Remove shadows, animations */
-  * { box-shadow: none !important; animation: none !important; transition: none !important; }
-  /* Material icons print fallback */
-  .material-symbols-outlined { font-size: 14px !important; }
-  /* Table styling */
-  table { border-collapse: collapse; }
-  th, td { border: 1px solid #ddd !important; }
-  /* Page setup */
+
+  /* ── 2. Nuclear background reset — force every element white ── */
+  *, *::before, *::after {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  html, body {
+    background: #fff !important;
+    color: #111827 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ── 3. Hide chrome — sidebar, topbar, nav ── */
+  nav, aside, header, footer, .no-print { display: none !important; }
+  .print\:hidden { display: none !important; }
+
+  /* ── 4. Unlock layout — remove viewport lock & overflow clips ── */
+  body > div, body > div > div {
+    overflow: visible !important;
+    height: auto !important;
+    display: block !important;
+  }
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  /* ── 4b. Restore backgrounds for sections that need them ── */
+  #valuation-report [class*="rounded-2xl"],
+  #valuation-report [class*="rounded-xl"] {
+    background-color: #f9fafb !important;
+  }
+
+  /* ── 5. Page setup ── */
   @page {
     size: A4;
-    margin: 15mm;
+    margin: 18mm 15mm;
+  }
+
+  /* ── 6. Report container ── */
+  #valuation-report {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  #valuation-report > div {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* ── 7. Verdict banner — colored tints for print ── */
+  .bg-emerald-400\/15 { background: #dcfce7 !important; border-color: #86efac !important; }
+  .bg-amber-400\/15   { background: #fef9c3 !important; border-color: #fde68a !important; }
+  .bg-slate-400\/10   { background: #f1f5f9 !important; border-color: #cbd5e1 !important; }
+  .bg-black\/20       { background: #f3f4f6 !important; }
+
+  /* ── 8. Semantic text colors ── */
+  .text-emerald-400   { color: #15803d !important; }
+  .text-amber-400     { color: #b45309 !important; }
+  .text-red-400       { color: #b91c1c !important; }
+  .text-slate-400     { color: #64748b !important; }
+  .text-primary       { color: #b91c1c !important; }
+  .text-secondary     { color: #c2410c !important; }
+  .text-on-surface    { color: #111827 !important; }
+  .text-on-surface-variant { color: #4b5563 !important; }
+  .text-gray-500      { color: #6b7280 !important; }
+  .text-gray-400      { color: #9ca3af !important; }
+
+  /* ── 9. Risk score card tints ── */
+  .bg-emerald-400\/10 { background: #dcfce7 !important; }
+  .bg-emerald-400\/5  { background: #f0fdf4 !important; }
+  .bg-amber-400\/10   { background: #fef9c3 !important; }
+  .bg-amber-400\/5    { background: #fefce8 !important; }
+  .bg-red-400\/10     { background: #fee2e2 !important; }
+  .bg-red-400\/20     { background: #fecaca !important; }
+  .bg-primary\/5      { background: #fef2f2 !important; }
+  .bg-primary\/20     { background: #fecaca !important; }
+  .bg-secondary\/15   { background: #fff7ed !important; }
+
+  /* ── 10. Card borders — light & visible ── */
+  [class*="border-outline-variant"] { border-color: #e5e7eb !important; }
+  [class*="border-emerald"]         { border-color: #86efac !important; }
+  [class*="border-amber"]           { border-color: #fde68a !important; }
+  [class*="border-red"]             { border-color: #fca5a5 !important; }
+  [class*="border-primary"]         { border-color: #fca5a5 !important; }
+  [class*="border-slate"]           { border-color: #cbd5e1 !important; }
+
+  /* ── 11. Rounded cards — subtle shadow replacement via border ── */
+  #valuation-report [class*="rounded-2xl"] {
+    border: 1px solid #e5e7eb !important;
+  }
+
+  /* ── 12. Scenario & risk-score inner cards ── */
+  #valuation-report [class*="rounded-xl"] {
+    border: 1px solid #e5e7eb !important;
+  }
+  .bg-surface-container-high\/30 { background: #f9fafb !important; }
+
+  /* ── 13. Comparable listings table ── */
+  table { border-collapse: collapse; width: 100% !important; }
+  th { background: #f9fafb !important; }
+  th, td { border: 1px solid #e5e7eb !important; font-size: 11px !important; padding: 6px 10px !important; }
+
+  /* ── 14. Fonts ── */
+  .font-headline { font-family: "Space Grotesk", Arial, sans-serif !important; }
+  .font-mono     { font-family: "Courier New", monospace !important; }
+
+  /* ── 15. Material icons — smaller in print ── */
+  .material-symbols-outlined { font-size: 14px !important; }
+
+  /* ── 16. Print-only header styling ── */
+  .print\:block {
+    border-bottom: 2px solid #b91c1c !important;
+    padding-bottom: 12px !important;
+    margin-bottom: 20px !important;
+  }
+  .print\:block h1 {
+    color: #111827 !important;
+    font-family: "Space Grotesk", Arial, sans-serif !important;
+    letter-spacing: -0.02em;
+  }
+  .print\:block p {
+    color: #6b7280 !important;
+  }
+
+  /* ── 17. Footer meta line ── */
+  #valuation-report > p:last-child {
+    border-top: 1px solid #e5e7eb !important;
+    padding-top: 12px !important;
+    margin-top: 20px !important;
+    color: #6b7280 !important;
+    font-size: 10px !important;
   }
 }

@@ -4,15 +4,18 @@
  * OpenRouter provides access to Claude, GPT-4, Gemini, Llama, and many more
  * through a single API key with OpenAI-compatible format.
  *
+ * IMPORTANT: Vision MUST use Sonnet 4.6 — older models (Sonnet 4, Opus 4)
+ * misread auction sheet digits and colors.
+ *
  * Get your key at: https://openrouter.ai/keys
  */
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
-// Model mapping — change these to use any model on OpenRouter
+// Model mapping — Sonnet 4.6 is required for accurate auction sheet OCR
 const MODELS = {
-  vision: process.env.OPENROUTER_MODEL_VISION || "anthropic/claude-sonnet-4",
-  reasoning: process.env.OPENROUTER_MODEL_REASONING || "anthropic/claude-sonnet-4",
+  vision: process.env.OPENROUTER_MODEL_VISION || "anthropic/claude-sonnet-4-6",
+  reasoning: process.env.OPENROUTER_MODEL_REASONING || "anthropic/claude-sonnet-4-6",
   fast: process.env.OPENROUTER_MODEL_FAST || "anthropic/claude-haiku-4.5",
 };
 
