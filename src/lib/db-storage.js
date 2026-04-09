@@ -353,6 +353,42 @@ async function getAllAgentStatuses() {
 }
 
 // ═══════════════════════════════════════════════════
+// KEY-VALUE STORE (app settings)
+// ═══════════════════════════════════════════════════
+
+async function kvGet(key) {
+  const prisma = await getDb();
+  if (prisma) {
+    const row = await prisma.keyValueStore.findUnique({ where: { key } });
+    return row?.value ?? null;
+  }
+  return null;
+}
+
+async function kvSet(key, value) {
+  const prisma = await getDb();
+  if (prisma) {
+    return prisma.keyValueStore.upsert({
+      where: { key },
+      create: { key, value },
+      update: { value },
+    });
+  }
+  return null;
+}
+
+async function kvGetMany(keys) {
+  const prisma = await getDb();
+  if (prisma) {
+    const rows = await prisma.keyValueStore.findMany({ where: { key: { in: keys } } });
+    const map = {};
+    for (const row of rows) map[row.key] = row.value;
+    return map;
+  }
+  return {};
+}
+
+// ═══════════════════════════════════════════════════
 // AUDIT LOG
 // ═══════════════════════════════════════════════════
 
@@ -385,5 +421,6 @@ export const db = {
   fxRates: { create: createFxRate, getHistory: getFxRateHistory },
   fxAlerts: { create: createFxAlert, getAll: getFxAlerts },
   agentStatus: { upsert: upsertAgentStatus, get: getAgentStatus, getAll: getAllAgentStatuses },
+  kv: { get: kvGet, set: kvSet, getMany: kvGetMany },
   auditLog: { create: createAuditLog },
 };

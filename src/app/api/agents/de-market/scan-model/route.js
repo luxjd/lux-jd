@@ -1,4 +1,5 @@
 import { isAIAvailable } from "@/lib/claude";
+import { agentGuard } from "@/lib/settings";
 import { TRACKED_MODELS } from "@/lib/agents/de-market/constants";
 import { scanModel } from "@/lib/agents/de-market/ai/market-scanner";
 import { generateTVR } from "@/lib/agents/de-market/ai/tvr-generator";
@@ -20,6 +21,9 @@ import { after } from "next/server";
  * Returns immediately. Progress is tracked via GET /api/agents/de-market/scan-model.
  */
 export async function POST(request) {
+  const blocked = await agentGuard("de-market");
+  if (blocked) return blocked;
+
   if (!isAIAvailable()) {
     return Response.json({ error: "AI not available" }, { status: 503 });
   }

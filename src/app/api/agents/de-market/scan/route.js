@@ -1,7 +1,11 @@
 import { isAIAvailable } from "@/lib/claude";
 import { runFullScan, runQuickScan } from "@/lib/agents/de-market/ai/scan-engine";
+import { agentGuard } from "@/lib/settings";
 
 export async function POST(request) {
+  const blocked = await agentGuard("de-market");
+  if (blocked) return blocked;
+
   let body = {};
   try {
     body = await request.json();

@@ -1,6 +1,7 @@
 import { loadPortfolioState } from "@/lib/agents/orchestrator/ai/portfolio-manager";
 import { savePortfolioSnapshot } from "@/lib/agents/orchestrator/storage";
 import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
+import { agentGuard } from "@/lib/settings";
 
 const MAX_BRAND_PCT = parseInt(process.env.MAX_BRAND_CONCENTRATION_PCT || "30") / 100;
 const MAX_DEPLOYMENT_PCT = parseInt(process.env.MAX_CAPITAL_DEPLOYMENT_PCT || "80") / 100;
@@ -10,6 +11,9 @@ const MAX_DEPLOYMENT_PCT = parseInt(process.env.MAX_CAPITAL_DEPLOYMENT_PCT || "8
  * Returns alerts and recommendations for portfolio health.
  */
 export async function GET() {
+  const blocked = await agentGuard("orchestrator");
+  if (blocked) return blocked;
+
   const portfolio = await loadPortfolioState();
   const vehicles = ((await getPipelineVehicles()).vehicles || []);
   const alerts = [];

@@ -53,18 +53,25 @@ export default function AgentsHubPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {AGENT_DEFS.map((a) => {
           const status = statuses[a.id];
-          const isOnline = status?.aiPowered;
+          const isDisabled = status?.disabled === true;
+          const isOnline = !isDisabled && status?.aiPowered;
 
           return (
             <Link
               key={a.id}
               href={`/agents/${a.id}`}
-              className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6 transition-all hover:border-primary/30 cursor-pointer"
+              className={`bg-surface-container rounded-2xl border p-6 transition-all cursor-pointer ${
+                isDisabled
+                  ? "border-outline-variant/5 opacity-50 hover:opacity-70"
+                  : "border-outline-variant/10 hover:border-primary/30"
+              }`}
             >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-primary">{a.icon}</span>
+                  <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${
+                    isDisabled ? "bg-slate-500/5 border-slate-500/10" : "bg-primary/10 border-primary/20"
+                  }`}>
+                    <span className={`material-symbols-outlined ${isDisabled ? "text-slate-500" : "text-primary"}`}>{a.icon}</span>
                   </div>
                   <div>
                     <h3 className="font-headline font-bold text-sm">{a.name}</h3>
@@ -72,19 +79,29 @@ export default function AgentsHubPage() {
                   </div>
                 </div>
                 <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                  isOnline ? "bg-emerald-400/15 text-emerald-400" : "bg-slate-500/15 text-slate-400"
+                  isDisabled
+                    ? "bg-red-400/10 text-red-400"
+                    : isOnline
+                      ? "bg-emerald-400/15 text-emerald-400"
+                      : "bg-slate-500/15 text-slate-400"
                 }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-emerald-400" : "bg-slate-500"}`} />
-                  {isOnline ? "LIVE" : "OFFLINE"}
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    isDisabled ? "bg-red-400" : isOnline ? "bg-emerald-400" : "bg-slate-500"
+                  }`} />
+                  {isDisabled ? "DISABLED" : isOnline ? "LIVE" : "OFFLINE"}
                 </span>
               </div>
 
               <p className="text-xs text-on-surface-variant mb-3">{a.description}</p>
 
               <div className="flex items-center justify-between pt-3 border-t border-outline-variant/10">
-                <span className="text-[10px] text-on-surface-variant">{status?.hasData ? "Has scan data" : "No data yet"}</span>
-                <span className="text-xs text-primary font-bold flex items-center gap-1">
-                  Open <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                {isDisabled ? (
+                  <span className="text-[10px] text-red-400">Disabled in Settings</span>
+                ) : (
+                  <span className="text-[10px] text-on-surface-variant">{status?.hasData ? "Has scan data" : "No data yet"}</span>
+                )}
+                <span className={`text-xs font-bold flex items-center gap-1 ${isDisabled ? "text-on-surface-variant" : "text-primary"}`}>
+                  {isDisabled ? "View" : "Open"} <span className="material-symbols-outlined text-sm">arrow_forward</span>
                 </span>
               </div>
             </Link>

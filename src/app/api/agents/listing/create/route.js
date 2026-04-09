@@ -1,8 +1,12 @@
 import { isAIAvailable } from "@/lib/claude";
 import { createListing } from "@/lib/agents/listing/ai/listing-orchestrator";
+import { agentGuard } from "@/lib/settings";
 import { db } from "@/lib/db-storage";
 
 export async function POST(request) {
+  const blocked = await agentGuard("listing");
+  if (blocked) return blocked;
+
   if (!isAIAvailable()) {
     return Response.json({ error: "AI not available.", aiPowered: false }, { status: 503 });
   }

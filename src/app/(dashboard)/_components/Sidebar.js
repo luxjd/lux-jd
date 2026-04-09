@@ -51,6 +51,21 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [agentsExpanded, setAgentsExpanded] = useState(pathname.startsWith("/agents"));
+  const [disabledAgents, setDisabledAgents] = useState({});
+
+  // Load agent enabled/disabled from settings
+  useEffect(() => {
+    fetch("/api/settings").then((r) => r.json()).then((data) => {
+      const s = data.settings || {};
+      const disabled = {};
+      for (const key of Object.keys(s)) {
+        if (key.startsWith("agents.") && s[key] === false) {
+          disabled[key.replace("agents.", "")] = true;
+        }
+      }
+      setDisabledAgents(disabled);
+    }).catch(() => {});
+  }, [pathname]);
 
   useEffect(() => { setMobileOpen(false); }, [pathname]);
   useEffect(() => {
@@ -140,20 +155,27 @@ export default function Sidebar() {
 
                 {agentsExpanded && (
                   <div className="ml-3 border-l border-outline-variant/10 pl-1 space-y-0.5">
-                    {section.subItems.map((sub) => (
-                      <Link
-                        key={sub.href}
-                        href={sub.href}
-                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-[12px] ${
-                          isActive(sub.href)
-                            ? "text-primary bg-primary/5"
-                            : "text-on-surface-variant/70 hover:text-on-surface hover:bg-surface-container-low"
-                        }`}
-                      >
-                        <span className={`material-symbols-outlined text-[16px] ${isActive(sub.href) ? "text-primary" : ""}`}>{sub.icon}</span>
-                        <span>{sub.label}</span>
-                      </Link>
-                    ))}
+                    {section.subItems.map((sub) => {
+                      const agentId = sub.href.replace("/agents/", "");
+                      const isOff = disabledAgents[agentId];
+                      return (
+                        <Link
+                          key={sub.href}
+                          href={sub.href}
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-[12px] ${
+                            isOff
+                              ? "text-on-surface-variant/30 hover:text-on-surface-variant/50"
+                              : isActive(sub.href)
+                                ? "text-primary bg-primary/5"
+                                : "text-on-surface-variant/70 hover:text-on-surface hover:bg-surface-container-low"
+                          }`}
+                        >
+                          <span className={`material-symbols-outlined text-[16px] ${isOff ? "text-on-surface-variant/30" : isActive(sub.href) ? "text-primary" : ""}`}>{sub.icon}</span>
+                          <span>{sub.label}</span>
+                          {isOff && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-red-400/60" />}
+                        </Link>
+                      );
+                    })}
                   </div>
                 )}
               </>

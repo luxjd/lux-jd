@@ -1,6 +1,7 @@
 import { checkFxRate, calculateFxImpact } from "@/lib/agents/finance/ai/fx-monitor";
 import { getFxHistory, addFxRate, addFxAlert, updateAgentStatus } from "@/lib/agents/finance/storage";
 import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
+import { agentGuard } from "@/lib/settings";
 import { db } from "@/lib/db-storage";
 
 /**
@@ -14,6 +15,9 @@ import { db } from "@/lib/db-storage";
  * calculates FX impact on all pipeline vehicles.
  */
 export async function GET(request) {
+  const blocked = await agentGuard("finance");
+  if (blocked) return blocked;
+
   // Optional: verify cron secret to prevent unauthorized calls
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;

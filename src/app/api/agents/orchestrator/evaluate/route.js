@@ -4,10 +4,14 @@ import { generateDecisionBrief } from "@/lib/agents/orchestrator/ai/brief-genera
 import { saveDecision, updateAgentStatus } from "@/lib/agents/orchestrator/storage";
 import { savePipelineVehicle, addPipelineEvent } from "@/lib/agents/logistics/storage";
 import { recordLandedCosts } from "@/lib/agents/finance/ai/finance-orchestrator";
+import { agentGuard } from "@/lib/settings";
 import { db } from "@/lib/db-storage";
 import { after } from "next/server";
 
 export async function POST(request) {
+  const blocked = await agentGuard("orchestrator");
+  if (blocked) return blocked;
+
   const body = await request.json();
   if (!body.opportunity) return Response.json({ error: "Missing opportunity data" }, { status: 400 });
 

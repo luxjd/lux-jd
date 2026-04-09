@@ -1,7 +1,11 @@
 import { advanceStage, addVehicleToPipeline } from "@/lib/agents/logistics/ai/logistics-orchestrator";
+import { agentGuard } from "@/lib/settings";
 import { db } from "@/lib/db-storage";
 
 export async function POST(request) {
+  const blocked = await agentGuard("logistics");
+  if (blocked) return blocked;
+
   const body = await request.json();
 
   // Add new vehicle to pipeline

@@ -1,8 +1,12 @@
 import { handleInquiry } from "@/lib/agents/concierge/ai/concierge-orchestrator";
+import { agentGuard } from "@/lib/settings";
 import { db } from "@/lib/db-storage";
 import { after } from "next/server";
 
 export async function POST(request) {
+  const blocked = await agentGuard("concierge");
+  if (blocked) return blocked;
+
   const body = await request.json();
 
   if (!body.inquiry || !body.vehicle) {

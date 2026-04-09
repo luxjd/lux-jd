@@ -1,12 +1,16 @@
 import { isAIAvailable } from "@/lib/claude";
 import { runFullScan } from "@/lib/agents/jp-sourcing/ai/scan-engine";
 import { getScanProgress, saveScanProgress, updateAgentStatus, saveOpportunities } from "@/lib/agents/jp-sourcing/storage";
+import { agentGuard } from "@/lib/settings";
 import { after } from "next/server";
 
 /**
  * POST — Start a background JP Sourcing scan. Returns immediately.
  */
 export async function POST(request) {
+  const blocked = await agentGuard("jp-sourcing");
+  if (blocked) return blocked;
+
   let body = {};
   try { body = await request.json(); } catch {}
 

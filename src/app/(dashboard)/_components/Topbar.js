@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
 const PAGE_TITLES = {
@@ -29,6 +29,8 @@ export default function Topbar() {
   const title = PAGE_TITLES[pathname] || (pathname.startsWith("/agents/de-market/") ? "Model Detail" : "Dashboard");
   const [notifCount, setNotifCount] = useState(0);
   const [criticalCount, setCriticalCount] = useState(0);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     fetch("/api/notifications")
@@ -38,7 +40,21 @@ export default function Topbar() {
         setCriticalCount(d.byCritical || 0);
       })
       .catch(() => {});
-  }, [pathname]); // Re-fetch when page changes
+  }, [pathname]);
+
+  // Close menu on outside click
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setProfileOpen(false);
+      }
+    };
+    if (profileOpen) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [profileOpen]);
+
+  // Close menu on navigation
+  useEffect(() => { setProfileOpen(false); }, [pathname]);
 
   return (
     <header className="h-14 md:h-16 shrink-0 flex items-center justify-between px-4 pl-14 lg:pl-4 sm:px-6 border-b border-outline-variant/10 bg-surface/80 backdrop-blur-xl">
@@ -68,9 +84,82 @@ export default function Topbar() {
           )}
         </Link>
 
-        {/* User */}
-        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/20 flex items-center justify-center">
-          <span className="text-primary text-xs font-bold">A</span>
+        {/* Profile Menu */}
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setProfileOpen((p) => !p)}
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/20 flex items-center justify-center hover:ring-2 hover:ring-primary/30 transition-all"
+          >
+            <span className="text-primary text-xs font-bold">A</span>
+          </button>
+
+          {profileOpen && (
+            <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-surface-container border border-outline-variant/15 shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+              {/* User info */}
+              <div className="px-4 py-3 border-b border-outline-variant/10">
+                <p className="text-sm font-bold text-on-surface">Admin</p>
+                <p className="text-xs text-on-surface-variant">admin@luxjd.com</p>
+              </div>
+
+              {/* Menu items */}
+              <div className="py-1.5">
+                <Link href="/settings" onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/50 transition-colors">
+                  <span className="material-symbols-outlined text-lg">person</span>
+                  Profile
+                </Link>
+                <Link href="/settings" onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/50 transition-colors">
+                  <span className="material-symbols-outlined text-lg">settings</span>
+                  Settings
+                </Link>
+                <Link href="/notifications" onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/50 transition-colors">
+                  <span className="material-symbols-outlined text-lg">notifications</span>
+                  Notifications
+                  {notifCount > 0 && (
+                    <span className="ml-auto px-1.5 py-0.5 rounded-full bg-amber-400/15 text-amber-400 text-[10px] font-bold">{notifCount}</span>
+                  )}
+                </Link>
+
+                <div className="my-1.5 border-t border-outline-variant/10" />
+
+                <Link href="/agents" onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/50 transition-colors">
+                  <span className="material-symbols-outlined text-lg">smart_toy</span>
+                  AI Agents
+                </Link>
+                <Link href="/pipeline" onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/50 transition-colors">
+                  <span className="material-symbols-outlined text-lg">conveyor_belt</span>
+                  Pipeline
+                </Link>
+
+                <div className="my-1.5 border-t border-outline-variant/10" />
+
+                <a href="https://github.com/luxjd/docs" target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/50 transition-colors">
+                  <span className="material-symbols-outlined text-lg">help</span>
+                  Help Center
+                  <span className="material-symbols-outlined text-xs ml-auto opacity-50">open_in_new</span>
+                </a>
+                <a href="https://github.com/luxjd/docs" target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/50 transition-colors">
+                  <span className="material-symbols-outlined text-lg">description</span>
+                  Documentation
+                  <span className="material-symbols-outlined text-xs ml-auto opacity-50">open_in_new</span>
+                </a>
+
+                <div className="my-1.5 border-t border-outline-variant/10" />
+
+                <Link href="/login" onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-400/5 transition-colors">
+                  <span className="material-symbols-outlined text-lg">logout</span>
+                  Sign Out
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>

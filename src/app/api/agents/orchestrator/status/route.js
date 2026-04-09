@@ -1,7 +1,11 @@
 import { isAIAvailable } from "@/lib/claude";
 import { getAgentStatus, getDecisions } from "@/lib/agents/orchestrator/storage";
+import { agentGuard } from "@/lib/settings";
 
 export async function GET() {
+  const blocked = await agentGuard("orchestrator");
+  if (blocked) return blocked;
+
   const status = await getAgentStatus();
   const decisions = await getDecisions();
   return Response.json({

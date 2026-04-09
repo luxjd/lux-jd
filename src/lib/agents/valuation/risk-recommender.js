@@ -38,6 +38,7 @@ Cash Outlay Required: €${data.cashOutlay?.toLocaleString()}
 FX Rate: ¥${data.fxRate}/€
 ${data.fxVolatilityAlert ? `⚠ FX ALERT: ${data.fxVolatilityAlertReason}` : "FX Stability: Normal"}
 Deterministic Max Bid: ¥${data.deterministicMaxBid?.toLocaleString()} (pre-calculated)
+${data.maxPurchaseEur ? `Max Purchase Limit: €${data.maxPurchaseEur.toLocaleString()} (company policy)` : ""}
 
 MARGIN SCENARIOS:
 Pessimistic (P25 sale): €${data.pessimisticMargin?.toLocaleString()}
@@ -81,15 +82,15 @@ Return ONLY valid JSON:
   "action_items": ["specific action for REVIEW verdicts — what info would change the verdict"]
 }
 
-VERDICT RULES (STRICT — you MUST follow these):
-- BUY: Gross margin >= €15,000 AND >= 20% AND overall_risk <= 3.0 AND no HIGH individual risks AND pessimistic margin > €0
+VERDICT RULES (STRICT — you MUST follow these thresholds set by the user):
+- BUY: Gross margin >= €${data.minMarginEur?.toLocaleString() || "15,000"} AND >= ${data.minMarginPct || 20}% AND overall_risk <= 3.0 AND no HIGH individual risks AND pessimistic margin > €0${data.maxPurchaseEur ? ` AND total landed cost <= €${data.maxPurchaseEur.toLocaleString()}` : ""}
 - REVIEW: Margin meets BUY threshold but one or more: overall_risk 3.0-4.0, one HIGH risk, pessimistic margin < €0, FX alert active
-- PASS: Margin < €15,000 OR < 20% OR overall_risk > 4.0 OR multiple HIGH risks OR accident history with poor condition`;
+- PASS: Margin < €${data.minMarginEur?.toLocaleString() || "15,000"} OR < ${data.minMarginPct || 20}% OR overall_risk > 4.0 OR multiple HIGH risks OR accident history with poor condition${data.maxPurchaseEur ? ` OR total landed cost > €${data.maxPurchaseEur.toLocaleString()}` : ""}`;
 
 /**
  * Assess risks and generate final BUY/REVIEW/PASS recommendation.
- * Now receives enriched data including TUV flags, panel conditions, damage codes, and FX volatility.
- * @param {object} data - All prior analysis results combined
+ * Receives enriched data including thresholds from app settings.
+ * @param {object} data - All prior analysis results + thresholds
  * @returns {object|null} Risk assessment + recommendation
  */
 export async function assessRiskAndRecommend(data) {

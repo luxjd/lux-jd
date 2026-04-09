@@ -24,10 +24,8 @@ import { assessRiskAndRecommend } from "./risk-recommender";
 import { fetchFxRate } from "./fx-fetcher";
 import { validateInput } from "./validation";
 import { db } from "@/lib/db-storage";
+import { getSettings } from "@/lib/settings";
 
-const FX_BUFFER_PCT = parseFloat(process.env.FX_BUFFER_PCT || "3") / 100;
-const MIN_MARGIN_EUR = parseInt(process.env.MIN_MARGIN_EUR || "15000");
-const MIN_MARGIN_PCT = parseInt(process.env.MIN_MARGIN_PCT || "20");
 const OPEX_PER_VEHICLE = 500;
 
 // ══════════════════════════════════════════
@@ -55,8 +53,8 @@ function getTuvCost(make, driveSide, hasModifications, tuvRiskFlags = []) {
 // LANDED COST CALCULATOR
 // ══════════════════════════════════════════
 
-function calculateLandedCost(purchasePriceJpy, fxRate, estimatedValueEur, make, driveSide, hasModifications, tuvRiskFlags) {
-  const bufferedRate = fxRate * (1 - FX_BUFFER_PCT);
+function calculateLandedCost(purchasePriceJpy, fxRate, estimatedValueEur, make, driveSide, hasModifications, tuvRiskFlags, fxBufferPct = 0.03) {
+  const bufferedRate = fxRate * (1 - fxBufferPct);
   const purchaseEur = Math.round(purchasePriceJpy / bufferedRate);
   const auctionFees = Math.round(purchaseEur * 0.04);
   const jpTransport = 400;
@@ -107,16 +105,15 @@ function calculateLandedCost(purchasePriceJpy, fxRate, estimatedValueEur, make, 
 // Per spec: max_bid = (sale_price - min_margin - fixed_costs) * fx_rate / (1 + variable_cost_pct)
 // ══════════════════════════════════════════
 
-function calculateMaxBid(estimatedSalePrice, fxRate, fixedCostsEur) {
-  // Variable costs as % of purchase: auction fees 4%, insurance ~2%, customs 10% of CIF
+function calculateMaxBid(estimatedSalePrice, fxRate, fixedCostsEur, { minMarginEur = 15000, minMarginPct = 20, fxBufferPct = 0.03 } = {}) {
   const variableCostPct = 0.04 + 0.02 + 0.10;
-  const minMargin = Math.max(MIN_MARGIN_EUR, estimatedSalePrice * (MIN_MARGIN_PCT / 100));
+  const minMargin = Math.max(minMarginEur, estimatedSalePrice * (minMarginPct / 100));
   const maxPurchaseEur = estimatedSalePrice - minMargin - fixedCostsEur;
 
   if (maxPurchaseEur <= 0) return null;
 
   const maxPurchaseBeforeVariables = maxPurchaseEur / (1 + variableCostPct);
-  const bufferedRate = fxRate * (1 - FX_BUFFER_PCT);
+  const bufferedRate = fxRate * (1 - fxBufferPct);
   const maxBidJpy = Math.round(maxPurchaseBeforeVariables * bufferedRate);
 
   return maxBidJpy > 0 ? maxBidJpy : null;
@@ -324,6 +321,12 @@ async function getHistoricalComparison(make, model, year) {
 export async function generateRealValuation(input) {
   const startTime = Date.now();
 
+  // ─── Load app settings from DB ───
+  const settings = await getSettings();
+  const FX_BUFFER_PCT = settings.fxBufferPct / 100;
+  const MIN_MARGIN_EUR = settings.minMarginEur;
+  const MIN_MARGIN_PCT = settings.minMarginPct;
+
   // ─── Step 1: Validate input ───
   const validatedInput = validateInput(input);
 
@@ -383,14 +386,17 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
   const hasModifications = condition.modifications.length > 0;
   const landedCost = calculateLandedCost(
     validatedInput.askingPriceJpy, fxResult.rate, estimatedSalePrice,
-    validatedInput.make, validatedInput.driveSide, hasModifications, condition.tuvRiskFlags
+    validatedInput.make, validatedInput.driveSide, hasModifications, condition.tuvRiskFlags, FX_BUFFER_PCT
   );
+
+  // Check max purchase price limit from settings
+  const exceedsMaxPurchase = settings.maxPurchaseEur && landedCost.totalLandedCostEur > settings.maxPurchaseEur;
 
   // ─── Step 8: Deterministic max bid ───
   const fixedCosts = landedCost.jpTransportEur + landedCost.exportDocsEur + landedCost.freightEur +
     landedCost.portHandlingEur + landedCost.tuvEstimatedEur + landedCost.registrationEur +
     landedCost.deTransportEur + landedCost.detailingEur + landedCost.photographyEur + OPEX_PER_VEHICLE;
-  const deterministicMaxBid = calculateMaxBid(estimatedSalePrice, fxResult.rate, fixedCosts);
+  const deterministicMaxBid = calculateMaxBid(estimatedSalePrice, fxResult.rate, fixedCosts, { minMarginEur: MIN_MARGIN_EUR, minMarginPct: MIN_MARGIN_PCT, fxBufferPct: FX_BUFFER_PCT });
 
   // ─── Step 9: Margin calculation ───
   const grossMargin = estimatedSalePrice - landedCost.totalLandedCostEur;
@@ -469,6 +475,10 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       marketLiquidity: marketResult?.market_liquidity || "MEDIUM",
       trendDirection: marketResult?.trend_direction || "STABLE",
       historicalComparison: historicalComparison?.summary || null,
+      // Pass threshold settings so the AI prompt uses the user's configured values
+      minMarginEur: MIN_MARGIN_EUR,
+      minMarginPct: MIN_MARGIN_PCT,
+      maxPurchaseEur: settings.maxPurchaseEur,
     });
   }
 
@@ -630,5 +640,14 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
     })) || [],
 
     processingTimeSeconds: processingTime,
+
+    // Settings used for this valuation (for transparency in report)
+    settingsUsed: {
+      minMarginPct: MIN_MARGIN_PCT,
+      minMarginEur: MIN_MARGIN_EUR,
+      fxBufferPct: FX_BUFFER_PCT * 100,
+      maxPurchaseEur: settings.maxPurchaseEur,
+      exceedsMaxPurchase,
+    },
   };
 }

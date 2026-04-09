@@ -1,8 +1,12 @@
 import { getAllTransactions, getTransactionsByVehicle } from "@/lib/agents/finance/storage";
 import { recordTransaction, recordSale, recordLandedCosts } from "@/lib/agents/finance/ai/finance-orchestrator";
+import { agentGuard } from "@/lib/settings";
 import { db } from "@/lib/db-storage";
 
 export async function GET(request) {
+  const blocked = await agentGuard("finance");
+  if (blocked) return blocked;
+
   const { searchParams } = new URL(request.url);
   const vehicleId = searchParams.get("vehicleId");
 
@@ -16,6 +20,9 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const blocked = await agentGuard("finance");
+  if (blocked) return blocked;
+
   const body = await request.json();
 
   // Record landed costs bulk
