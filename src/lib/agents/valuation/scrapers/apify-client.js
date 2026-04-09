@@ -21,14 +21,20 @@ export async function runActorAndGetItems(actorId, input) {
   if (!token) throw new Error("APIFY_API_KEY not set");
 
   // 1. Start run
-  const startRes = await fetch(`${APIFY_API}/acts/${actorId}/runs?token=${token}`, {
+  // Actor IDs with "/" must be URL-encoded, or use "~" separator
+  // e.g. "epctex/mobile-de-scraper" → "epctex~mobile-de-scraper"
+  const encodedActorId = actorId.includes("/") && !actorId.includes("~")
+    ? actorId.replace("/", "~")
+    : actorId;
+  const startRes = await fetch(`${APIFY_API}/acts/${encodedActorId}/runs?token=${token}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 
   if (!startRes.ok) {
-    throw new Error(`Apify start failed: ${startRes.status}`);
+    const errBody = await startRes.text().catch(() => "");
+    throw new Error(`Apify start failed: ${startRes.status} for actor "${encodedActorId}"${errBody ? ` — ${errBody.substring(0, 200)}` : ""}`);
   }
 
   const startData = await startRes.json();

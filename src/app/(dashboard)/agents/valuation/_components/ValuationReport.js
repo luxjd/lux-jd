@@ -57,6 +57,72 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
         )}
       </div>
 
+      {/* Data Source Banner — tells the user exactly where pricing data came from */}
+      {(() => {
+        const isWebSearch = mkt.dataSource?.includes("Web search");
+        const isAiOnly = mkt.dataSource?.includes("AI estimation") || (mkt.totalComparables === 0 && !isWebSearch);
+        const isScraped = !isWebSearch && !isAiOnly && mkt.totalComparables > 0;
+
+        if (isScraped) return (
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4 flex items-center gap-3">
+            <span className="material-symbols-outlined text-emerald-400">verified</span>
+            <div className="flex-1">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-400/15 text-emerald-400 border border-emerald-400/20">
+                <span className="material-symbols-outlined text-[11px]">storefront</span>
+                Live Listing Data
+              </span>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Pricing based on {mkt.totalComparables} real comparable listings scraped from mobile.de and AutoScout24.
+              </p>
+            </div>
+          </div>
+        );
+
+        if (isWebSearch) return (
+          <div className="rounded-2xl border-2 border-blue-400/25 bg-blue-400/5 p-5 flex items-start gap-4">
+            <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-blue-400/15 flex items-center justify-center">
+              <span className="material-symbols-outlined text-xl text-blue-400">travel_explore</span>
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-headline font-bold text-sm text-blue-400">No Direct Listings Found</h3>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-blue-400/15 text-blue-400 border border-blue-400/20">
+                  <span className="material-symbols-outlined text-[10px]">travel_explore</span>
+                  Web Search Data
+                </span>
+              </div>
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                Scrapers were blocked, so pricing is based on real prices found via Google web search ({mkt.totalComparables} results). Confidence: {((m.marginConfidence || 0) * 100).toFixed(0)}%.
+              </p>
+              {mkt.dataSource && <p className="text-[10px] text-on-surface-variant/50 mt-1">{mkt.dataSource}</p>}
+            </div>
+          </div>
+        );
+
+        if (isAiOnly) return (
+          <div className="rounded-2xl border-2 border-amber-400/30 bg-amber-400/5 p-5 flex items-start gap-4">
+            <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-amber-400/15 flex items-center justify-center">
+              <span className="material-symbols-outlined text-xl text-amber-400">search_off</span>
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-headline font-bold text-sm text-amber-400">No Listing Data Found</h3>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-400/15 text-amber-400 border border-amber-400/20">
+                  <span className="material-symbols-outlined text-[10px]">auto_awesome</span>
+                  AI Estimate
+                </span>
+              </div>
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                No comparable listings or web prices found. All pricing is based on AI estimation with lower confidence ({((m.marginConfidence || 0) * 100).toFixed(0)}%). Verify manually before bidding.
+              </p>
+              {mkt.dataSource && <p className="text-[10px] text-on-surface-variant/50 mt-1">{mkt.dataSource}</p>}
+            </div>
+          </div>
+        );
+
+        return null;
+      })()}
+
       {/* Overall Reasoning */}
       {r.reasoning && (
         <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6 print:p-4 print:border-gray-200">
@@ -104,20 +170,39 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
 
       {/* Margin Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 print:grid-cols-4">
-        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-5 print:p-3 print:border-gray-200">
-          <p className="text-[10px] uppercase text-on-surface-variant tracking-widest mb-1">DE Market Value</p>
-          <p className="font-headline text-2xl font-bold print:text-lg">{fmtFull(m.estimatedSalePrice)}</p>
-          <p className="text-xs text-on-surface-variant">{mkt.totalComparables} comparables</p>
-        </div>
+        {(() => {
+          const isWebSearch = mkt.dataSource?.includes("Web search");
+          const isAiOnly = mkt.dataSource?.includes("AI estimation") || (mkt.totalComparables === 0 && !isWebSearch);
+          const borderColor = isAiOnly ? "border-amber-400/30" : isWebSearch ? "border-blue-400/30" : "border-outline-variant/10";
+          return (
+            <div className={`bg-surface-container rounded-2xl border p-5 print:p-3 print:border-gray-200 ${borderColor}`}>
+              <p className="text-[10px] uppercase text-on-surface-variant tracking-widest mb-1">DE Market Value</p>
+              <p className="font-headline text-2xl font-bold print:text-lg">{fmtFull(m.estimatedSalePrice)}</p>
+              {isAiOnly ? (
+                <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-400/15 text-amber-400 border border-amber-400/20">
+                  <span className="material-symbols-outlined text-[10px]">auto_awesome</span>
+                  AI Estimate
+                </span>
+              ) : isWebSearch ? (
+                <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-blue-400/15 text-blue-400 border border-blue-400/20">
+                  <span className="material-symbols-outlined text-[10px]">travel_explore</span>
+                  Web Search
+                </span>
+              ) : (
+                <p className="text-xs text-on-surface-variant">{mkt.totalComparables} comparables</p>
+              )}
+            </div>
+          );
+        })()}
         <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-5 print:p-3 print:border-gray-200">
           <p className="text-[10px] uppercase text-on-surface-variant tracking-widest mb-1">Landed Cost</p>
           <p className="font-headline text-2xl font-bold print:text-lg">{fmtFull(m.totalLandedCost)}</p>
           <p className="text-xs text-on-surface-variant">excl. reclaimable VAT</p>
         </div>
-        <div className="bg-surface-container rounded-2xl border border-primary/30 p-5 print:p-3 print:border-gray-400">
-          <p className="text-[10px] uppercase text-primary tracking-widest mb-1">Gross Margin</p>
-          <p className="font-headline text-2xl font-bold text-primary print:text-lg">{fmtFull(m.grossMarginEur)}</p>
-          <p className="text-xs text-primary">{m.grossMarginPct}%</p>
+        <div className={`bg-surface-container rounded-2xl border p-5 print:p-3 print:border-gray-400 ${(m.grossMarginEur || 0) >= 0 ? "border-emerald-400/30" : "border-red-400/30"}`}>
+          <p className={`text-[10px] uppercase tracking-widest mb-1 ${(m.grossMarginEur || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>Gross Margin</p>
+          <p className={`font-headline text-2xl font-bold print:text-lg ${(m.grossMarginEur || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtFull(m.grossMarginEur)}</p>
+          <p className={`text-xs ${(m.grossMarginEur || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{m.grossMarginPct}%</p>
         </div>
         <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-5 print:p-3 print:border-gray-200">
           <p className="text-[10px] uppercase text-on-surface-variant tracking-widest mb-1">Annualized ROI</p>
@@ -433,38 +518,116 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
         </div>
       )}
 
-      {/* Comparable Listings */}
-      {r.comparableListings?.length > 0 && (
-      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6 print:p-4 print:border-gray-200">
-        <h3 className="font-headline font-bold text-lg mb-4">
-          Comparable Listings ({r.comparableListings.length})
-          {mkt.outliersRemoved > 0 && <span className="text-xs font-normal text-on-surface-variant ml-2">({mkt.outliersRemoved} outliers removed)</span>}
-          {mkt.searchCriteria?.searchWidened && <span className="text-xs font-normal text-amber-400 ml-2">(widened search)</span>}
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[600px]">
-            <thead>
-              <tr className="border-b border-outline-variant/20 print:border-gray-300">
-                {["Vehicle", "Price", "Mileage", "Location", "Platform"].map((h) => (
-                  <th key={h} className="text-left py-2 px-3 text-[10px] uppercase tracking-widest text-on-surface-variant">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {r.comparableListings.map((c, i) => (
-                <tr key={c.id || i} className="border-b border-outline-variant/10 hover:bg-surface-container-high/30 print:border-gray-100">
-                  <td className="py-2 px-3 text-sm font-bold">{c.title || "—"}</td>
-                  <td className="py-2 px-3 text-sm font-mono">{fmtFull(c.price)}</td>
-                  <td className="py-2 px-3 text-sm text-on-surface-variant">{c.mileage ? c.mileage.toLocaleString() + " km" : "—"}</td>
-                  <td className="py-2 px-3 text-sm text-on-surface-variant">{c.location || "—"}</td>
-                  <td className="py-2 px-3 text-sm text-on-surface-variant">{c.platform || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      )}
+      {/* Market Data Section — 3 states: scraped listings / web search results / AI estimation */}
+      {(() => {
+        const isWebSearch = mkt.dataSource?.includes("Web search");
+        const isAiOnly = mkt.dataSource?.includes("AI estimation") || ((!r.comparableListings || r.comparableListings.length === 0) && !isWebSearch);
+        const hasListings = r.comparableListings?.length > 0;
+
+        // ── State 1: Real scraped listings ──
+        if (hasListings && !isWebSearch) return (
+          <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6 print:p-4 print:border-gray-200">
+            <h3 className="font-headline font-bold text-lg mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-emerald-400 text-xl">storefront</span>
+              Comparable Listings ({r.comparableListings.length})
+              {mkt.outliersRemoved > 0 && <span className="text-xs font-normal text-on-surface-variant ml-2">({mkt.outliersRemoved} outliers removed)</span>}
+              {mkt.searchCriteria?.searchWidened && <span className="text-xs font-normal text-amber-400 ml-2">(widened search)</span>}
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 ml-auto">
+                <span className="material-symbols-outlined text-[10px]">verified</span>
+                Live Data
+              </span>
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[600px]">
+                <thead>
+                  <tr className="border-b border-outline-variant/20 print:border-gray-300">
+                    {["Vehicle", "Price", "Mileage", "Location", "Platform"].map((h) => (
+                      <th key={h} className="text-left py-2 px-3 text-[10px] uppercase tracking-widest text-on-surface-variant">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.comparableListings.map((c, i) => (
+                    <tr key={c.id || i} className="border-b border-outline-variant/10 hover:bg-surface-container-high/30 print:border-gray-100">
+                      <td className="py-2 px-3 text-sm font-bold">{c.title || "—"}</td>
+                      <td className="py-2 px-3 text-sm font-mono">{fmtFull(c.price)}</td>
+                      <td className="py-2 px-3 text-sm text-on-surface-variant">{c.mileage ? c.mileage.toLocaleString() + " km" : "—"}</td>
+                      <td className="py-2 px-3 text-sm text-on-surface-variant">{c.location || "—"}</td>
+                      <td className="py-2 px-3 text-sm text-on-surface-variant">{c.platform || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+
+        // ── State 2: Web search results (real prices from Google) ──
+        if (hasListings && isWebSearch) return (
+          <div className="bg-surface-container rounded-2xl border border-blue-400/20 p-6 print:p-4 print:border-gray-200">
+            <h3 className="font-headline font-bold text-lg mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-blue-400 text-xl">travel_explore</span>
+              Web Search Results ({r.comparableListings.length})
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-blue-400/10 text-blue-400 border border-blue-400/20 ml-auto">
+                <span className="material-symbols-outlined text-[10px]">travel_explore</span>
+                Web Search
+              </span>
+            </h3>
+            <p className="text-xs text-on-surface-variant mb-4">
+              Scrapers were blocked — these prices were found via Google search. Fewer details available than direct scraping.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[500px]">
+                <thead>
+                  <tr className="border-b border-outline-variant/20">
+                    {["Vehicle", "Price", "Source"].map((h) => (
+                      <th key={h} className="text-left py-2 px-3 text-[10px] uppercase tracking-widest text-on-surface-variant">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.comparableListings.map((c, i) => (
+                    <tr key={c.id || i} className="border-b border-outline-variant/10 hover:bg-surface-container-high/30">
+                      <td className="py-2 px-3 text-sm font-bold">{c.title || "—"}</td>
+                      <td className="py-2 px-3 text-sm font-mono">{fmtFull(c.price)}</td>
+                      <td className="py-2 px-3 text-sm text-on-surface-variant">{c.platform || "web"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+
+        // ── State 3: Pure AI estimation (no real data) ──
+        return (
+          <div className="bg-surface-container rounded-2xl border border-amber-400/20 p-6 print:p-4 print:border-gray-200">
+            <div className="text-center py-6">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber-400/10 mb-4">
+                <span className="material-symbols-outlined text-3xl text-amber-400">auto_awesome</span>
+              </div>
+              <h3 className="font-headline font-bold text-lg mb-2">AI-Powered Price Estimation</h3>
+              <p className="text-sm text-on-surface-variant max-w-md mx-auto mb-4">
+                No listings or web prices could be found. This estimate is based on AI knowledge of the German luxury car market — not real-time data.
+              </p>
+              <div className="inline-flex items-center gap-3 px-5 py-3 rounded-xl bg-amber-400/10 border border-amber-400/20">
+                <div className="text-left">
+                  <p className="text-sm font-bold text-on-surface">{fmtFull(m.estimatedSalePrice)}</p>
+                  <p className="text-[10px] text-amber-400 font-bold uppercase">Estimated Market Value</p>
+                </div>
+                <div className="w-px h-8 bg-outline-variant/20" />
+                <div className="text-left">
+                  <p className="text-sm font-bold text-on-surface">{((m.marginConfidence || 0) * 100).toFixed(0)}%</p>
+                  <p className="text-[10px] text-amber-400 font-bold uppercase">Confidence</p>
+                </div>
+              </div>
+              <p className="text-[10px] text-on-surface-variant/50 mt-3">
+                {mkt.dataSource || "Claude AI estimation"} &middot; Verify manually before bidding
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Price Adjustments */}
       {mkt.priceAdjustments?.length > 0 && (

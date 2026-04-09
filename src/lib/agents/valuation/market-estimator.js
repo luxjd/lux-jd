@@ -190,9 +190,14 @@ export async function estimateMarketValue(input) {
   // Step 4: Calculate statistics
   const stats = calcStats(filteredListings);
 
+  // ── Fallback: Claude AI market estimation when scrapers fail ──
+  if ((!stats || filteredListings.length === 0) && isAIAvailable()) {
+    console.warn("No scraped listings — falling back to Claude AI market estimation");
+    return estimateWithAI(input);
+  }
+
   if (!stats || filteredListings.length === 0) {
-    console.warn("No comparable listings found from scrapers");
-    const err = new Error("No comparable listings found on mobile.de or AutoScout24. Try adjusting the vehicle details or check back later.");
+    const err = new Error("No comparable listings found and AI estimation unavailable.");
     err.code = "NO_MARKET_DATA";
     throw err;
   }
@@ -251,5 +256,249 @@ export async function estimateMarketValue(input) {
     })),
     data_source: `mobile.de (${mobileListings.length}) + autoscout24 (${autoscoutListings.length})`,
     scraped_count: { mobile_de: mobileListings.length, autoscout24: autoscoutListings.length },
+  };
+}
+
+// ══════════════════════════════════════════
+// WEB SEARCH FALLBACK — when all scrapers fail
+// Strategy: Google search → extract real prices → Claude analysis
+// Much better than pure AI estimation (real-time data vs training knowledge)
+// ══════════════════════════════════════════
+
+import { runActorAndGetItems } from "./scrapers/apify-client";
+
+/**
+ * Search Google for current German market prices, extract price data from
+ * search snippets, then send real prices to Claude for structured analysis.
+ * Falls back to pure AI estimation if web search also fails.
+ */
+async function estimateWithAI(input) {
+  // ── Step 1: Web search for real prices ──
+  const webPrices = await searchWebForPrices(input);
+
+  if (webPrices.length > 0) {
+    console.log(`Market estimator: found ${webPrices.length} web prices — using web-grounded estimation`);
+    return estimateFromWebPrices(input, webPrices);
+  }
+
+  // ── Step 2: Pure AI fallback (no real data at all) ──
+  console.log("Market estimator: web search found no prices — using pure AI estimation");
+  return estimateFromTrainingData(input);
+}
+
+/**
+ * Search Google for real market prices using multiple queries.
+ * Returns array of { price, title, source, url }.
+ */
+async function searchWebForPrices(input) {
+  const prices = [];
+
+  // Build search queries — try multiple angles
+  const modelClean = input.model.replace(/\(.*?\)/g, "").trim();
+  const queries = [
+    `${input.make} ${modelClean} ${input.year} kaufen mobile.de preis €`,
+    `${input.make} ${modelClean} ${input.year} autoscout24 preis`,
+    `${input.make} ${modelClean} ${input.year} gebraucht Deutschland preis`,
+  ];
+
+  for (const query of queries) {
+    try {
+      console.log(`Web search: "${query}"`);
+
+      const items = await runActorAndGetItems("apify~google-search-scraper", {
+        queries: query,
+        maxPagesPerQuery: 1,
+        resultsPerPage: 10,
+        languageCode: "de",
+        countryCode: "de",
+      });
+
+      if (!items || items.length === 0) continue;
+
+      // Parse results — Google shows prices in snippets for car listings
+      const results = items[0]?.organicResults || items.flatMap((i) => i.organicResults || [i]);
+
+      for (const r of results) {
+        const text = `${r.title || ""} ${r.description || r.snippet || ""}`;
+        const url = r.url || r.link || "";
+
+        // Extract Euro prices from text (formats: €89.900, 89.900 €, EUR 89.900, 89900€)
+        const pricePatterns = [
+          /€\s?([\d.]+)/g,
+          /([\d.]+)\s?€/g,
+          /EUR\s?([\d.]+)/g,
+          /(\d{2,3}\.\d{3})(?!\s*km)/g,
+        ];
+
+        for (const pattern of pricePatterns) {
+          let match;
+          while ((match = pattern.exec(text)) !== null) {
+            const raw = match[1].replace(/\./g, "");
+            const price = parseInt(raw);
+            if (price >= 15000 && price <= 1500000) {
+              prices.push({
+                price,
+                title: (r.title || "").substring(0, 120),
+                source: url.includes("mobile.de") ? "mobile.de" : url.includes("autoscout24") ? "autoscout24.de" : "web",
+                url,
+              });
+              break; // One price per result
+            }
+          }
+        }
+      }
+
+      // If we already have enough prices, stop searching
+      if (prices.length >= 8) break;
+    } catch (err) {
+      console.log(`Web search failed for query: ${err.message}`);
+    }
+  }
+
+  // Deduplicate by URL
+  const seen = new Set();
+  return prices.filter((p) => {
+    const key = p.url || `${p.price}-${p.title}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Estimate market value from real web search prices + Claude analysis.
+ * Higher confidence than pure AI because we have real price data points.
+ */
+async function estimateFromWebPrices(input, webPrices) {
+  // Calculate basic stats from web prices
+  const sortedPrices = webPrices.map((p) => p.price).sort((a, b) => a - b);
+  const n = sortedPrices.length;
+  const median = n % 2 ? sortedPrices[Math.floor(n / 2)] : Math.round((sortedPrices[n / 2 - 1] + sortedPrices[n / 2]) / 2);
+  const mean = Math.round(sortedPrices.reduce((a, b) => a + b, 0) / n);
+  const p25 = sortedPrices[Math.max(0, Math.floor(n * 0.25))];
+  const p75 = sortedPrices[Math.min(n - 1, Math.floor(n * 0.75))];
+
+  // Ask Claude to analyze these real prices for this specific vehicle
+  const webAnalysis = await callClaude({
+    prompt: `You are a senior German luxury car pricing analyst. I searched the web for current market prices and found REAL listings.
+
+TARGET VEHICLE:
+${input.make} ${input.model} (${input.year}) | ${input.mileageKm?.toLocaleString()} km | ${input.driveSide} | ${input.exteriorColor}
+Condition/Grade: ${input.auctionGrade || "Unknown"} | Service: ${input.serviceHistory || "Unknown"} | Accident: ${input.accidentHistory ? "YES" : "No"}
+Specs: ${input.specificationNotes || "None"}
+
+REAL WEB PRICES FOUND (${webPrices.length} results):
+${webPrices.map((p, i) => `${i + 1}. €${p.price.toLocaleString()} — ${p.title} [${p.source}]`).join("\n")}
+
+Price stats: Median €${median.toLocaleString()}, Mean €${mean.toLocaleString()}, Range €${sortedPrices[0].toLocaleString()} — €${sortedPrices[n - 1].toLocaleString()}
+
+Based on these REAL prices, estimate the fair sale price for this specific vehicle. Apply adjustments for mileage, color, condition, drive side vs the listings found.
+
+Return ONLY valid JSON:
+{
+  "estimated_sale_price_eur": <integer>,
+  "price_adjustments": [{"factor": "<name>", "adjustment_eur": <+/- integer>, "reasoning": "<brief>"}],
+  "avg_days_on_market": <integer>,
+  "market_liquidity": "HIGH" or "MEDIUM" or "LOW",
+  "trend_direction": "RISING" or "STABLE" or "DECLINING",
+  "confidence": <0.55-0.75>
+}`,
+    system: ANALYSIS_SYSTEM,
+    jsonMode: true,
+  });
+
+  const aiResult = validateMarketOutput(webAnalysis);
+  const estimatedPrice = aiResult?.estimated_sale_price_eur || median;
+
+  // Confidence: web-grounded is much better than pure AI
+  let confidence = 0.55;
+  if (n >= 8) confidence = 0.72;
+  else if (n >= 5) confidence = 0.65;
+  else if (n >= 3) confidence = 0.58;
+
+  if (aiResult?.confidence) confidence = Math.max(confidence, Math.min(aiResult.confidence, 0.75));
+
+  return {
+    estimated_sale_price_eur: estimatedPrice,
+    price_statistics: { count: n, mean, median, p25, p75, min: sortedPrices[0], max: sortedPrices[n - 1] },
+    comparable_count: n,
+    price_adjustments: aiResult?.price_adjustments || [],
+    avg_days_on_market: aiResult?.avg_days_on_market || 35,
+    market_liquidity: aiResult?.market_liquidity || (n >= 5 ? "MEDIUM" : "LOW"),
+    trend_direction: aiResult?.trend_direction || "STABLE",
+    engine_spec: null,
+    original_msrp_eur: null,
+    confidence,
+    outliers_removed: 0,
+    search_widened: false,
+    comparable_listings: webPrices.slice(0, 10).map((p) => ({
+      title: p.title,
+      price: p.price,
+      mileage: null,
+      location: "Germany",
+      platform: p.source,
+      url: p.url,
+      days_on_market: null,
+    })),
+    data_source: `Web search (${webPrices.length} prices found via Google)`,
+    scraped_count: { mobile_de: 0, autoscout24: 0, web_search: n },
+    ai_fallback: false,
+    web_search_fallback: true,
+  };
+}
+
+/**
+ * Pure AI estimation — last resort when even web search fails.
+ * Uses Claude's training knowledge only. Lowest confidence.
+ */
+async function estimateFromTrainingData(input) {
+  const result = await callClaude({
+    prompt: `You are a senior German luxury car pricing expert. No live market data is available — provide your best estimate based on your knowledge of the German luxury car market.
+
+TARGET: ${input.make} ${input.model} (${input.year}) | ${input.mileageKm?.toLocaleString()} km | ${input.driveSide} | ${input.exteriorColor}
+Grade: ${input.auctionGrade || "?"} | Service: ${input.serviceHistory || "?"} | Accident: ${input.accidentHistory ? "YES" : "No"}
+
+Return ONLY valid JSON:
+{
+  "estimated_sale_price_eur": <integer>,
+  "price_range": {"low": <integer>, "mid": <integer>, "high": <integer>},
+  "avg_days_on_market": <integer>,
+  "market_liquidity": "HIGH" or "MEDIUM" or "LOW",
+  "trend_direction": "RISING" or "STABLE" or "DECLINING",
+  "reasoning": "2-3 sentences",
+  "confidence": <0.3-0.5>
+}`,
+    system: ANALYSIS_SYSTEM,
+    jsonMode: true,
+  });
+
+  if (!result || !result.estimated_sale_price_eur) {
+    const err = new Error("AI market estimation failed. Cannot determine market value.");
+    err.code = "NO_MARKET_DATA";
+    throw err;
+  }
+
+  const price = result.estimated_sale_price_eur;
+  const range = result.price_range || { low: Math.round(price * 0.85), mid: price, high: Math.round(price * 1.15) };
+  const confidence = Math.min(result.confidence || 0.35, 0.45);
+
+  return {
+    estimated_sale_price_eur: price,
+    price_statistics: { count: 0, mean: price, median: price, p25: range.low, p75: range.high, min: range.low, max: range.high },
+    comparable_count: 0,
+    price_adjustments: [],
+    avg_days_on_market: result.avg_days_on_market || 35,
+    market_liquidity: result.market_liquidity || "MEDIUM",
+    trend_direction: result.trend_direction || "STABLE",
+    engine_spec: null,
+    original_msrp_eur: null,
+    confidence,
+    outliers_removed: 0,
+    search_widened: false,
+    comparable_listings: [],
+    data_source: "Claude AI estimation (no live data available)",
+    scraped_count: { mobile_de: 0, autoscout24: 0 },
+    ai_reasoning: result.reasoning || null,
+    ai_fallback: true,
   };
 }
