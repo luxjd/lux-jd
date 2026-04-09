@@ -410,10 +410,45 @@ body {
 
 /* ─── Print / PDF Export ─── */
 @media print {
-  body { background: white !important; color: black !important; }
-  nav, aside, header, footer, button, .no-print { display: none !important; }
-  main { padding: 0 !important; }
-  * { color: #1a1a1a !important; border-color: #ccc !important; background: white !important; box-shadow: none !important; }
-  .bg-emerald-400\/10, .bg-amber-400\/10, .bg-red-400\/10, .bg-primary\/10, .bg-slate-400\/10 { background: #f0f0f0 !important; }
-  .text-emerald-400, .text-primary, .text-secondary { color: #333 !important; }
+  body { background: white !important; color: black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  nav, aside, header, footer, .no-print { display: none !important; }
+  /* Hide action buttons but keep report content */
+  .print\:hidden { display: none !important; }
+  main { padding: 0 !important; margin: 0 !important; }
+  /* Reset dark theme for print */
+  .bg-surface-container, .bg-surface-container-high, .bg-surface-container-highest {
+    background: white !important;
+    border-color: #ddd !important;
+  }
+  /* Keep verdict colors readable in print */
+  .bg-emerald-400\/15 { background: #e8f5e9 !important; }
+  .bg-amber-400\/15 { background: #fff8e1 !important; }
+  .bg-slate-400\/10 { background: #f5f5f5 !important; }
+  .text-emerald-400 { color: #2e7d32 !important; }
+  .text-amber-400 { color: #f57f17 !important; }
+  .text-red-400 { color: #c62828 !important; }
+  .text-primary { color: #c62828 !important; }
+  .text-on-surface { color: #1a1a1a !important; }
+  .text-on-surface-variant { color: #555 !important; }
+  /* Risk score cards: preserve background tints */
+  .bg-emerald-400\/10 { background: #e8f5e9 !important; }
+  .bg-amber-400\/10 { background: #fff8e1 !important; }
+  .bg-red-400\/10 { background: #ffebee !important; }
+  /* Fonts */
+  .font-headline { font-family: "Space Grotesk", Arial, sans-serif !important; }
+  .font-mono { font-family: "Courier New", monospace !important; }
+  /* Page breaks */
+  #valuation-report > div { break-inside: avoid; page-break-inside: avoid; }
+  /* Remove shadows, animations */
+  * { box-shadow: none !important; animation: none !important; transition: none !important; }
+  /* Material icons print fallback */
+  .material-symbols-outlined { font-size: 14px !important; }
+  /* Table styling */
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid #ddd !important; }
+  /* Page setup */
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
 }

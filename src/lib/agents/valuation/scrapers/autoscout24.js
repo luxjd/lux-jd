@@ -47,7 +47,12 @@ export async function scrapeAutoScout24({ make, model, yearFrom, yearTo, maxMile
     }
 
     const $ = cheerio.load(html);
-    const modelWords = model.toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
+    // Build model match words — keep short words like XK, GT, DB, RS etc.
+    const modelWords = model.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
+    // Map common EN→DE terms for German listings
+    const termMap = { "convertible": "cabrio", "coupe": "coupé", "roadster": "roadster", "sedan": "limousine", "estate": "kombi" };
+    const extraWords = modelWords.map((w) => termMap[w]).filter(Boolean);
+    const allMatchWords = [...modelWords, ...extraWords];
 
     $("article").each((_, el) => {
       try {
@@ -55,9 +60,9 @@ export async function scrapeAutoScout24({ make, model, yearFrom, yearTo, maxMile
         const title = card.find("h2").first().text().trim();
         if (!title) return;
 
-        // Filter to matching model
+        // Filter to matching model — match any word from model name or DE equivalent
         const titleLower = title.toLowerCase();
-        if (!modelWords.some((w) => titleLower.includes(w))) return;
+        if (!allMatchWords.some((w) => titleLower.includes(w))) return;
 
         const text = card.text().replace(/\s+/g, " ");
 

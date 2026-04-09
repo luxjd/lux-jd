@@ -2,63 +2,96 @@
  * Market Estimator — scrapes real listings from mobile.de + autoscout24,
  * then uses Claude to analyze pricing adjustments for the specific vehicle.
  *
- * Pipeline:
- *   1. Scrape mobile.de + autoscout24 in parallel
+ * Enhanced pipeline:
+ *   1. Scrape mobile.de + autoscout24 in parallel (with pagination)
  *   2. Merge & deduplicate results
- *   3. Calculate price statistics (median, p25, p75, etc.)
- *   4. Send real comparables to Claude for vehicle-specific adjustment analysis
- *   5. Return complete market analysis with real listing URLs
+ *   3. Remove statistical outliers (IQR method)
+ *   4. Calculate price statistics (median, p25, p75, etc.)
+ *   5. Send real comparables to Claude for structured price adjustments
+ *   6. Return complete market analysis with real listing URLs
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
 import { scrapeMobileDe } from "./scrapers/mobile-de";
 import { scrapeAutoScout24 } from "./scrapers/autoscout24";
+import { removeOutliers, validateMarketOutput } from "./validation";
 
-const ANALYSIS_SYSTEM = `You are a German luxury car pricing analyst. You are given REAL comparable listings scraped from mobile.de and AutoScout24. Analyze the data to estimate the fair market value for a specific target vehicle, considering its exact specs vs the comparables.`;
+const ANALYSIS_SYSTEM = `You are a senior German luxury car pricing analyst with 15+ years of experience at premium dealerships. You are given REAL comparable listings scraped from mobile.de and AutoScout24. Your price estimates directly influence €50,000-€400,000 purchase decisions. Be precise and evidence-based — reference specific comparables to justify your adjustments.`;
 
-const ANALYSIS_PROMPT = (input, stats, listings) => `Estimate the fair market value for this target vehicle based on ${listings.length} REAL comparable listings from the German market.
+const ANALYSIS_PROMPT = (input, stats, listings, outlierCount) => `Estimate the fair market value for this target vehicle based on ${listings.length} REAL comparable listings from the German market.${outlierCount > 0 ? ` (${outlierCount} statistical outliers were removed before analysis.)` : ""}
 
 TARGET VEHICLE:
 - Make/Model: ${input.make} ${input.model} (${input.year})
-- Mileage: ${input.mileageKm} km
+- Mileage: ${input.mileageKm?.toLocaleString()} km
 - Exterior: ${input.exteriorColor}
 - Interior: ${input.interiorColor || "Not specified"}
 - Drive Side: ${input.driveSide}
+- Transmission: ${input.transmission || "Unknown"}
+- Fuel Type: ${input.fuelType || "Unknown"}
 - Service: ${input.serviceHistory || "Unknown"}
-- Accident: ${input.accidentHistory ? "Yes" : "No"}
-- Grade: ${input.auctionGrade || "N/A"}
-- Specs: ${input.specificationNotes || "None noted"}
+- Accident: ${input.accidentHistory ? "YES — documented" : "No"}
+- Auction Grade: ${input.auctionGrade || "N/A"}
+- Specs/Options: ${input.specificationNotes || "None noted"}
 
 REAL MARKET DATA (${listings.length} listings scraped just now):
-- Median: €${stats.median.toLocaleString()}
-- Mean: €${stats.mean.toLocaleString()}
-- P25: €${stats.p25.toLocaleString()}
-- P75: €${stats.p75.toLocaleString()}
-- Min: €${stats.min.toLocaleString()} / Max: €${stats.max.toLocaleString()}
+- Median: €${stats.median?.toLocaleString()}
+- Mean: €${stats.mean?.toLocaleString()}
+- P25: €${stats.p25?.toLocaleString()}
+- P75: €${stats.p75?.toLocaleString()}
+- Range: €${stats.min?.toLocaleString()} — €${stats.max?.toLocaleString()}
 
 TOP COMPARABLES:
-${listings.slice(0, 10).map((l, i) => `${i + 1}. ${l.title} — €${l.price.toLocaleString()} | ${l.mileage.toLocaleString()} km | ${l.platform} | ${l.dealer || "Private"}`).join("\n")}
+${listings.slice(0, 15).map((l, i) => `${i + 1}. ${l.title} — €${l.price?.toLocaleString()} | ${l.mileage?.toLocaleString()} km | ${l.year || "?"} | ${l.platform} | ${l.dealer || "Private"}`).join("\n")}
 
-Based on this REAL market data, estimate the fair sale price for the target vehicle. Apply adjustments for mileage, color, specification, condition, drive side, and service history.
+APPLY THESE 7 ADJUSTMENTS (each must be calculated individually):
+
+1. MILEAGE ADJUSTMENT: Compare target mileage vs average comparable mileage.
+   Rule: +/- €50-200 per 1,000 km deviation (higher for exotic brands, lower for mainstream luxury).
+   Example: If comparables avg 25,000 km and target is 15,000 km → positive adjustment.
+
+2. COLOR PREMIUM/DISCOUNT: Certain colors command premiums in the German market.
+   Examples: Ferrari Rosso Corsa = standard (no adjustment). Rare colors (Blu Pozzi, Verde Abetone) = +3-8%.
+   AMG: Selenite Grey = standard. Special matte colors = +2-5%.
+   Porsche: GT Silver, Chalk = premium. Guards Red = standard.
+
+3. SPECIFICATION PREMIUM: Factory options add measurable value.
+   Key premiums: Carbon ceramic brakes (+€3-8K), sport exhaust (+€2-4K), carbon fiber packages (+€3-6K),
+   special editions (+5-15%), full PPF (+€2-3K retained value, rare colors.
+   Compare visible options to comparables listed.
+
+4. CONDITION ADJUSTMENT: Based on auction grade / photo analysis vs typical comparable condition.
+   Grade 5+: premium vehicle, add 3-5%. Grade 4-4.5: standard, no adjustment. Grade 3.5 or below: discount 5-10%.
+
+5. DRIVE SIDE: LHD commands premium in German market for non-German brands.
+   Ferrari/Lamborghini/Maserati LHD: +3-5%. RHD: major discount (-10-20%, very limited buyer pool).
+   German brands (Porsche, AMG, BMW M): LHD = standard, no adjustment.
+
+6. SERVICE HISTORY: Full dealer service history adds significant value for exotics.
+   Full dealer: +5-10%. Partial: no change. Unknown/Independent: -3-7%.
+
+7. ACCIDENT HISTORY: Any documented accident reduces value.
+   Minor repair: -10-15%. Significant repair: -15-25%. Unknown severity: -12%.
+
+IMPORTANT: Start from the MEDIAN price and add/subtract each adjustment. The final estimated_sale_price_eur should equal median + sum of all adjustments.
 
 Return ONLY valid JSON:
 {
-  "estimated_sale_price_eur": <integer — your adjusted estimate>,
+  "estimated_sale_price_eur": <integer — median + all adjustments>,
   "price_adjustments": [
-    {"factor": "Mileage adjustment", "adjustment_eur": <integer>, "reasoning": "explanation based on comparables"},
-    {"factor": "Color premium/discount", "adjustment_eur": <integer>, "reasoning": "explanation"},
-    {"factor": "Specification premium", "adjustment_eur": <integer>, "reasoning": "explanation"},
-    {"factor": "Condition adjustment", "adjustment_eur": <integer>, "reasoning": "explanation"},
-    {"factor": "Drive side", "adjustment_eur": <integer>, "reasoning": "explanation"},
-    {"factor": "Service history", "adjustment_eur": <integer>, "reasoning": "explanation"},
-    {"factor": "Accident history", "adjustment_eur": <integer>, "reasoning": "explanation"}
+    {"factor": "Mileage adjustment", "adjustment_eur": <integer +/->, "reasoning": "target has X km vs avg Y km of comparables, Z per 1000km"},
+    {"factor": "Color premium/discount", "adjustment_eur": <integer +/->, "reasoning": "specific color analysis"},
+    {"factor": "Specification premium", "adjustment_eur": <integer +/->, "reasoning": "specific options referenced"},
+    {"factor": "Condition adjustment", "adjustment_eur": <integer +/->, "reasoning": "grade-based analysis"},
+    {"factor": "Drive side", "adjustment_eur": <integer +/->, "reasoning": "market preference analysis"},
+    {"factor": "Service history", "adjustment_eur": <integer +/->, "reasoning": "documentation value"},
+    {"factor": "Accident history", "adjustment_eur": <integer +/->, "reasoning": "impact analysis"}
   ],
-  "avg_days_on_market": <integer estimate>,
+  "avg_days_on_market": <integer estimate based on liquidity>,
   "market_liquidity": "HIGH" or "MEDIUM" or "LOW",
   "trend_direction": "RISING" or "STABLE" or "DECLINING",
-  "engine_spec": "engine description if known",
+  "engine_spec": "engine description if identifiable from model",
   "original_msrp_eur": <integer estimate when new>,
-  "confidence": <number 0.0-1.0 — higher if many close comparables exist>
+  "confidence": <number 0.0-1.0 — 0.9+ if 15+ close comparables, 0.7 if 5-15, 0.5 if <5>
 }`;
 
 /**
@@ -80,12 +113,12 @@ function calcStats(listings) {
 }
 
 /**
- * Deduplicate listings by title + price.
+ * Deduplicate listings by normalized title + price.
  */
 function deduplicate(listings) {
   const seen = new Set();
   return listings.filter((l) => {
-    const key = `${l.title.toLowerCase().trim()}|${l.price}`;
+    const key = `${l.title.toLowerCase().trim().replace(/\s+/g, " ")}|${l.price}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -94,9 +127,7 @@ function deduplicate(listings) {
 
 /**
  * Estimate German market value using real scraped data + Claude analysis.
- *
- * @param {object} input - Vehicle details
- * @returns {object} Market analysis with real comparables
+ * Enhanced with outlier removal, wider search fallback, and structured adjustments.
  */
 export async function estimateMarketValue(input) {
   console.log(`Market estimator: scraping ${input.make} ${input.model} (${input.year})...`);
@@ -111,56 +142,156 @@ export async function estimateMarketValue(input) {
     scrapeAutoScout24({ make: input.make, model: input.model, yearFrom, yearTo, maxMileage }),
   ]);
 
-  const mobileListings = mobileResults.status === "fulfilled" ? mobileResults.value : [];
-  const autoscoutListings = autoscoutResults.status === "fulfilled" ? autoscoutResults.value : [];
+  let mobileListings = mobileResults.status === "fulfilled" ? mobileResults.value : [];
+  let autoscoutListings = autoscoutResults.status === "fulfilled" ? autoscoutResults.value : [];
 
-  console.log(`Scraped: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}`);
+  console.log(`Primary scrape: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}`);
+
+  // Step 1b: If <5 results, widen search (±4 years, +50% mileage)
+  let searchWidened = false;
+  if (mobileListings.length + autoscoutListings.length < 5) {
+    console.log("Few results, widening search to ±4 years...");
+    searchWidened = true;
+    const wideYearFrom = input.year - 4;
+    const wideYearTo = input.year + 4;
+    const wideMileage = Math.round(input.mileageKm * 1.5) + 30000;
+
+    const [wideM, wideA] = await Promise.allSettled([
+      scrapeMobileDe({ make: input.make, model: input.model, yearFrom: wideYearFrom, yearTo: wideYearTo, maxMileage: wideMileage }),
+      scrapeAutoScout24({ make: input.make, model: input.model, yearFrom: wideYearFrom, yearTo: wideYearTo, maxMileage: wideMileage }),
+    ]);
+
+    if (wideM.status === "fulfilled") mobileListings = wideM.value;
+    if (wideA.status === "fulfilled") autoscoutListings = wideA.value;
+    console.log(`Widened scrape: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}`);
+  }
 
   // Step 2: Merge & deduplicate
   const allListings = deduplicate([...mobileListings, ...autoscoutListings]);
   console.log(`After dedup: ${allListings.length} unique listings`);
 
-  // Step 3: Calculate statistics
-  const stats = calcStats(allListings);
+  // Step 3: Remove outliers
+  const originalCount = allListings.length;
+  let filteredListings = allListings;
+  if (allListings.length >= 4) {
+    const cleanPrices = removeOutliers(allListings.map((l) => l.price));
+    const cleanPriceSet = new Set(cleanPrices);
+    filteredListings = allListings.filter((l) => cleanPriceSet.has(l.price));
+    // If outlier removal was too aggressive (removed >40%), keep originals
+    if (filteredListings.length < allListings.length * 0.6) {
+      filteredListings = allListings;
+    }
+  }
+  const outliersRemoved = originalCount - filteredListings.length;
+  if (outliersRemoved > 0) {
+    console.log(`Removed ${outliersRemoved} outlier listings`);
+  }
 
-  if (!stats || allListings.length === 0) {
-    console.warn("No comparable listings found from scrapers");
-    const err = new Error("No comparable listings found on mobile.de or AutoScout24. Try adjusting the vehicle details or check back later.");
+  // Step 4: Calculate statistics
+  const stats = calcStats(filteredListings);
+
+  if (!stats || filteredListings.length === 0) {
+    console.warn("No comparable listings found from scrapers — falling back to AI estimation");
+
+    // Fallback: use Claude's market knowledge to estimate value
+    if (isAIAvailable()) {
+      const fallbackResult = await callClaude({
+        prompt: `No comparable listings were found on mobile.de or AutoScout24 for this vehicle. Use your knowledge of the German luxury car market to estimate its fair value.
+
+VEHICLE: ${input.make} ${input.model} (${input.year})
+Mileage: ${input.mileageKm?.toLocaleString()} km | ${input.driveSide} | ${input.exteriorColor}
+Transmission: ${input.transmission || "Unknown"} | Fuel: ${input.fuelType || "Unknown"}
+Condition/Grade: ${input.auctionGrade || "Unknown"} | Accident: ${input.accidentHistory ? "Yes" : "No"}
+Specs: ${input.specificationNotes || "None"}
+
+Estimate what this car would sell for on the German market (mobile.de/AutoScout24) based on:
+1. Your knowledge of current market prices for this make/model
+2. Typical depreciation curves for this vehicle
+3. Supply/demand dynamics for this model in Germany
+
+Return ONLY valid JSON:
+{
+  "estimated_sale_price_eur": <integer — your best estimate>,
+  "price_range_low": <integer — conservative estimate>,
+  "price_range_high": <integer — optimistic estimate>,
+  "avg_days_on_market": <integer>,
+  "market_liquidity": "HIGH" or "MEDIUM" or "LOW",
+  "trend_direction": "RISING" or "STABLE" or "DECLINING",
+  "engine_spec": "engine description",
+  "original_msrp_eur": <integer>,
+  "confidence": <0.0-1.0 — should be LOW since no real data>,
+  "reasoning": "1-2 sentences explaining your estimate"
+}`,
+        system: ANALYSIS_SYSTEM,
+        jsonMode: true,
+      });
+
+      if (fallbackResult?.estimated_sale_price_eur) {
+        const est = fallbackResult.estimated_sale_price_eur;
+        const low = fallbackResult.price_range_low || Math.round(est * 0.85);
+        const high = fallbackResult.price_range_high || Math.round(est * 1.15);
+        console.log(`AI fallback estimate: €${est.toLocaleString()} (${low}-${high})`);
+        return {
+          estimated_sale_price_eur: est,
+          price_statistics: { count: 0, mean: est, median: est, p25: low, p75: high, min: low, max: high },
+          comparable_count: 0,
+          price_adjustments: [],
+          avg_days_on_market: fallbackResult.avg_days_on_market || 45,
+          market_liquidity: fallbackResult.market_liquidity || "LOW",
+          trend_direction: fallbackResult.trend_direction || "STABLE",
+          engine_spec: fallbackResult.engine_spec || null,
+          original_msrp_eur: fallbackResult.original_msrp_eur || null,
+          confidence: Math.min(fallbackResult.confidence || 0.35, 0.45), // Cap at 0.45 — no real data
+          outliers_removed: 0,
+          search_widened: searchWidened,
+          comparable_listings: [],
+          data_source: "AI estimation (no scraped data available)",
+          scraped_count: { mobile_de: mobileListings.length, autoscout24: autoscoutListings.length },
+          ai_fallback: true,
+          ai_fallback_reasoning: fallbackResult.reasoning || null,
+        };
+      }
+    }
+
+    const err = new Error("No comparable listings found on mobile.de or AutoScout24, and AI fallback estimation also failed. Try adjusting the vehicle details or check back later.");
     err.code = "NO_MARKET_DATA";
     throw err;
   }
 
-  // Step 4: Claude analyzes real data for vehicle-specific adjustments
+  // Step 5: Claude analyzes real data for vehicle-specific adjustments
   let aiAnalysis = null;
   if (isAIAvailable()) {
-    aiAnalysis = await callClaude({
-      prompt: ANALYSIS_PROMPT(input, stats, allListings),
+    const rawResult = await callClaude({
+      prompt: ANALYSIS_PROMPT(input, stats, filteredListings, outliersRemoved),
       system: ANALYSIS_SYSTEM,
       jsonMode: true,
     });
+    aiAnalysis = validateMarketOutput(rawResult);
   }
 
-  // Step 5: Combine scraped data + AI analysis
+  // Step 6: Combine scraped data + AI analysis
   const estimatedPrice = aiAnalysis?.estimated_sale_price_eur || stats.median;
-  const daysOnMarket = aiAnalysis?.avg_days_on_market || (allListings.length <= 5 ? 21 : allListings.length <= 15 ? 35 : 45);
-  const liquidity = allListings.length >= 15 ? "HIGH" : allListings.length >= 5 ? "MEDIUM" : "LOW";
+  const daysOnMarket = aiAnalysis?.avg_days_on_market || (filteredListings.length <= 5 ? 45 : filteredListings.length <= 15 ? 35 : 21);
+  const liquidity = aiAnalysis?.market_liquidity || (filteredListings.length >= 15 ? "HIGH" : filteredListings.length >= 5 ? "MEDIUM" : "LOW");
 
-  // Confidence based on real data quality
-  let confidence = 0.5;
-  if (allListings.length >= 20) confidence = 0.92;
-  else if (allListings.length >= 10) confidence = 0.82;
-  else if (allListings.length >= 5) confidence = 0.70;
-  else if (allListings.length >= 2) confidence = 0.55;
+  // Confidence: minimum of data confidence and AI confidence (not average)
+  let dataConfidence = 0.5;
+  if (filteredListings.length >= 20) dataConfidence = 0.92;
+  else if (filteredListings.length >= 10) dataConfidence = 0.82;
+  else if (filteredListings.length >= 5) dataConfidence = 0.70;
+  else if (filteredListings.length >= 2) dataConfidence = 0.55;
 
-  if (aiAnalysis?.confidence) {
-    // Average our data-confidence with AI-confidence
-    confidence = (confidence + aiAnalysis.confidence) / 2;
-  }
+  // Penalize if search was widened
+  if (searchWidened) dataConfidence *= 0.85;
+
+  const confidence = aiAnalysis?.confidence
+    ? Math.min(dataConfidence, aiAnalysis.confidence)
+    : dataConfidence;
 
   return {
     estimated_sale_price_eur: estimatedPrice,
     price_statistics: stats,
-    comparable_count: allListings.length,
+    comparable_count: filteredListings.length,
     price_adjustments: aiAnalysis?.price_adjustments || [],
     avg_days_on_market: daysOnMarket,
     market_liquidity: aiAnalysis?.market_liquidity || liquidity,
@@ -168,7 +299,9 @@ export async function estimateMarketValue(input) {
     engine_spec: aiAnalysis?.engine_spec || null,
     original_msrp_eur: aiAnalysis?.original_msrp_eur || null,
     confidence,
-    comparable_listings: allListings.slice(0, 10).map((l) => ({
+    outliers_removed: outliersRemoved,
+    search_widened: searchWidened,
+    comparable_listings: filteredListings.slice(0, 10).map((l) => ({
       title: l.title,
       price: l.price,
       mileage: l.mileage,

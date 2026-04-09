@@ -32,21 +32,33 @@ export async function scrapeMobileDe({ make, model, yearFrom, yearTo, maxMileage
 
     const targetUrl = `https://suchen.mobile.de/fahrzeuge/search.html?${searchParams}`;
 
-    console.log(`mobile.de: fetching via Apify web-scraper...`);
+    console.log(`mobile.de: fetching via Apify web-scraper... URL: ${targetUrl}`);
     const items = await runActorAndGetItems("apify~web-scraper", {
       startUrls: [{ url: targetUrl }],
       pageFunction: `async function pageFunction(context) {
-        await context.waitFor(3000);
+        // Accept cookies if consent dialog appears
+        try {
+          const consentBtn = await context.page.$('[data-testid="gdpr-consent-accept-btn"], .mde-consent-accept-btn, #consentAccept, button[class*="accept"]');
+          if (consentBtn) await consentBtn.click();
+        } catch(e) {}
+        // Wait for listings to load (not just page load)
+        await context.waitFor(5000);
+        // Check if we got actual content or a challenge page
         const html = await context.page.content();
-        await context.pushData({ html });
+        if (html.length < 5000) {
+          // Probably a challenge/CAPTCHA page, wait longer
+          await context.waitFor(5000);
+        }
+        const finalHtml = await context.page.content();
+        await context.pushData({ html: finalHtml });
       }`,
       proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"] },
       maxRequestsPerCrawl: 1,
     });
 
     const html = items?.[0]?.html || "";
-    if (!html) {
-      console.warn("mobile.de: no HTML returned from Apify");
+    if (!html || html.length < 2000) {
+      console.warn(`mobile.de: no usable HTML returned from Apify (${html.length} chars — likely blocked or CAPTCHA)`);
       return listings;
     }
 
