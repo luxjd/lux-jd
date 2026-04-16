@@ -17,6 +17,7 @@ const MAKE_CODES = {
   "BMW": "BM",
   "BMW M": "BM",
   "Jaguar": "JA",
+  "Land Rover": "LR",
   "Range Rover": "LR",
 };
 

@@ -6,18 +6,35 @@ export const DATA_SOURCES = [
 ];
 
 export const TRACKED_MODELS = [
+  // Ferrari
   { id: "ferrari-488-gtb", make: "Ferrari", model: "488 GTB", yearRange: [2016, 2019], segment: "EXOTIC" },
-  { id: "porsche-911-gt3", make: "Porsche", model: "911 GT3 (992)", yearRange: [2021, 2023], segment: "SPORTS" },
-  { id: "amg-gt-r", make: "Mercedes-AMG", model: "GT R", yearRange: [2018, 2021], segment: "SPORTS" },
-  { id: "huracan-sto", make: "Lamborghini", model: "Huracan STO", yearRange: [2021, 2023], segment: "EXOTIC" },
-  { id: "continental-gt", make: "Bentley", model: "Continental GT", yearRange: [2019, 2022], segment: "GRAND_TOURER" },
-  { id: "db11-v12", make: "Aston Martin", model: "DB11 V12", yearRange: [2017, 2020], segment: "GRAND_TOURER" },
-  { id: "m4-competition", make: "BMW", model: "M4 Competition", yearRange: [2021, 2023], segment: "SPORTS" },
-  { id: "cayenne-turbo-gt", make: "Porsche", model: "Cayenne Turbo GT", yearRange: [2022, 2024], segment: "SUV" },
+  { id: "ferrari-f12", make: "Ferrari", model: "F12 Berlinetta", yearRange: [2013, 2017], segment: "EXOTIC" },
   { id: "ferrari-roma", make: "Ferrari", model: "Roma", yearRange: [2020, 2023], segment: "GRAND_TOURER" },
-  { id: "maserati-mc20", make: "Maserati", model: "MC20", yearRange: [2021, 2023], segment: "EXOTIC" },
+  // Mercedes-AMG
+  { id: "amg-gt-r", make: "Mercedes-AMG", model: "GT R", yearRange: [2018, 2021], segment: "SPORTS" },
   { id: "amg-g63", make: "Mercedes-AMG", model: "G63", yearRange: [2020, 2023], segment: "SUV" },
+  { id: "amg-c63", make: "Mercedes-AMG", model: "C63", yearRange: [2019, 2023], segment: "SPORTS" },
+  { id: "amg-e63", make: "Mercedes-AMG", model: "E63", yearRange: [2018, 2022], segment: "SPORTS" },
+  // Porsche
+  { id: "porsche-911-gt3", make: "Porsche", model: "911 GT3 (992)", yearRange: [2021, 2023], segment: "SPORTS" },
   { id: "718-cayman-gt4", make: "Porsche", model: "718 Cayman GT4", yearRange: [2019, 2022], segment: "SPORTS" },
+  { id: "cayenne-turbo-gt", make: "Porsche", model: "Cayenne Turbo GT", yearRange: [2022, 2024], segment: "SUV" },
+  // Jaguar
+  { id: "jaguar-f-type", make: "Jaguar", model: "F-Type R", yearRange: [2018, 2023], segment: "SPORTS" },
+  // Bentley
+  { id: "continental-gt", make: "Bentley", model: "Continental GT", yearRange: [2019, 2022], segment: "GRAND_TOURER" },
+  // Lamborghini
+  { id: "huracan-sto", make: "Lamborghini", model: "Huracan STO", yearRange: [2021, 2023], segment: "EXOTIC" },
+  // Aston Martin
+  { id: "db11-v12", make: "Aston Martin", model: "DB11 V12", yearRange: [2017, 2020], segment: "GRAND_TOURER" },
+  { id: "aston-vantage", make: "Aston Martin", model: "Vantage", yearRange: [2019, 2023], segment: "SPORTS" },
+  // BMW M
+  { id: "m3-competition", make: "BMW", model: "M3 Competition", yearRange: [2021, 2023], segment: "SPORTS" },
+  { id: "m4-competition", make: "BMW", model: "M4 Competition", yearRange: [2021, 2023], segment: "SPORTS" },
+  // Range Rover
+  { id: "rr-sport-svr", make: "Land Rover", model: "Range Rover Sport SVR", yearRange: [2018, 2022], segment: "SUV" },
+  // Maserati
+  { id: "maserati-mc20", make: "Maserati", model: "MC20", yearRange: [2021, 2023], segment: "EXOTIC" },
 ];
 
 export const VELOCITY_LABELS = {

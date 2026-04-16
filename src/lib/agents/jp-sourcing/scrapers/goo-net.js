@@ -17,6 +17,7 @@ const MAKE_SLUGS = {
   "BMW": "BMW",
   "BMW M": "BMW",
   "Jaguar": "JAGUAR",
+  "Land Rover": "LAND_ROVER",
   "Range Rover": "LAND_ROVER",
 };
 

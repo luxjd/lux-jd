@@ -10,6 +10,7 @@
 import { fetchFxRate } from "@/lib/agents/valuation/fx-fetcher";
 import { scrapeGooNet } from "../scrapers/goo-net";
 import { scrapeCarsensor } from "../scrapers/carsensor";
+import { scrapeJapanAuktion } from "../scrapers/japan-auktion";
 
 const COLOR_MAP = {
   "ブラック": "Black", "ホワイト": "White", "シルバー": "Silver",
@@ -57,6 +58,7 @@ export async function scanAuctions(tvrs, { onProgress, checkState } = {}) {
   const allVehicles = [];
   let totalGooNet = 0;
   let totalCarsensor = 0;
+  let totalJapanAuktion = 0;
   const completedModels = [];
 
   for (let idx = 0; idx < tvrs.length; idx++) {
@@ -84,38 +86,48 @@ export async function scanAuctions(tvrs, { onProgress, checkState } = {}) {
 
     console.log(`JP Sourcing: scanning ${make} ${model} on Japanese platforms...`);
 
-    const [gooResults, carsensorResults] = await Promise.allSettled([
+    const [gooResults, carsensorResults, japanAuktionResults] = await Promise.allSettled([
       scrapeGooNet({ make, model, yearFrom: yearRange[0], yearTo: yearRange[1], maxMileage: 50000 }),
       scrapeCarsensor({ make, model, yearFrom: yearRange[0], yearTo: yearRange[1], maxMileage: 50000 }),
+      scrapeJapanAuktion({ make, model, yearFrom: yearRange[0], yearTo: yearRange[1], maxMileage: 50000 }),
     ]);
 
     const gooListings = gooResults.status === "fulfilled" ? gooResults.value : [];
     const carsensorListings = carsensorResults.status === "fulfilled" ? carsensorResults.value : [];
+    const japanAuktionListings = japanAuktionResults.status === "fulfilled" ? japanAuktionResults.value : [];
 
     totalGooNet += gooListings.length;
     totalCarsensor += carsensorListings.length;
+    totalJapanAuktion += japanAuktionListings.length;
 
-    const combined = deduplicate([...gooListings, ...carsensorListings]);
+    const combined = deduplicate([...gooListings, ...carsensorListings, ...japanAuktionListings]);
 
-    console.log(`JP Sourcing [${make} ${model}]: goo-net=${gooListings.length}, carsensor=${carsensorListings.length}, deduped=${combined.length}`);
+    console.log(`JP Sourcing [${make} ${model}]: goo-net=${gooListings.length}, carsensor=${carsensorListings.length}, japan-auktion=${japanAuktionListings.length}, deduped=${combined.length}`);
 
     for (const listing of combined) {
+      // Use sold price when available (japan-auktion.de provides actual hammer prices)
+      const priceJpy = listing.soldPriceJpy || listing.priceJpy;
+
       allVehicles.push({
         id: `opp-${Date.now()}-${allVehicles.length}`,
         auction_source: listing.platform,
-        lot_number: null,
+        lot_number: listing.lotNumber || null,
         make,
         model,
         year: listing.year || yearRange[0],
         mileage_km: listing.mileage || 0,
         drive_side: "RHD",
-        auction_grade: null,
+        auction_grade: listing.auctionGrade || null,
         exterior_color: translateColor(listing.color) || null,
         interior_color: null,
-        transmission: null,
-        engine_spec: null,
-        asking_price_jpy: listing.priceJpy,
-        asking_price_eur: Math.round(listing.priceJpy / fxData.rate),
+        transmission: listing.transmission || null,
+        engine_spec: listing.engineCc ? `${listing.engineCc}cc` : null,
+        asking_price_jpy: priceJpy,
+        asking_price_eur: Math.round(priceJpy / fxData.rate),
+        start_price_jpy: listing.startPriceJpy || null,
+        sold_price_jpy: listing.soldPriceJpy || null,
+        auction_house: listing.auctionHouse || null,
+        auction_status: listing.status || null,
         specification_notes: null,
         service_history: "UNKNOWN",
         accident_history: false,
@@ -139,11 +151,13 @@ export async function scanAuctions(tvrs, { onProgress, checkState } = {}) {
     auctionDate: new Date().toISOString().split("T")[0],
     vehicles: allVehicles,
     scanSummary: {
-      total_lots_scanned: totalGooNet + totalCarsensor,
+      total_lots_scanned: totalGooNet + totalCarsensor + totalJapanAuktion,
       matching_vehicles: allVehicles.length,
-      auction_houses_checked: 2,
-      scan_notes: `Scraped ${totalGooNet} from goo-net.com and ${totalCarsensor} from carsensor.net. ${allVehicles.length} vehicles matched.`,
-      sources: { "goo-net.com": totalGooNet, "carsensor.net": totalCarsensor },
+      auction_houses_checked: 3,
+      vehicles_with_grades: allVehicles.filter((v) => v.auction_grade != null).length,
+      vehicles_with_sold_prices: allVehicles.filter((v) => v.sold_price_jpy != null).length,
+      scan_notes: `Scraped ${totalGooNet} from goo-net.com, ${totalCarsensor} from carsensor.net, and ${totalJapanAuktion} from japan-auktion.de (auction aggregator). ${allVehicles.length} vehicles matched.`,
+      sources: { "goo-net.com": totalGooNet, "carsensor.net": totalCarsensor, "japan-auktion.de": totalJapanAuktion },
     },
     completedModels,
     fxRate: fxData.rate,

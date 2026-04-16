@@ -77,7 +77,7 @@ function calculateLandedCost(purchasePriceJpy, fxRate, estimatedValueEur, make, 
   return {
     purchasePriceJpy,
     fxRateUsed: fxRate,
-    fxBufferApplied: FX_BUFFER_PCT * 100,
+    fxBufferApplied: fxBufferPct * 100,
     purchasePriceEur: purchaseEur,
     auctionFeesEur: auctionFees,
     jpTransportEur: jpTransport,

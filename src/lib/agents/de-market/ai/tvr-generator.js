@@ -67,7 +67,11 @@ export async function generateTVR(scan, settings = null) {
       salesLast30d: scan.demand?.sales_last_30d,
       newListingsLast7d: scan.demand?.new_listings_last_7d,
       trendDirection: scan.trend?.direction,
+      change7dPct: scan.trend?.change_7d_pct,
+      change30dPct: scan.trend?.change_30d_pct,
+      change90dPct: scan.trend?.change_90d_pct,
       seasonalFactor: scan.trend?.seasonal_factor,
+      seasonalNotes: scan.trend?.seasonal_notes,
     },
 
     financialThresholds: {
@@ -90,7 +94,7 @@ export async function generateTVR(scan, settings = null) {
     generatedAt: new Date().toISOString(),
     validUntil: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
 
-    reasoningChain: `Based on ${scan.pricing?.sample_size || 0} active listings across ${Object.keys(scan.data_sources || {}).length} platforms. Median price €${median?.toLocaleString()} with ${scan.trend?.direction?.toLowerCase()} trend (${scan.trend?.change_30d_pct > 0 ? "+" : ""}${scan.trend?.change_30d_pct}% 30d). Velocity score ${scan.demand?.velocity_score}/100 (${scan.demand?.inquiry_rate} demand). Recommended max landed cost = median €${median?.toLocaleString()} - minimum margin €${Math.round(minMargin)?.toLocaleString()} = €${recommendedMaxLanded?.toLocaleString()}. FX at ¥${fxData.rate}/€ (${fxData.live ? "live" : "cached"}).`,
+    reasoningChain: `Based on ${scan.pricing?.sample_size || 0} active listings across ${Object.keys(scan.data_sources || {}).length} platforms. Median price €${median?.toLocaleString()} with ${scan.trend?.direction?.toLowerCase()} trend (${scan.trend?.change_7d_pct > 0 ? "+" : ""}${scan.trend?.change_7d_pct || 0}% 7d, ${scan.trend?.change_30d_pct > 0 ? "+" : ""}${scan.trend?.change_30d_pct || 0}% 30d, ${scan.trend?.change_90d_pct > 0 ? "+" : ""}${scan.trend?.change_90d_pct || 0}% 90d). Velocity score ${scan.demand?.velocity_score}/100 (${scan.demand?.inquiry_rate} demand). Recommended max landed cost = median €${median?.toLocaleString()} - minimum margin €${Math.round(minMargin)?.toLocaleString()} = €${recommendedMaxLanded?.toLocaleString()}. FX at ¥${fxData.rate}/€ (${fxData.live ? "live" : "cached"}).`,
   };
 }
 

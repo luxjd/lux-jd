@@ -141,6 +141,36 @@ export default function ModelDetailPage({ params }) {
                 </div>
               ))}
             </div>
+
+            {/* Trend Windows */}
+            {(demand.trendDirection || demand.change7dPct != null) && (
+              <div className="pt-3 border-t border-outline-variant/10">
+                <p className="text-[10px] uppercase text-on-surface-variant tracking-wider mb-2">Price Trend</p>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`material-symbols-outlined text-sm ${demand.trendDirection === "APPRECIATING" ? "text-emerald-400" : demand.trendDirection === "DEPRECIATING" ? "text-red-400" : "text-on-surface-variant"}`}>
+                    {demand.trendDirection === "APPRECIATING" ? "trending_up" : demand.trendDirection === "DEPRECIATING" ? "trending_down" : "trending_flat"}
+                  </span>
+                  <span className="text-sm font-bold">{demand.trendDirection || "—"}</span>
+                  {demand.seasonalFactor && demand.seasonalFactor !== "NEUTRAL" && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${demand.seasonalFactor === "POSITIVE" ? "bg-emerald-400/15 text-emerald-400" : "bg-red-400/15 text-red-400"}`}>{demand.seasonalFactor}</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: "7d", value: demand.change7dPct },
+                    { label: "30d", value: demand.change30dPct },
+                    { label: "90d", value: demand.change90dPct },
+                  ].map((t) => (
+                    <div key={t.label} className="bg-surface-container-high/30 rounded-lg p-2 text-center">
+                      <p className="text-[9px] uppercase text-on-surface-variant">{t.label}</p>
+                      <p className={`text-sm font-bold ${t.value > 0 ? "text-emerald-400" : t.value < 0 ? "text-red-400" : ""}`}>
+                        {t.value != null ? `${t.value > 0 ? "+" : ""}${t.value}%` : "—"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

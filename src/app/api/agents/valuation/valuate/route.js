@@ -68,7 +68,7 @@ export async function POST(request) {
     });
 
     try {
-      await db.valuations.create({
+      const saved = await db.valuations.create({
         make: input.make,
         model: input.model,
         year: input.year,
@@ -80,6 +80,9 @@ export async function POST(request) {
         aiPowered: true,
         processingTime: report.processingTimeSeconds,
       });
+      if (saved?.id) {
+        report.valuationId = saved.id;
+      }
     } catch (e) {
       console.warn("DB save failed:", e.message);
     }

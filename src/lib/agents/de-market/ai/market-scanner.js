@@ -32,9 +32,9 @@ Based on this REAL data, provide market intelligence. Return ONLY valid JSON:
 {
   "trend": {
     "direction": "APPRECIATING" or "STABLE" or "DEPRECIATING",
+    "change_7d_pct": <float — estimate based on newest listing age patterns>,
     "change_30d_pct": <float — estimate based on listing age patterns>,
     "change_90d_pct": <float>,
-    "change_180d_pct": <float>,
     "seasonal_factor": "POSITIVE" or "NEUTRAL" or "NEGATIVE",
     "seasonal_notes": "<brief explanation>"
   },
@@ -230,9 +230,9 @@ export async function scanModel(model) {
 
     trend: aiAnalysis?.trend || {
       direction: "STABLE",
+      change_7d_pct: 0,
       change_30d_pct: 0,
       change_90d_pct: 0,
-      change_180d_pct: 0,
       seasonal_factor: "NEUTRAL",
       seasonal_notes: "Insufficient data for trend analysis",
     },
