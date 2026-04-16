@@ -70,6 +70,41 @@ export default function JpSourcingPage() {
     }
   };
 
+  const handleHumanOverride = async (opp, action) => {
+    setApproving(opp.id);
+    try {
+      const res = await fetch("/api/agents/orchestrator/override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          opportunityId: opp.id,
+          vehicleName: `${opp.vehicle?.make || ""} ${opp.vehicle?.model || ""} ${opp.vehicle?.year || ""}`.trim(),
+          opportunity: opp,
+          action,
+        }),
+      });
+
+      if (!res.ok) {
+        // Even if API failed, show the intended action so user knows it was attempted
+        setApproveResult((prev) => ({
+          ...prev,
+          [opp.id]: { decision: action === "APPROVE" ? "HUMAN_APPROVED" : "HUMAN_REJECTED", error: `API error: ${res.status}` },
+        }));
+        return;
+      }
+
+      const data = await res.json();
+      setApproveResult((prev) => ({ ...prev, [opp.id]: data }));
+    } catch (err) {
+      setApproveResult((prev) => ({
+        ...prev,
+        [opp.id]: { decision: action === "APPROVE" ? "HUMAN_APPROVED" : "HUMAN_REJECTED", error: err.message },
+      }));
+    } finally {
+      setApproving(null);
+    }
+  };
+
   const toggleDetails = (id) => {
     setExpandedId((prev) => prev === id ? null : id);
   };
@@ -232,21 +267,43 @@ export default function JpSourcingPage() {
                     </p>
                     <div className="flex gap-2">
                       {approveResult[opp.id] ? (
+                        approveResult[opp.id].decision === "HUMAN_REVIEW" ? (
+                          /* HUMAN_REVIEW: show Approve / Reject action buttons */
+                          <div className="flex items-center gap-1.5">
+                            <span className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-400/15 text-amber-400">
+                              <span className="material-symbols-outlined text-xs">pending</span> Review Required
+                            </span>
+                            <button
+                              onClick={() => handleHumanOverride(opp, "APPROVE")}
+                              disabled={approving === opp.id}
+                              className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-500 text-white rounded-lg text-[10px] font-bold hover:shadow-[0_0_10px_rgba(52,211,153,0.3)] transition-all disabled:opacity-50">
+                              {approving === opp.id ? <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span> : <span className="material-symbols-outlined text-xs">check</span>}
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => handleHumanOverride(opp, "REJECT")}
+                              disabled={approving === opp.id}
+                              className="flex items-center gap-1 px-2.5 py-1.5 bg-red-500/80 text-white rounded-lg text-[10px] font-bold hover:shadow-[0_0_10px_rgba(248,113,113,0.3)] transition-all disabled:opacity-50">
+                              <span className="material-symbols-outlined text-xs">close</span>
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
                         <span className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold ${
-                          approveResult[opp.id].decision === "AUTO_APPROVE" ? "bg-emerald-400/15 text-emerald-400" :
-                          approveResult[opp.id].decision === "HUMAN_REVIEW" ? "bg-amber-400/15 text-amber-400" :
+                          approveResult[opp.id].decision === "AUTO_APPROVE" || approveResult[opp.id].decision === "HUMAN_APPROVED" ? "bg-emerald-400/15 text-emerald-400" :
                           approveResult[opp.id].error ? "bg-red-400/15 text-red-400" :
                           "bg-red-400/15 text-red-400"
                         }`}>
                           <span className="material-symbols-outlined text-sm">
-                            {approveResult[opp.id].decision === "AUTO_APPROVE" ? "check_circle" :
-                             approveResult[opp.id].decision === "HUMAN_REVIEW" ? "pending" : "cancel"}
+                            {approveResult[opp.id].decision === "AUTO_APPROVE" || approveResult[opp.id].decision === "HUMAN_APPROVED" ? "check_circle" : "cancel"}
                           </span>
                           {approveResult[opp.id].error ? "Error" :
                            approveResult[opp.id].decision === "AUTO_APPROVE" ? "Approved → Pipeline" :
-                           approveResult[opp.id].decision === "HUMAN_REVIEW" ? "Needs Review" :
+                           approveResult[opp.id].decision === "HUMAN_APPROVED" ? "Approved → Pipeline" :
+                           approveResult[opp.id].decision === "HUMAN_REJECTED" ? "Rejected by Operator" :
                            approveResult[opp.id].decision || "Rejected"}
                         </span>
+                        )
                       ) : (
                         <button
                           onClick={() => handleApproveBid(opp)}
@@ -268,6 +325,26 @@ export default function JpSourcingPage() {
                         Details
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {/* Review Reasons Banner (shown when HUMAN_REVIEW) */}
+                {approveResult[opp.id]?.decision === "HUMAN_REVIEW" && approveResult[opp.id]?.flagReasons?.length > 0 && (
+                  <div className="mt-2 p-3 rounded-xl bg-amber-400/5 border border-amber-400/15">
+                    <p className="text-[10px] uppercase text-amber-400 font-bold tracking-wider mb-1.5">Why this needs your review</p>
+                    <ul className="space-y-1">
+                      {approveResult[opp.id].flagReasons.map((reason, i) => (
+                        <li key={i} className="flex items-start gap-1.5 text-xs text-on-surface-variant">
+                          <span className="material-symbols-outlined text-amber-400 text-xs mt-0.5 shrink-0">warning</span>
+                          {reason}
+                        </li>
+                      ))}
+                    </ul>
+                    {approveResult[opp.id]?.brief?.executive_summary && (
+                      <p className="text-xs text-on-surface-variant mt-2 pt-2 border-t border-amber-400/10">
+                        <span className="font-bold text-amber-400">AI Brief:</span> {approveResult[opp.id].brief.executive_summary}
+                      </p>
+                    )}
                   </div>
                 )}
 

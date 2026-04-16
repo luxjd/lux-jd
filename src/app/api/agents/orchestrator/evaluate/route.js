@@ -102,6 +102,25 @@ export async function POST(request) {
     });
   } catch (e) { console.warn("DB save decision failed:", e.message); }
 
+  // Audit log — compliance requirement
+  try {
+    await db.auditLog.create({
+      agent: "orchestrator",
+      action: `DECISION_${evaluation.decision}`,
+      entityType: "opportunity",
+      entityId: body.opportunity?.id || null,
+      reasoning: evaluation.decisionReason,
+      result: {
+        decision: evaluation.decision,
+        vehicleName: evaluation.vehicleName,
+        steps: evaluation.summary,
+        financials: evaluation.financials,
+        flagReasons: evaluation.flagReasons,
+        pipelineResult: pipelineResult || null,
+      },
+    });
+  } catch (e) { console.warn("Audit log failed:", e.message); }
+
   await updateAgentStatus({
     status: "ONLINE",
     lastAction: `${evaluation.decision}: ${evaluation.vehicleName}`,

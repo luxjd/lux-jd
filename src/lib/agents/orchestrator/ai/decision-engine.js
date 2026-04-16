@@ -7,14 +7,17 @@
  * The engine NEVER shortcuts — all 7 steps execute even if step 1 fails,
  * so the decision brief shows the full picture.
  *
- * Steps (per PRD Section 7.2):
- * 1. MARGIN CHECK: >= €15K AND >= 20%
- * 2. CONFIDENCE CHECK: >= 70%
- * 3. RISK CHECK: composite <= 2.0
- * 4. PORTFOLIO FIT: brand concentration, price segment diversification
- * 5. CAPITAL CHECK: within 80% deployment limit
- * 6. TIMING CHECK: seasonal favorability
- * 7. VALUE THRESHOLD: >€80K requires human approval regardless
+ * Steps (per PRD Section 7.2 + human-in-the-loop requirements):
+ *  1. MARGIN CHECK: >= €15K AND >= 20%
+ *  2. CONFIDENCE CHECK: >= 70%
+ *  3. RISK CHECK: composite <= 2.0, no HIGH individual risks
+ *  4. PORTFOLIO FIT: brand concentration <30% (REJECTS), segment diversification
+ *  5. CAPITAL CHECK: within 80% deployment limit
+ *  6. TIMING CHECK: seasonal favorability
+ *  7. VALUE THRESHOLD: >€80K requires human approval regardless
+ *  8. PRICING DEVIATION: listing price within 10% of market median
+ *  9. OFFER PRICE: bid >= 92% of asking (below requires human approval)
+ * 10. COMPLIANCE: no legal issues, complaints, or process deviations
  *
  * Results: AUTO_APPROVE | HUMAN_REVIEW | REJECT
  */
@@ -130,13 +133,14 @@ export function evaluateOpportunity(opportunity, portfolio) {
     icon: "pie_chart",
     check: `Brand concentration <= ${MAX_BRAND_CONCENTRATION * 100}%, segment diversification <= 50%`,
     actual: `${make}: ${(newBrandPct * 100).toFixed(1)}% (was ${(currentBrandPct * 100).toFixed(1)}%) | Segment ${priceSegment}: ${segmentCount}/${totalVehicles + 1}`,
-    result: step4Pass ? "PASS" : "FLAG",
-    critical: false,
+    result: step4Pass ? "PASS" : brandFit ? "FLAG" : "FAIL",
+    critical: !brandFit,
     reasoning: step4Pass
       ? `Adding this ${make} keeps brand concentration at ${(newBrandPct * 100).toFixed(1)}% (within ${MAX_BRAND_CONCENTRATION * 100}% limit). Segment ${priceSegment} is balanced.`
-      : `${!brandFit ? `${make} concentration would reach ${(newBrandPct * 100).toFixed(1)}% — exceeds ${MAX_BRAND_CONCENTRATION * 100}% limit.` : ""} ${!segmentFit ? `${priceSegment} segment already at ${segmentCount}/${totalVehicles} — overweight.` : ""}`,
+      : `${!brandFit ? `${make} concentration would reach ${(newBrandPct * 100).toFixed(1)}% — exceeds ${MAX_BRAND_CONCENTRATION * 100}% limit. BLOCKED per portfolio rules.` : ""} ${!segmentFit ? `${priceSegment} segment already at ${segmentCount}/${totalVehicles} — overweight.` : ""}`,
   });
-  if (!step4Pass) { hasFlag = true; flagReasons.push(!brandFit ? `${make} concentration limit exceeded` : "Price segment overweight"); }
+  if (!brandFit) { hasReject = true; flagReasons.push(`${make} concentration ${(newBrandPct * 100).toFixed(1)}% exceeds ${MAX_BRAND_CONCENTRATION * 100}% limit`); }
+  else if (!segmentFit) { hasFlag = true; flagReasons.push("Price segment overweight"); }
 
   // ─── STEP 5: CAPITAL CHECK ───
   const newDeployment = (portfolio.capitalDeployed || 0) + cashOutlay;
@@ -228,6 +232,48 @@ export function evaluateOpportunity(opportunity, portfolio) {
   });
   if (!step8Pass) { hasFlag = true; flagReasons.push(`Pricing ${pricingDeviation.toFixed(1)}% off market median`); }
 
+  // ─── STEP 9: OFFER PRICE CHECK (Human-in-the-loop: <92% of asking) ───
+  const askingPriceJpy = opportunity.pricing?.askingPriceJpy || 0;
+  const maxBidCalc = opportunity.maxBidJpy || opportunity.financials?.maxBidJpy || 0;
+  const offerPct = askingPriceJpy > 0 && maxBidCalc > 0 ? (maxBidCalc / askingPriceJpy) * 100 : 100;
+  const step9Pass = offerPct >= 92;
+  steps.push({
+    step: 9,
+    name: "OFFER PRICE",
+    icon: "request_quote",
+    check: "Bid >= 92% of asking price (below requires human approval)",
+    actual: `Bid ¥${maxBidCalc.toLocaleString()} = ${offerPct.toFixed(1)}% of asking ¥${askingPriceJpy.toLocaleString()}`,
+    result: step9Pass ? "PASS" : "FLAG",
+    critical: false,
+    reasoning: step9Pass
+      ? `Bid at ${offerPct.toFixed(1)}% of asking — within normal negotiation range.`
+      : `Bid at ${offerPct.toFixed(1)}% of asking — below 92% threshold. Aggressive offer requires human approval to avoid reputation risk with auction houses.`,
+  });
+  if (!step9Pass) { hasFlag = true; flagReasons.push(`Bid at ${offerPct.toFixed(1)}% of asking — below 92% requires human approval`); }
+
+  // ─── STEP 10: COMPLIANCE FLAGS (complaints, legal, process deviations) ───
+  const hasLegalFlag = !!(opportunity.vehicle?.legalIssues || opportunity.vehicle?.complaints);
+  const hasProcessDeviation = !!(opportunity.processDeviation || opportunity.overrideUsed);
+  const hasAccidentHistory = !!(opportunity.vehicle?.accidentHistory);
+  const complianceIssues = [];
+  if (hasLegalFlag) complianceIssues.push("Legal/complaint flag on vehicle");
+  if (hasProcessDeviation) complianceIssues.push("Process deviation or override detected");
+  if (hasAccidentHistory) complianceIssues.push("Accident history reported");
+  const step10Pass = complianceIssues.length === 0;
+  steps.push({
+    step: 10,
+    name: "COMPLIANCE",
+    icon: "policy",
+    check: "No legal issues, complaints, or process deviations",
+    actual: step10Pass ? "Clean — no compliance flags" : complianceIssues.join("; "),
+    result: step10Pass ? "PASS" : "FLAG",
+    critical: false,
+    reasoning: step10Pass
+      ? "No compliance concerns — vehicle clear for automated processing."
+      : `Compliance flags detected: ${complianceIssues.join("; ")}. Mandatory human review required per operating procedures.`,
+  });
+  if (!step10Pass) { hasFlag = true; flagReasons.push(...complianceIssues); }
+
   // ─── FINAL DECISION ───
   let decision, decisionReason;
 
@@ -240,7 +286,7 @@ export function evaluateOpportunity(opportunity, portfolio) {
     decisionReason = `HUMAN REVIEW REQUIRED — ${flagReasons.length} flag(s): ${flagReasons.join("; ")}. All critical checks passed but requires operator judgment.`;
   } else {
     decision = "AUTO_APPROVE";
-    decisionReason = `AUTO-APPROVED — all 7 checks passed. ${vehicleName} meets all acquisition criteria. Margin €${margin.toLocaleString()} (${marginPct}%), risk ${riskScore}/3.0, confidence ${(confidence * 100).toFixed(0)}%.`;
+    decisionReason = `AUTO-APPROVED — all ${steps.length} checks passed. ${vehicleName} meets all acquisition criteria. Margin €${margin.toLocaleString()} (${marginPct}%), risk ${riskScore}/3.0, confidence ${(confidence * 100).toFixed(0)}%.`;
   }
 
   // Max bid calculation
@@ -260,7 +306,7 @@ export function evaluateOpportunity(opportunity, portfolio) {
       passCount: steps.filter((s) => s.result === "PASS").length,
       failCount: steps.filter((s) => s.result === "FAIL").length,
       flagCount: steps.filter((s) => s.result === "FLAG").length,
-      totalSteps: 8,
+      totalSteps: steps.length,
     },
     financials: {
       margin,

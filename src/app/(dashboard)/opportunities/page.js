@@ -99,9 +99,9 @@ export default async function OpportunitiesPage() {
                     </div>
                   )}
                   <div className="text-center">
-                    <p className="text-[10px] uppercase text-primary tracking-wider">Margin</p>
-                    <p className="font-headline font-bold text-lg text-primary">{fmt(opp.marginEur)}</p>
-                    <p className="text-[10px] text-primary">{opp.spreadPct}%</p>
+                    <p className={`text-[10px] uppercase tracking-wider ${opp.marginEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>Margin</p>
+                    <p className={`font-headline font-bold text-lg ${opp.marginEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(opp.marginEur)}</p>
+                    <p className={`text-[10px] ${opp.marginEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>{opp.spreadPct}%</p>
                   </div>
                   <div className="text-center">
                     <p className="text-[10px] uppercase text-on-surface-variant tracking-wider">Conf</p>

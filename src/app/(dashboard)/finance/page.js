@@ -106,7 +106,7 @@ export default function FinancePage() {
                     <td className="py-3 px-3 text-sm">{fmt(v.totalCosts)}</td>
                     <td className="py-3 px-3 text-sm font-bold">{fmt(v.salePrice)}</td>
                     <td className="py-3 px-3 text-sm font-bold text-emerald-400">+{fmt(v.margin)}</td>
-                    <td className="py-3 px-3 text-sm text-primary font-bold">{v.marginPct}%</td>
+                    <td className={`py-3 px-3 text-sm font-bold ${v.marginPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>{v.marginPct}%</td>
                     <td className="py-3 px-3 text-sm text-on-surface-variant">{v.daysToSell}d</td>
                   </tr>
                 ))}

@@ -4,8 +4,9 @@ import { getLatestOpportunities } from "@/lib/agents/jp-sourcing/storage";
 import { checkAllAgents } from "@/lib/agents/orchestrator/ai/agent-monitor";
 import { loadPortfolioState } from "@/lib/agents/orchestrator/ai/portfolio-manager";
 import EvaluateButton from "./_components/EvaluateButton";
+import OverrideButtons from "./_components/OverrideButtons";
 
-const DECISION_STYLES = { AUTO_APPROVE: "bg-emerald-400/15 text-emerald-400", HUMAN_REVIEW: "bg-amber-400/15 text-amber-400", REJECT: "bg-slate-400/10 text-slate-400" };
+const DECISION_STYLES = { AUTO_APPROVE: "bg-emerald-400/15 text-emerald-400", HUMAN_APPROVED: "bg-emerald-400/15 text-emerald-400", HUMAN_REVIEW: "bg-amber-400/15 text-amber-400", REJECT: "bg-slate-400/10 text-slate-400", HUMAN_REJECTED: "bg-red-400/15 text-red-400" };
 const STEP_STYLES = { PASS: "text-emerald-400", FAIL: "text-red-400", FLAG: "text-amber-400" };
 const HEALTH_STYLES = { HEALTHY: "bg-emerald-400", DEGRADED: "bg-amber-400", STALE: "bg-amber-400", DOWN: "bg-red-400", IDLE: "bg-slate-400" };
 
@@ -47,7 +48,7 @@ export default async function OrchestratorPage() {
                 </span>
               </div>
               <p className="text-xs text-on-surface-variant mt-0.5">
-                7-step decision engine · portfolio management · agent coordination · human-in-the-loop gateway
+                10-step decision engine · portfolio management · agent coordination · human-in-the-loop gateway
               </p>
             </div>
           </div>
@@ -176,10 +177,10 @@ export default async function OrchestratorPage() {
                   <span className="text-[10px] text-on-surface-variant">{new Date(d.evaluatedAt).toLocaleString()}</span>
                 </div>
 
-                {/* 7-step mini summary */}
+                {/* Decision step summary */}
                 <div className="flex gap-1 mb-2">
                   {d.steps?.map((s) => (
-                    <div key={s.step} className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${s.result === "PASS" ? "bg-emerald-400/15 text-emerald-400" : s.result === "FAIL" ? "bg-red-400/15 text-red-400" : "bg-amber-400/15 text-amber-400"}`} title={`Step ${s.step}: ${s.name} — ${s.result}`}>
+                    <div key={s.step} className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold ${s.result === "PASS" ? "bg-emerald-400/15 text-emerald-400" : s.result === "FAIL" ? "bg-red-400/15 text-red-400" : "bg-amber-400/15 text-amber-400"}`} title={`Step ${s.step}: ${s.name} — ${s.result}`}>
                       {s.step}
                     </div>
                   ))}
@@ -192,7 +193,7 @@ export default async function OrchestratorPage() {
 
                 {d.financials && (
                   <div className="flex flex-wrap gap-4 mt-2 text-xs">
-                    <span>Margin: <strong className="text-primary">{fmt(d.financials.margin)} ({d.financials.marginPct}%)</strong></span>
+                    <span>Margin: <strong className={d.financials.margin >= 0 ? "text-emerald-400" : "text-red-400"}>{fmt(d.financials.margin)} ({d.financials.marginPct}%)</strong></span>
                     <span>Risk: <strong>{d.risk?.compositeScore}/3.0</strong></span>
                     {d.financials.maxBidJpy && <span>Max bid: <strong className="text-secondary">¥{d.financials.maxBidJpy.toLocaleString()}</strong></span>}
                   </div>
@@ -203,8 +204,28 @@ export default async function OrchestratorPage() {
                   <div className="mt-3 p-3 rounded-lg bg-primary/5 border border-primary/10">
                     <p className="text-xs font-bold text-primary mb-1">{d.brief.headline}</p>
                     <p className="text-xs text-on-surface-variant">{d.brief.executive_summary?.substring(0, 200)}</p>
+                    {d.brief.bull_case && (
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <div><p className="text-[9px] uppercase text-emerald-400 font-bold">Bull Case</p><p className="text-[10px] text-on-surface-variant">{d.brief.bull_case?.substring(0, 120)}</p></div>
+                        <div><p className="text-[9px] uppercase text-red-400 font-bold">Bear Case</p><p className="text-[10px] text-on-surface-variant">{d.brief.bear_case?.substring(0, 120)}</p></div>
+                      </div>
+                    )}
                   </div>
                 )}
+
+                {/* Flag reasons for HUMAN_REVIEW */}
+                {d.decision === "HUMAN_REVIEW" && d.flagReasons?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {d.flagReasons.map((r, j) => (
+                      <span key={j} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400 text-[10px]">
+                        <span className="material-symbols-outlined text-[10px]">warning</span> {r}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Override buttons for HUMAN_REVIEW decisions */}
+                {d.decision === "HUMAN_REVIEW" && <OverrideButtons decision={d} />}
               </div>
             ))}
           </div>
@@ -215,7 +236,7 @@ export default async function OrchestratorPage() {
         <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-12 text-center">
           <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">gavel</span>
           <h3 className="font-headline font-bold text-lg mb-2">No Decisions Yet</h3>
-          <p className="text-sm text-on-surface-variant">Run JP Sourcing Agent to find opportunities, then click &quot;Evaluate&quot; to run the 7-step decision engine on each candidate.</p>
+          <p className="text-sm text-on-surface-variant">Run JP Sourcing Agent to find opportunities, then click &quot;Evaluate&quot; to run the 10-step decision engine on each candidate.</p>
         </div>
       )}
     </div>
