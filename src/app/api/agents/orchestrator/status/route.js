@@ -14,6 +14,6 @@ export async function GET() {
     name: "Orchestrator",
     aiPowered: isAIAvailable(),
     totalDecisions: decisions.decisions?.length || 0,
-    recentDecisions: decisions.decisions?.slice(-5).reverse() || [],
+    recentDecisions: decisions.decisions?.slice(0, 50) || [],
   });
 }

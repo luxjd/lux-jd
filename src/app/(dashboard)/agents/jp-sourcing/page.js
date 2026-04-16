@@ -16,18 +16,35 @@ const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";
 export default function JpSourcingPage() {
   const [status, setStatus] = useState(null);
   const [opportunities, setOpportunities] = useState([]);
+  const [expandedId, setExpandedId] = useState(null);
+  const [approving, setApproving] = useState(null);
+  const [approveResult, setApproveResult] = useState({});
   const [scanHistory, setScanHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const [statusRes, oppsRes] = await Promise.all([
+      const [statusRes, oppsRes, orchRes] = await Promise.all([
         fetch("/api/agents/jp-sourcing/status").then((r) => r.json()).catch(() => null),
         fetch("/api/agents/jp-sourcing/opportunities").then((r) => r.json()).catch(() => ({})),
+        fetch("/api/agents/orchestrator/status").then((r) => r.json()).catch(() => ({})),
       ]);
       setStatus(statusRes);
       setOpportunities(oppsRes.opportunities || []);
       setScanHistory(oppsRes.scanHistory || []);
+
+      // Pre-populate approve results from existing orchestrator decisions
+      const decisions = orchRes.recentDecisions || [];
+      if (decisions.length > 0) {
+        const existing = {};
+        for (const d of decisions) {
+          if (d.opportunityId) {
+            existing[d.opportunityId] = d;
+          }
+        }
+        setApproveResult((prev) => ({ ...existing, ...prev }));
+      }
+
       setLoading(false);
     } catch {
       setLoading(false);
@@ -35,6 +52,27 @@ export default function JpSourcingPage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleApproveBid = async (opp) => {
+    setApproving(opp.id);
+    try {
+      const res = await fetch("/api/agents/orchestrator/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunity: opp }),
+      });
+      const data = await res.json();
+      setApproveResult((prev) => ({ ...prev, [opp.id]: data }));
+    } catch (err) {
+      setApproveResult((prev) => ({ ...prev, [opp.id]: { error: err.message } }));
+    } finally {
+      setApproving(null);
+    }
+  };
+
+  const toggleDetails = (id) => {
+    setExpandedId((prev) => prev === id ? null : id);
+  };
 
   const hasData = opportunities.length > 0;
   const strongBuys = opportunities.filter((o) => (o.refinedRecommendation || o.recommendation) === "STRONG_BUY");
@@ -130,14 +168,21 @@ export default function JpSourcingPage() {
                     <p className="text-xs text-on-surface-variant mt-1">
                       {opp.source?.auctionHouse}
                       {opp.source?.lotNumber && ` · Lot ${opp.source.lotNumber}`}
-                      {opp.vehicle?.serviceHistory && ` · ${opp.vehicle.serviceHistory.replace("_", " ")}`}
+                      {opp.vehicle?.serviceHistory && opp.vehicle.serviceHistory !== "UNKNOWN" && ` · ${opp.vehicle.serviceHistory.replace(/_/g, " ")}`}
                       {opp.vehicle?.accidentHistory && <span className="text-red-400 ml-1">· ACCIDENT</span>}
+                      {opp.pricing?.rhdPenaltyApplied && <span className="text-amber-400 ml-1">· RHD -15%</span>}
+                      {opp.sheetAnalysis && <span className="text-primary ml-1">· Sheet OCR ✓</span>}
                     </p>
                     {opp.vehicle?.listingUrl && (
                       <a href={opp.vehicle.listingUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline mt-1 inline-block">View listing</a>
                     )}
                     {opp.vehicle?.conditionNotes && (
                       <p className="text-xs text-on-surface-variant mt-1 italic">&quot;{opp.vehicle.conditionNotes}&quot;</p>
+                    )}
+                    {opp.vehicle?.auctionSheetNotes && (
+                      <div className="mt-1.5 p-1.5 rounded-lg bg-secondary/5 border border-secondary/10">
+                        <p className="text-[10px] text-secondary"><span className="font-bold">Auction Sheet:</span> {opp.vehicle.auctionSheetNotes}</p>
+                      </div>
                     )}
                     {da?.deep_assessment?.investment_thesis && (
                       <div className="mt-2 p-2 rounded-lg bg-primary/5 border border-primary/10">
@@ -155,15 +200,16 @@ export default function JpSourcingPage() {
                     <div className="text-center">
                       <p className="text-[10px] uppercase text-on-surface-variant tracking-wider">DE Value</p>
                       <p className="font-headline font-bold text-sm">{fmt(opp.pricing?.deMarketMedian)}</p>
+                      {opp.pricing?.rhdPenaltyApplied && <p className="text-[9px] text-amber-400 line-through">{fmt(opp.pricing?.deMarketMedianRaw)}</p>}
                     </div>
                     <div className="text-center">
                       <p className="text-[10px] uppercase text-on-surface-variant tracking-wider">Landed</p>
                       <p className="font-headline font-bold text-sm">{fmt(opp.landedCost?.totalLandedCostEur)}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-[10px] uppercase text-primary tracking-wider">Margin</p>
-                      <p className="font-headline font-bold text-lg text-primary">{fmt(opp.margin?.grossMarginEur)}</p>
-                      <p className="text-[10px] text-primary">{opp.margin?.grossMarginPct}%</p>
+                      <p className={`text-[10px] uppercase tracking-wider ${opp.margin?.grossMarginEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>Margin</p>
+                      <p className={`font-headline font-bold text-lg ${opp.margin?.grossMarginEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(opp.margin?.grossMarginEur)}</p>
+                      <p className={`text-[10px] ${opp.margin?.grossMarginEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>{opp.margin?.grossMarginPct}%</p>
                     </div>
                     <div className="text-center">
                       <p className="text-[10px] uppercase text-on-surface-variant tracking-wider">Confidence</p>
@@ -185,15 +231,194 @@ export default function JpSourcingPage() {
                       {da?.suggested_bid_jpy && <span className="ml-2">· AI suggests: <span className="font-bold text-primary">¥{da.suggested_bid_jpy.toLocaleString()}</span></span>}
                     </p>
                     <div className="flex gap-2">
-                      <button className="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold hover:shadow-[0_0_10px_rgba(248,113,113,0.3)] transition-all">
-                        Approve Bid
-                      </button>
-                      <button className="px-3 py-1.5 border border-outline-variant/20 text-on-surface-variant rounded-lg text-xs font-bold hover:bg-surface-container-high transition-all">
+                      {approveResult[opp.id] ? (
+                        <span className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold ${
+                          approveResult[opp.id].decision === "AUTO_APPROVE" ? "bg-emerald-400/15 text-emerald-400" :
+                          approveResult[opp.id].decision === "HUMAN_REVIEW" ? "bg-amber-400/15 text-amber-400" :
+                          approveResult[opp.id].error ? "bg-red-400/15 text-red-400" :
+                          "bg-red-400/15 text-red-400"
+                        }`}>
+                          <span className="material-symbols-outlined text-sm">
+                            {approveResult[opp.id].decision === "AUTO_APPROVE" ? "check_circle" :
+                             approveResult[opp.id].decision === "HUMAN_REVIEW" ? "pending" : "cancel"}
+                          </span>
+                          {approveResult[opp.id].error ? "Error" :
+                           approveResult[opp.id].decision === "AUTO_APPROVE" ? "Approved → Pipeline" :
+                           approveResult[opp.id].decision === "HUMAN_REVIEW" ? "Needs Review" :
+                           approveResult[opp.id].decision || "Rejected"}
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleApproveBid(opp)}
+                          disabled={approving === opp.id}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:shadow-[0_0_10px_rgba(52,211,153,0.3)] transition-all disabled:opacity-50">
+                          {approving === opp.id ? (
+                            <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Evaluating...</>
+                          ) : (
+                            <><span className="material-symbols-outlined text-sm">gavel</span> Approve Bid</>
+                          )}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => toggleDetails(opp.id)}
+                        className={`flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-bold transition-all ${
+                          expandedId === opp.id ? "border-primary/30 text-primary bg-primary/5" : "border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high"
+                        }`}>
+                        <span className="material-symbols-outlined text-sm">{expandedId === opp.id ? "expand_less" : "expand_more"}</span>
                         Details
                       </button>
                     </div>
                   </div>
                 )}
+
+                {/* Expandable Details Panel */}
+                <div className={`grid transition-all duration-300 ease-in-out ${expandedId === opp.id ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+                  <div className="overflow-hidden">
+                {expandedId === opp.id && (
+                  <div className="mt-3 pt-3 border-t border-outline-variant/10 space-y-4 animate-[fadeSlideIn_0.3s_ease-out]">
+                    {/* Landed Cost Breakdown */}
+                    <div>
+                      <h5 className="text-[10px] uppercase text-on-surface-variant tracking-wider mb-2 font-bold">Landed Cost Breakdown</h5>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                        {[
+                          { label: "Purchase", value: opp.landedCost?.purchasePriceEur },
+                          { label: "Auction Fees", value: opp.landedCost?.auctionFeesEur },
+                          { label: "Freight", value: opp.landedCost?.freightEur },
+                          { label: "Insurance", value: opp.landedCost?.insuranceEur },
+                          { label: "CIF Value", value: opp.landedCost?.cifValueEur },
+                          { label: "Customs Duty", value: opp.landedCost?.customsDutyEur },
+                          { label: "Import VAT", value: opp.landedCost?.importVatEur },
+                          { label: "TUV", value: opp.landedCost?.tuvEstimatedEur },
+                          { label: "Total Landed", value: opp.landedCost?.totalLandedCostEur },
+                          { label: "Cash Outlay", value: opp.landedCost?.totalCashOutlayEur },
+                        ].map((item) => (
+                          <div key={item.label} className="bg-surface-container-high/30 rounded-lg p-2">
+                            <p className="text-[9px] uppercase text-on-surface-variant">{item.label}</p>
+                            <p className="text-xs font-bold">{fmt(item.value)}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {opp.landedCost?.reclaimableVatEur > 0 && (
+                        <p className="text-[10px] text-emerald-400 mt-1">Reclaimable VAT: {fmt(opp.landedCost.reclaimableVatEur)}</p>
+                      )}
+                    </div>
+
+                    {/* Risk Assessment */}
+                    <div>
+                      <h5 className="text-[10px] uppercase text-on-surface-variant tracking-wider mb-2 font-bold">Risk Assessment ({opp.risk?.compositeLevel})</h5>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {[
+                          { label: "Condition", data: opp.risk?.conditionRisk },
+                          { label: "Provenance", data: opp.risk?.provenanceRisk },
+                          { label: "TUV", data: opp.risk?.tuvRisk },
+                          { label: "Market", data: opp.risk?.marketRisk },
+                          { label: "Currency", data: opp.risk?.currencyRisk },
+                        ].map((r) => (
+                          <div key={r.label} className="bg-surface-container-high/30 rounded-lg p-2 text-center">
+                            <p className="text-[9px] uppercase text-on-surface-variant">{r.label}</p>
+                            <p className={`text-sm font-bold ${RISK_STYLES[r.data?.level] || ""}`}>{r.data?.score || "—"}/3</p>
+                            <p className={`text-[9px] ${RISK_STYLES[r.data?.level] || "text-on-surface-variant"}`}>{r.data?.level || "—"}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Margin Scenarios */}
+                    <div>
+                      <h5 className="text-[10px] uppercase text-on-surface-variant tracking-wider mb-2 font-bold">Margin Scenarios</h5>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { label: "Pessimistic (P25)", value: opp.margin?.pessimisticMargin },
+                          { label: "Base (Median)", value: opp.margin?.grossMarginEur },
+                          { label: "Optimistic (P75)", value: opp.margin?.optimisticMargin },
+                        ].map((s) => (
+                          <div key={s.label} className="bg-surface-container-high/30 rounded-lg p-2 text-center">
+                            <p className="text-[9px] uppercase text-on-surface-variant">{s.label}</p>
+                            <p className={`text-sm font-bold ${s.value >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(s.value)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* AI Deep Analysis */}
+                    {da?.deep_assessment && (
+                      <div>
+                        <h5 className="text-[10px] uppercase text-on-surface-variant tracking-wider mb-2 font-bold">AI Deep Analysis</h5>
+                        <div className="space-y-2 text-xs">
+                          {da.deep_assessment.specification_analysis && (
+                            <div className="p-2 rounded-lg bg-surface-container-high/30">
+                              <p className="text-[9px] uppercase text-on-surface-variant mb-0.5">Spec Analysis</p>
+                              <p className="text-on-surface">{da.deep_assessment.specification_analysis}</p>
+                            </div>
+                          )}
+                          {da.deep_assessment.tuv_assessment && (
+                            <div className="p-2 rounded-lg bg-surface-container-high/30">
+                              <p className="text-[9px] uppercase text-on-surface-variant mb-0.5">TUV Assessment</p>
+                              <p className="text-on-surface">{da.deep_assessment.tuv_assessment}</p>
+                            </div>
+                          )}
+                          {da.deep_assessment.exit_strategy && (
+                            <div className="p-2 rounded-lg bg-surface-container-high/30">
+                              <p className="text-[9px] uppercase text-on-surface-variant mb-0.5">Exit Strategy</p>
+                              <p className="text-on-surface">{da.deep_assessment.exit_strategy}</p>
+                            </div>
+                          )}
+                          {da.deep_assessment.market_timing && (
+                            <div className="p-2 rounded-lg bg-surface-container-high/30">
+                              <p className="text-[9px] uppercase text-on-surface-variant mb-0.5">Market Timing</p>
+                              <p className="text-on-surface">{da.deep_assessment.market_timing}</p>
+                            </div>
+                          )}
+                          {da.deep_assessment.condition_concerns?.length > 0 && (
+                            <div className="p-2 rounded-lg bg-red-400/5 border border-red-400/10">
+                              <p className="text-[9px] uppercase text-red-400 mb-0.5">Condition Concerns</p>
+                              <ul className="list-disc list-inside text-on-surface-variant">
+                                {da.deep_assessment.condition_concerns.map((c, i) => <li key={i}>{c}</li>)}
+                              </ul>
+                            </div>
+                          )}
+                          <div className="flex gap-4">
+                            {da.probability_of_sale_30d != null && (
+                              <p className="text-on-surface-variant">Sale probability: <span className="font-bold">{(da.probability_of_sale_30d * 100).toFixed(0)}%</span> (30d) · <span className="font-bold">{(da.probability_of_sale_60d * 100).toFixed(0)}%</span> (60d)</p>
+                            )}
+                            {da.hold_period_estimate_days && (
+                              <p className="text-on-surface-variant">Est. hold: <span className="font-bold">{da.hold_period_estimate_days}d</span></p>
+                            )}
+                          </div>
+                          {da.bid_strategy && (
+                            <p className="text-on-surface-variant"><span className="font-bold">Bid strategy:</span> {da.bid_strategy}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Orchestrator Result (after Approve) */}
+                    {approveResult[opp.id]?.steps && (
+                      <div>
+                        <h5 className="text-[10px] uppercase text-on-surface-variant tracking-wider mb-2 font-bold">Orchestrator Decision</h5>
+                        <div className="flex flex-wrap gap-1.5">
+                          {approveResult[opp.id].steps.map((step, i) => (
+                            <div key={i} className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
+                              step.result === "PASS" ? "bg-emerald-400/15 text-emerald-400" :
+                              step.result === "FAIL" ? "bg-red-400/15 text-red-400" :
+                              "bg-amber-400/15 text-amber-400"
+                            }`}>
+                              {step.name}: {step.result}
+                            </div>
+                          ))}
+                        </div>
+                        {approveResult[opp.id].decisionReason && (
+                          <p className="text-xs text-on-surface-variant mt-2">{approveResult[opp.id].decisionReason}</p>
+                        )}
+                        {approveResult[opp.id].pipelineResult && (
+                          <p className="text-xs text-emerald-400 mt-1 font-bold">Vehicle added to pipeline (Stage: {approveResult[opp.id].pipelineResult.status})</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                  </div>
+                </div>
               </div>
             );
           })}

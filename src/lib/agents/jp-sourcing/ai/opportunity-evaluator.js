@@ -37,7 +37,7 @@ function calculateLandedCost(askingPriceJpy, fxRate, estimatedValueEur, make, dr
   const freight = 2800;
   const insurance = Math.round(Math.max(purchaseEur, (estimatedValueEur || purchaseEur) * 0.7) * 0.02);
   const cifValue = purchaseEur + auctionFees + jpTransport + exportDocs + freight + insurance;
-  const customsDuty = Math.round(cifValue * 0.10);
+  const customsDuty = Math.round(cifValue * 0.065);
   const importVat = Math.round((cifValue + customsDuty) * 0.19);
   const tuv = getTuvCost(make, driveSide);
   const portHandling = 600;
@@ -132,10 +132,19 @@ function generateRecommendation(margin, marginPct, confidence, risk, vehicle) {
  * @returns {object} Full opportunity evaluation
  */
 export function evaluateOpportunity(vehicle, tvr, fxRate) {
-  const deMedian = tvr?.marketValue?.medianEur || 100000;
-  const deP25 = tvr?.marketValue?.p25Eur || Math.round(deMedian * 0.90);
-  const deP75 = tvr?.marketValue?.p75Eur || Math.round(deMedian * 1.12);
-  const maxLanded = tvr?.financialThresholds?.recommendedMaxLandedCostEur || Math.round(deMedian * 0.75);
+  const rawMedian = tvr?.marketValue?.medianEur || 100000;
+  const rawP25 = tvr?.marketValue?.p25Eur || Math.round(rawMedian * 0.90);
+  const rawP75 = tvr?.marketValue?.p75Eur || Math.round(rawMedian * 1.12);
+
+  // RHD penalty: right-hand drive vehicles sell at ~15% discount in Germany
+  const isRHD = vehicle.drive_side === "RHD";
+  const rhdDiscount = isRHD ? 0.85 : 1.0;
+  const deMedian = Math.round(rawMedian * rhdDiscount);
+  const deP25 = Math.round(rawP25 * rhdDiscount);
+  const deP75 = Math.round(rawP75 * rhdDiscount);
+  const maxLanded = tvr?.financialThresholds?.recommendedMaxLandedCostEur
+    ? Math.round(tvr.financialThresholds.recommendedMaxLandedCostEur * rhdDiscount)
+    : Math.round(deMedian * 0.75);
 
   // Calculate landed cost
   const landed = calculateLandedCost(vehicle.asking_price_jpy, fxRate, deMedian, vehicle.make, vehicle.drive_side);
@@ -194,10 +203,13 @@ export function evaluateOpportunity(vehicle, tvr, fxRate) {
     pricing: {
       askingPriceJpy: vehicle.asking_price_jpy,
       askingPriceEur: vehicle.asking_price_eur || landed.purchasePriceEur,
+      deMarketMedianRaw: rawMedian,
       deMarketMedian: deMedian,
       deMarketP25: deP25,
       deMarketP75: deP75,
       maxRecommendedLanded: maxLanded,
+      rhdPenaltyApplied: isRHD,
+      rhdDiscountPct: isRHD ? 15 : 0,
     },
     landedCost: landed,
     margin: {
