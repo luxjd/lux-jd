@@ -59,7 +59,9 @@ export default function AgentStatusHeader({ status }) {
                 {status.status}
               </span>
             </div>
-            <p className="text-xs text-on-surface-variant mt-0.5">Uptime {status.uptime} &middot; Last scan {new Date(status.lastScanTimestamp).toLocaleTimeString()}</p>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              {status.lastScanTimestamp ? `Last scan ${new Date(status.lastScanTimestamp).toLocaleString()}` : "No scans yet"}
+            </p>
           </div>
         </div>
 
@@ -78,10 +80,10 @@ export default function AgentStatusHeader({ status }) {
       {/* Metrics strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         {[
-          { label: "Listings Tracked", value: status.totalListingsTracked, icon: "list" },
-          { label: "Price Updates (24h)", value: status.totalPriceUpdates24h, icon: "update" },
-          { label: "Scans Today", value: `${status.scansConductedToday}/${status.scansScheduledToday}`, icon: "radar" },
-          { label: "Errors (24h)", value: status.errorCount24h, icon: "error_outline" },
+          { label: "Listings Tracked", value: status.totalListingsTracked || 0, icon: "list" },
+          { label: "Price Updates (24h)", value: status.totalPriceUpdates24h || 0, icon: "update" },
+          { label: "Scans Today", value: status.scansConductedToday || 0, icon: "radar" },
+          { label: "Errors (24h)", value: status.errorCount24h || 0, icon: "error_outline" },
         ].map((m, i) => (
           <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-container-high/30">
             <span className="material-symbols-outlined text-on-surface-variant text-lg">{m.icon}</span>
@@ -93,22 +95,24 @@ export default function AgentStatusHeader({ status }) {
         ))}
       </div>
 
-      {/* Health checks */}
-      <div className="flex flex-wrap gap-2">
-        {healthEntries.map(([name, check]) => (
-          <div key={name} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium ${
-            check.status === "OK" ? "border-emerald-400/20 text-emerald-400 bg-emerald-400/5" :
-            check.status === "DEGRADED" ? "border-amber-400/20 text-amber-400 bg-amber-400/5" :
-            "border-red-400/20 text-red-400 bg-red-400/5"
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${
-              check.status === "OK" ? "bg-emerald-400" : check.status === "DEGRADED" ? "bg-amber-400" : "bg-red-400"
-            }`} />
-            {name}
-            <span className="text-on-surface-variant font-mono">{check.latency}ms</span>
-          </div>
-        ))}
-      </div>
+      {/* Health checks — only show if data exists */}
+      {healthEntries.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {healthEntries.map(([name, check]) => (
+            <div key={name} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium ${
+              check?.status === "OK" ? "border-emerald-400/20 text-emerald-400 bg-emerald-400/5" :
+              check?.status === "DEGRADED" ? "border-amber-400/20 text-amber-400 bg-amber-400/5" :
+              "border-red-400/20 text-red-400 bg-red-400/5"
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                check?.status === "OK" ? "bg-emerald-400" : check?.status === "DEGRADED" ? "bg-amber-400" : "bg-red-400"
+              }`} />
+              {name}
+              {check?.latency && <span className="text-on-surface-variant font-mono">{check.latency}ms</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Scanning progress */}
       {scanning && (

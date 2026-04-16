@@ -11,6 +11,7 @@
  */
 
 import { isAIAvailable } from "@/lib/claude";
+import { getSettings } from "@/lib/settings";
 import { TRACKED_MODELS } from "../constants";
 import { scanModel, scanAllModels } from "./market-scanner";
 import { generateAllTVRs } from "./tvr-generator";
@@ -27,12 +28,6 @@ import {
 /**
  * Run a FULL scan of all tracked models + competitors.
  * This is what "Scan Now" triggers.
- *
- * @param {object} options
- * @param {string[]} options.modelIds — specific models to scan (null = all)
- * @param {boolean} options.includeCompetitors — also scan competitors
- * @param {function} options.onProgress — callback(step, detail)
- * @returns {object} Full scan result
  */
 export async function runFullScan({
   modelIds = null,
@@ -44,11 +39,12 @@ export async function runFullScan({
   }
 
   const startTime = Date.now();
+  const settings = await getSettings();
   const models = modelIds
     ? TRACKED_MODELS.filter((m) => modelIds.includes(m.id))
     : TRACKED_MODELS;
 
-  updateAgentStatus({ status: "SCANNING" });
+  await updateAgentStatus({ status: "SCANNING" });
 
   // ─── Step 1: Scan all models ───
   onProgress?.("scanning", `Scanning ${models.length} models...`);
@@ -61,20 +57,20 @@ export async function runFullScan({
   const failCount = scanResults.filter((r) => r.error).length;
 
   // Persist scan results
-  saveScanResults(scanResults);
+  await saveScanResults(scanResults);
 
   // Update price histories
   for (const result of scanResults) {
     if (!result.error) {
-      appendPriceHistory(result.modelId, result);
+      await appendPriceHistory(result.modelId, result);
     }
   }
 
-  // ─── Step 2: Generate TVRs ───
+  // ─── Step 2: Generate TVRs (with settings for thresholds) ───
   onProgress?.("tvr", "Generating Target Vehicle Reports...");
 
-  const tvrs = await generateAllTVRs(scanResults.filter((r) => !r.error));
-  saveTVRs(tvrs);
+  const tvrs = await generateAllTVRs(scanResults.filter((r) => !r.error), settings);
+  await saveTVRs(tvrs);
 
   // ─── Step 3: Competitor analysis (optional) ───
   let competitorResult = null;
@@ -82,7 +78,7 @@ export async function runFullScan({
     onProgress?.("competitors", "Analyzing competitor landscape...");
     competitorResult = await analyzeCompetitors();
     if (competitorResult) {
-      saveCompetitors(competitorResult);
+      await saveCompetitors(competitorResult);
     }
   }
 
@@ -90,8 +86,8 @@ export async function runFullScan({
   const elapsed = Date.now() - startTime;
   const totalListings = scanResults.reduce((sum, r) => sum + (r.pricing?.sample_size || 0), 0);
 
-  const prevStatus = getAgentStatus();
-  updateAgentStatus({
+  const prevStatus = await getAgentStatus() || {};
+  await updateAgentStatus({
     status: "ONLINE",
     lastScanTimestamp: new Date().toISOString(),
     lastScanDuration: elapsed,

@@ -8,21 +8,22 @@
  */
 
 import { fetchFxRate } from "@/lib/agents/valuation/fx-fetcher";
-
-const MIN_MARGIN_EUR = parseInt(process.env.MIN_MARGIN_EUR || "15000");
-const MIN_MARGIN_PCT = parseInt(process.env.MIN_MARGIN_PCT || "20");
+import { getSettings } from "@/lib/settings";
 
 /**
  * Generate a Target Vehicle Report from a market scan result.
  * @param {object} scan — output of market-scanner.scanModel()
+ * @param {object} [settings] — app settings (optional, fetched if not provided)
  * @returns {object} Formal TVR contract
  */
-export async function generateTVR(scan) {
+export async function generateTVR(scan, settings = null) {
   if (!scan || scan.error) return null;
+
+  if (!settings) settings = await getSettings();
 
   const fxData = await fetchFxRate();
   const median = scan.pricing?.median_eur || 0;
-  const minMargin = Math.max(MIN_MARGIN_EUR, median * (MIN_MARGIN_PCT / 100));
+  const minMargin = Math.max(settings.minMarginEur, median * (settings.minMarginPct / 100));
   const recommendedMaxLanded = scan.recommended_max_landed_cost_eur || Math.round(median - minMargin);
 
   // Determine preferred and avoid colors
@@ -72,7 +73,7 @@ export async function generateTVR(scan) {
     financialThresholds: {
       recommendedMaxLandedCostEur: recommendedMaxLanded,
       minimumAcceptableMarginEur: Math.round(minMargin),
-      minimumAcceptableMarginPct: MIN_MARGIN_PCT,
+      minimumAcceptableMarginPct: settings.minMarginPct,
       currentFxRate: fxData.rate,
       fxSource: fxData.source,
       fxLive: fxData.live,
@@ -87,7 +88,7 @@ export async function generateTVR(scan) {
     comparableListings: scan.comparable_listings || [],
 
     generatedAt: new Date().toISOString(),
-    validUntil: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(), // 12 hours
+    validUntil: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
 
     reasoningChain: `Based on ${scan.pricing?.sample_size || 0} active listings across ${Object.keys(scan.data_sources || {}).length} platforms. Median price €${median?.toLocaleString()} with ${scan.trend?.direction?.toLowerCase()} trend (${scan.trend?.change_30d_pct > 0 ? "+" : ""}${scan.trend?.change_30d_pct}% 30d). Velocity score ${scan.demand?.velocity_score}/100 (${scan.demand?.inquiry_rate} demand). Recommended max landed cost = median €${median?.toLocaleString()} - minimum margin €${Math.round(minMargin)?.toLocaleString()} = €${recommendedMaxLanded?.toLocaleString()}. FX at ¥${fxData.rate}/€ (${fxData.live ? "live" : "cached"}).`,
   };
@@ -95,11 +96,14 @@ export async function generateTVR(scan) {
 
 /**
  * Generate TVRs for all scanned models.
+ * @param {object[]} scanResults
+ * @param {object} [settings] — app settings (pass once, avoids re-fetching per TVR)
  */
-export async function generateAllTVRs(scanResults) {
+export async function generateAllTVRs(scanResults, settings = null) {
+  if (!settings) settings = await getSettings();
   const tvrs = [];
   for (const scan of scanResults) {
-    const tvr = await generateTVR(scan);
+    const tvr = await generateTVR(scan, settings);
     if (tvr) tvrs.push(tvr);
   }
   return tvrs;

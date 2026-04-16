@@ -6,19 +6,24 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { getSettings } from "@/lib/settings";
 import { scrapeMobileDe } from "@/lib/agents/valuation/scrapers/mobile-de";
 import { scrapeAutoScout24 } from "@/lib/agents/valuation/scrapers/autoscout24";
+import { scrapeElferspot } from "../scrapers/elferspot";
+import { scrapeClassicDriver } from "../scrapers/classicdriver";
+import { runActorAndGetItems } from "@/lib/agents/valuation/scrapers/apify-client";
+import { recordListingSnapshot, computeDemandVelocity } from "../demand-tracker";
 
 const ANALYSIS_SYSTEM = `You are a senior German luxury car market analyst. You are given REAL scraped listing data from mobile.de and AutoScout24. Analyze the data to produce accurate market intelligence. Only base your analysis on the actual data provided — do not invent listings or prices.`;
 
 const ANALYSIS_PROMPT = (model, stats, listings) => `Analyze this REAL market data for ${model.make} ${model.model} (${model.yearRange[0]}-${model.yearRange[1]}) in the German market.
 
 SCRAPED DATA (${listings.length} real listings found just now):
-- Median: €${stats.median.toLocaleString()}
-- Mean: €${stats.mean.toLocaleString()}
-- P25: €${stats.p25.toLocaleString()}
-- P75: €${stats.p75.toLocaleString()}
-- Min: €${stats.min.toLocaleString()} / Max: €${stats.max.toLocaleString()}
+- Median: €${finalStats.median.toLocaleString()}
+- Mean: €${finalStats.mean.toLocaleString()}
+- P25: €${finalStats.p25.toLocaleString()}
+- P75: €${finalStats.p75.toLocaleString()}
+- Min: €${finalStats.min.toLocaleString()} / Max: €${finalStats.max.toLocaleString()}
 
 ALL LISTINGS:
 ${listings.slice(0, 20).map((l, i) => `${i + 1}. ${l.title} — €${l.price.toLocaleString()} | ${l.mileage.toLocaleString()} km | ${l.year} | ${l.platform}`).join("\n")}
@@ -96,41 +101,72 @@ export async function scanModel(model) {
   const yearTo = model.yearRange[1];
   const maxMileage = 50000;
 
-  // Scrape both platforms in parallel
-  const [mobileResults, autoscoutResults] = await Promise.allSettled([
+  // Scrape ALL platforms in parallel (primary + specialist)
+  const isPorsche = /porsche/i.test(model.make);
+  const isExotic = /ferrari|lamborghini|aston martin|bentley|rolls|mclaren|maserati|bugatti/i.test(model.make);
+
+  const scrapePromises = [
     scrapeMobileDe({ make: model.make, model: model.model, yearFrom, yearTo, maxMileage }),
     scrapeAutoScout24({ make: model.make, model: model.model, yearFrom, yearTo, maxMileage }),
-  ]);
+  ];
 
-  const mobileListings = mobileResults.status === "fulfilled" ? mobileResults.value : [];
-  const autoscoutListings = autoscoutResults.status === "fulfilled" ? autoscoutResults.value : [];
+  // Add specialist platforms where relevant (per spec Section 6.1.2)
+  if (isPorsche) {
+    scrapePromises.push(scrapeElferspot({ model: model.model, yearFrom, yearTo, maxMileage }));
+  }
+  if (isExotic || isPorsche) {
+    scrapePromises.push(scrapeClassicDriver({ make: model.make, model: model.model, yearFrom, yearTo, maxMileage }));
+  }
 
-  console.log(`DE Market [${model.id}]: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}`);
+  const results = await Promise.allSettled(scrapePromises);
 
-  const allListings = deduplicate([...mobileListings, ...autoscoutListings]);
+  const mobileListings = results[0].status === "fulfilled" ? results[0].value : [];
+  const autoscoutListings = results[1].status === "fulfilled" ? results[1].value : [];
+  const specialistListings = results.slice(2)
+    .filter((r) => r.status === "fulfilled")
+    .flatMap((r) => r.value);
+
+  console.log(`DE Market [${model.id}]: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}, specialist=${specialistListings.length}`);
+
+  const allListings = deduplicate([...mobileListings, ...autoscoutListings, ...specialistListings]);
   const stats = calcStats(allListings);
 
+  // ── Fallback: Google web search when all scrapers fail ──
   if (!stats || allListings.length === 0) {
-    console.warn(`DE Market [${model.id}]: no listings found`);
+    console.warn(`DE Market [${model.id}]: no listings from scrapers — trying web search`);
+
+    const webListings = await searchWebForListings(model);
+    if (webListings.length > 0) {
+      allListings.push(...webListings);
+      Object.assign(stats || {}, calcStats(allListings));
+      console.log(`DE Market [${model.id}]: ${webListings.length} listings from web search`);
+    }
+  }
+
+  if (!calcStats(allListings) || allListings.length === 0) {
+    console.warn(`DE Market [${model.id}]: no listings found anywhere`);
     return {
       modelId: model.id,
       make: model.make,
       model: model.model,
       yearRange: model.yearRange,
       segment: model.segment,
-      error: "No listings found on mobile.de or AutoScout24",
+      error: "No listings found on any platform or web search",
       scannedAt: new Date().toISOString(),
     };
   }
 
+  // Recalculate stats if web search added listings
+  const finalStats = calcStats(allListings);
+
   // Build pricing from real data
   const pricing = {
-    median_eur: stats.median,
-    mean_eur: stats.mean,
-    p25_eur: stats.p25,
-    p75_eur: stats.p75,
-    min_eur: stats.min,
-    max_eur: stats.max,
+    median_eur: finalStats.median,
+    mean_eur: finalStats.mean,
+    p25_eur: finalStats.p25,
+    p75_eur: finalStats.p75,
+    min_eur: finalStats.min,
+    max_eur: finalStats.max,
     sample_size: allListings.length,
   };
 
@@ -139,7 +175,7 @@ export async function scanModel(model) {
   if (isAIAvailable()) {
     try {
       aiAnalysis = await callClaude({
-        prompt: ANALYSIS_PROMPT(model, stats, allListings),
+        prompt: ANALYSIS_PROMPT(model, finalStats, allListings),
         system: ANALYSIS_SYSTEM,
         jsonMode: true,
       });
@@ -166,6 +202,10 @@ export async function scanModel(model) {
   const dataSources = {
     "mobile.de": mobileListings.length,
     "AutoScout24": autoscoutListings.length,
+    ...(specialistListings.length > 0 && {
+      ...(isPorsche && { "elferspot.com": specialistListings.filter((l) => l.platform === "elferspot.com").length }),
+      ...((isExotic || isPorsche) && { "classicdriver.com": specialistListings.filter((l) => l.platform === "classicdriver.com").length }),
+    }),
   };
 
   // Confidence based on real data volume
@@ -175,9 +215,9 @@ export async function scanModel(model) {
   else if (allListings.length >= 5) confidence = 0.70;
   else if (allListings.length >= 2) confidence = 0.55;
 
-  const minMarginEur = parseInt(process.env.MIN_MARGIN_EUR || "15000");
-  const minMarginPct = parseInt(process.env.MIN_MARGIN_PCT || "20");
-  const minMargin = Math.max(minMarginEur, stats.median * (minMarginPct / 100));
+  // Use settings from DB (not hardcoded env vars)
+  const settings = await getSettings();
+  const minMargin = Math.max(settings.minMarginEur, finalStats.median * (settings.minMarginPct / 100));
 
   return {
     modelId: model.id,
@@ -197,22 +237,46 @@ export async function scanModel(model) {
       seasonal_notes: "Insufficient data for trend analysis",
     },
 
-    demand: aiAnalysis?.demand || {
-      velocity_score: allListings.length >= 15 ? 70 : allListings.length >= 5 ? 50 : 30,
-      avg_days_on_market: allListings.length >= 10 ? 28 : 45,
-      inquiry_rate: allListings.length >= 15 ? "HIGH" : "MODERATE",
-      price_resilience: "MODERATE",
-      sales_last_30d: null,
-      new_listings_last_7d: null,
-    },
+    demand: await (async () => {
+      // Record this scan's listings for velocity tracking
+      try { await recordListingSnapshot(model.id, allListings); } catch (e) { console.warn("Demand tracker record failed:", e.message); }
+
+      // Compute REAL demand velocity from tracked data
+      try {
+        const realVelocity = await computeDemandVelocity(model.id);
+        if (realVelocity.velocityScore !== null) {
+          return {
+            velocity_score: realVelocity.velocityScore,
+            avg_days_on_market: realVelocity.avgDaysOnMarket,
+            inquiry_rate: realVelocity.velocityScore >= 70 ? "HIGH" : realVelocity.velocityScore >= 40 ? "MODERATE" : "LOW",
+            price_resilience: realVelocity.priceResilience >= 70 ? "STRONG" : realVelocity.priceResilience >= 40 ? "MODERATE" : "WEAK",
+            sales_last_30d: realVelocity.turnoverRate,
+            new_listings_last_7d: realVelocity.supplyRate,
+            data_source: "real_tracking",
+            data_points: realVelocity.dataPoints,
+          };
+        }
+      } catch (e) { console.warn("Demand velocity compute failed:", e.message); }
+
+      // Fallback to AI-estimated or heuristic demand
+      return aiAnalysis?.demand || {
+        velocity_score: allListings.length >= 15 ? 70 : allListings.length >= 5 ? 50 : 30,
+        avg_days_on_market: allListings.length >= 10 ? 28 : 45,
+        inquiry_rate: allListings.length >= 15 ? "HIGH" : "MODERATE",
+        price_resilience: "MODERATE",
+        sales_last_30d: null,
+        new_listings_last_7d: null,
+        data_source: "estimated",
+      };
+    })(),
 
     spec_premiums: aiAnalysis?.spec_premiums || { colors: {}, options: {}, avoid_specs: [] },
 
     comparable_listings: comparableListings,
     data_sources: dataSources,
 
-    market_notes: aiAnalysis?.market_notes || `${allListings.length} real listings found. Median price €${stats.median.toLocaleString()}.`,
-    recommended_max_landed_cost_eur: Math.round(stats.median - minMargin),
+    market_notes: aiAnalysis?.market_notes || `${allListings.length} real listings found. Median price €${finalStats.median.toLocaleString()}.`,
+    recommended_max_landed_cost_eur: Math.round(finalStats.median - minMargin),
     minimum_acceptable_margin_eur: Math.round(minMargin),
 
     confidence,
@@ -255,4 +319,75 @@ export async function scanAllModels(models, onProgress) {
   }
 
   return results;
+}
+
+// ══════════════════════════════════════════
+// WEB SEARCH FALLBACK — when all scrapers fail
+// ══════════════════════════════════════════
+
+async function searchWebForListings(model) {
+  if (!process.env.APIFY_API_KEY) return [];
+
+  const listings = [];
+  const queries = [
+    `${model.make} ${model.model} kaufen Deutschland preis € ${model.yearRange[0]}-${model.yearRange[1]}`,
+    `${model.make} ${model.model} mobile.de autoscout24 ${model.yearRange[0]}`,
+  ];
+
+  for (const query of queries) {
+    try {
+      console.log(`DE Market [${model.id}]: web search — "${query}"`);
+
+      const items = await runActorAndGetItems("apify~google-search-scraper", {
+        queries: query,
+        maxPagesPerQuery: 1,
+        resultsPerPage: 10,
+        languageCode: "de",
+        countryCode: "de",
+      });
+
+      const results = items?.[0]?.organicResults || items.flatMap((i) => i.organicResults || [i]);
+
+      for (const r of results) {
+        const text = `${r.title || ""} ${r.description || r.snippet || ""}`;
+        const url = r.url || r.link || "";
+
+        // Extract Euro prices
+        const pricePatterns = [/€\s?([\d.]+)/g, /([\d.]+)\s?€/g, /(\d{2,3}\.\d{3})(?!\s*km)/g];
+        for (const pattern of pricePatterns) {
+          let match;
+          while ((match = pattern.exec(text)) !== null) {
+            const price = parseInt(match[1].replace(/\./g, ""));
+            if (price >= 20000 && price <= 1500000) {
+              const kmMatch = text.match(/([\d.]+)\s*km/);
+              const yearMatch = text.match(/\b(20[012]\d)\b/);
+              listings.push({
+                title: (r.title || "").substring(0, 120),
+                price,
+                mileage: kmMatch ? parseInt(kmMatch[1].replace(/\./g, "")) : 0,
+                year: yearMatch ? parseInt(yearMatch[1]) : 0,
+                dealer: null,
+                platform: url.includes("mobile.de") ? "mobile.de" : url.includes("autoscout24") ? "autoscout24.de" : "web",
+                url,
+              });
+              break;
+            }
+          }
+        }
+      }
+
+      if (listings.length >= 5) break;
+    } catch (err) {
+      console.log(`DE Market [${model.id}]: web search failed — ${err.message}`);
+    }
+  }
+
+  // Deduplicate
+  const seen = new Set();
+  return listings.filter((l) => {
+    const key = l.url || `${l.price}-${l.title}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

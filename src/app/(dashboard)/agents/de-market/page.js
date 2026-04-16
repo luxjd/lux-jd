@@ -235,6 +235,10 @@ export default function DeMarketAgentPage() {
             const confidence = sr?.confidence || report?.confidence || m.confidence;
             const sampleSize = sr?.sampleSize || report?.marketValue?.sampleSize;
             const hasError = sr?.error;
+            // Detect data source: web search vs scraped vs no data
+            const dataSources = sr?.dataSources || report?.dataSources || {};
+            const totalFromScrapers = (dataSources["mobile.de"] || 0) + (dataSources["AutoScout24"] || 0) + (dataSources["elferspot.com"] || 0) + (dataSources["classicdriver.com"] || 0);
+            const isWebSearch = totalFromScrapers === 0 && hasData && !hasError;
 
             return (
               <Link
@@ -257,13 +261,17 @@ export default function DeMarketAgentPage() {
                     <span className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-bold flex items-center gap-1">
                       <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span> SCANNING
                     </span>
-                  ) : sr && !sr.error ? (
+                  ) : sr && !sr.error && !isWebSearch ? (
                     <span className="px-2 py-0.5 rounded-full bg-emerald-400/15 text-emerald-400 text-[10px] font-bold flex items-center gap-1">
                       <span className="material-symbols-outlined text-xs">check</span> DONE
                     </span>
+                  ) : isWebSearch ? (
+                    <span className="px-2 py-0.5 rounded-full bg-blue-400/15 text-blue-400 text-[10px] font-bold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-xs">travel_explore</span> WEB SEARCH
+                    </span>
                   ) : hasError ? (
                     <span className="px-2 py-0.5 rounded-full bg-red-400/15 text-red-400 text-[10px] font-bold">NO LISTINGS</span>
-                  ) : hasData ? (
+                  ) : hasData && !isWebSearch ? (
                     <span className="px-2 py-0.5 rounded-full bg-emerald-400/15 text-emerald-400 text-[10px] font-bold">LIVE</span>
                   ) : isQueued ? (
                     <span className="px-2 py-0.5 rounded-full bg-slate-400/10 text-slate-400 text-[10px] font-bold">QUEUED</span>
@@ -282,12 +290,17 @@ export default function DeMarketAgentPage() {
                   <div className="mb-3">
                     <p className="font-headline text-2xl font-bold">{formatEur(median)}</p>
                     <span className="text-xs text-on-surface-variant">
-                      {report?.marketValue ? `${formatEur(report.marketValue.p25Eur)} - ${formatEur(report.marketValue.p75Eur)}` :
-                       sampleSize ? `${sampleSize} listings` : ""}
+                      {isWebSearch ? (
+                        <span className="text-blue-400">via web search</span>
+                      ) : report?.marketValue ? (
+                        `${formatEur(report.marketValue.p25Eur)} - ${formatEur(report.marketValue.p75Eur)}`
+                      ) : sampleSize ? (
+                        `${sampleSize} listings`
+                      ) : ""}
                     </span>
                   </div>
                 ) : hasError ? (
-                  <p className="text-red-400/70 text-sm mb-3">No listings found on mobile.de / AutoScout24</p>
+                  <p className="text-red-400/70 text-sm mb-3">No listings found on any platform</p>
                 ) : (
                   <p className="text-on-surface-variant text-sm mb-3">{isQueued ? "Waiting in queue..." : "Run a scan to get pricing data"}</p>
                 )}

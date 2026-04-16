@@ -86,18 +86,35 @@ export default function ModelDetailPage({ params }) {
             </div>
           </div>
 
-          {priceHistory.length > 0 && (
-            <>
-              <h4 className="text-xs uppercase text-on-surface-variant tracking-wider mb-3">Price History</h4>
-              <div className="flex items-end gap-[2px] h-32">
-                {priceHistory.slice(-30).map((d, i) => (
-                  <div key={i} className="flex-1 relative h-full">
-                    <div className="absolute w-full bg-primary/30 rounded-sm" style={{ bottom: "0", height: `${Math.max(5, Math.random() * 100)}%` }} />
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+          {priceHistory.length > 0 && (() => {
+            const prices = priceHistory.slice(-30).map((d) => d.median || d.price || 0).filter(Boolean);
+            if (prices.length === 0) return null;
+            const minP = Math.min(...prices);
+            const maxP = Math.max(...prices);
+            const range = maxP - minP || 1;
+            return (
+              <>
+                <h4 className="text-xs uppercase text-on-surface-variant tracking-wider mb-3">Price History (last {prices.length} scans)</h4>
+                <div className="flex items-end gap-[2px] h-32">
+                  {prices.map((price, i) => {
+                    const pct = ((price - minP) / range) * 80 + 15; // 15-95% height
+                    return (
+                      <div key={i} className="flex-1 relative h-full group">
+                        <div className="absolute w-full bg-primary/30 hover:bg-primary/60 rounded-sm transition-colors" style={{ bottom: "0", height: `${pct}%` }} />
+                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 hidden group-hover:block bg-surface-container border border-outline-variant/20 rounded px-1.5 py-0.5 text-[9px] font-mono whitespace-nowrap z-10">
+                          €{price.toLocaleString()}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-[9px] text-on-surface-variant">€{minP.toLocaleString()}</span>
+                  <span className="text-[9px] text-on-surface-variant">€{maxP.toLocaleString()}</span>
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
