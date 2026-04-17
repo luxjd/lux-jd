@@ -123,21 +123,6 @@ export async function POST(request) {
     }
   }
 
-  // Save to PostgreSQL
-  try {
-    await db.decisions.create({
-      vehicleName,
-      opportunityId: opportunityId || opp.id || null,
-      decision,
-      decisionReason,
-      steps: [],
-      financials: {},
-      risk: opp.risk || {},
-      portfolio: {},
-      flagReasons: [],
-    });
-  } catch (e) { console.warn("DB save override failed:", e.message); }
-
   // Audit log
   try {
     await db.auditLog.create({

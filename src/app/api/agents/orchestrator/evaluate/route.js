@@ -86,22 +86,6 @@ export async function POST(request) {
     pipelineResult = { vehicleId, status: "SOURCED" };
   }
 
-  // Save to PostgreSQL
-  try {
-    await db.decisions.create({
-      vehicleName: evaluation.vehicleName,
-      opportunityId: body.opportunity?.id,
-      decision: evaluation.decision,
-      decisionReason: evaluation.decisionReason,
-      steps: evaluation.steps,
-      financials: evaluation.financials,
-      risk: evaluation.risk,
-      portfolio: evaluation.portfolio,
-      brief: brief || undefined,
-      flagReasons: evaluation.flagReasons || [],
-    });
-  } catch (e) { console.warn("DB save decision failed:", e.message); }
-
   // Audit log — compliance requirement
   try {
     await db.auditLog.create({

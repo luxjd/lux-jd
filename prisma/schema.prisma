@@ -401,5 +401,7 @@ enum BuyerType {
 enum DecisionType {
   AUTO_APPROVE
   HUMAN_REVIEW
+  HUMAN_APPROVED
+  HUMAN_REJECTED
   REJECT
 }

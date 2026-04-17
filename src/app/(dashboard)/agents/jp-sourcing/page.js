@@ -33,16 +33,33 @@ export default function JpSourcingPage() {
       setOpportunities(oppsRes.opportunities || []);
       setScanHistory(oppsRes.scanHistory || []);
 
-      // Pre-populate approve results from existing orchestrator decisions
+      // Sync state with orchestrator decisions (source of truth from DB)
       const decisions = orchRes.recentDecisions || [];
       if (decisions.length > 0) {
-        const existing = {};
+        // Deduplicate: keep latest decision per opportunityId
+        const latestByOpp = {};
         for (const d of decisions) {
           if (d.opportunityId) {
-            existing[d.opportunityId] = d;
+            // decisions are newest-first, so first seen = latest
+            if (!latestByOpp[d.opportunityId]) {
+              latestByOpp[d.opportunityId] = d;
+            }
           }
         }
-        setApproveResult((prev) => ({ ...existing, ...prev }));
+
+        setApproveResult((prev) => {
+          const next = { ...prev };
+          for (const [oppId, d] of Object.entries(latestByOpp)) {
+            if (d.decision === "REJECT" || d.decision === "HUMAN_REJECTED") {
+              // Rejected = reset to "Approve Bid" (allow re-evaluation)
+              delete next[oppId];
+            } else {
+              // AUTO_APPROVE, HUMAN_APPROVED, HUMAN_REVIEW = keep in state
+              next[oppId] = d;
+            }
+          }
+          return next;
+        });
       }
 
       setLoading(false);
@@ -53,6 +70,15 @@ export default function JpSourcingPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Re-sync when user tabs back to this page (picks up Orchestrator changes)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") fetchData();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [fetchData]);
+
   const handleApproveBid = async (opp) => {
     setApproving(opp.id);
     try {
@@ -62,18 +88,36 @@ export default function JpSourcingPage() {
         body: JSON.stringify({ opportunity: opp }),
       });
       const data = await res.json();
-      setApproveResult((prev) => ({ ...prev, [opp.id]: data }));
+      console.log("Orchestrator evaluate response:", data.decision, data);
+      if (data.decision) {
+        setApproveResult((prev) => ({ ...prev, [opp.id]: data }));
+      } else {
+        // API returned no decision — treat as error
+        setApproveResult((prev) => ({ ...prev, [opp.id]: { decision: "HUMAN_REVIEW", error: "No decision returned", flagReasons: ["Evaluation returned no decision — review manually"] } }));
+      }
     } catch (err) {
-      setApproveResult((prev) => ({ ...prev, [opp.id]: { error: err.message } }));
+      setApproveResult((prev) => ({ ...prev, [opp.id]: { decision: "HUMAN_REVIEW", error: err.message, flagReasons: [err.message] } }));
     } finally {
       setApproving(null);
     }
   };
 
   const handleHumanOverride = async (opp, action) => {
-    setApproving(opp.id);
+    // Optimistic update — change UI immediately
+    if (action === "APPROVE") {
+      setApproveResult((prev) => ({ ...prev, [opp.id]: { decision: "HUMAN_APPROVED" } }));
+    } else {
+      // Reject = clear from state → resets to "Approve Bid"
+      setApproveResult((prev) => {
+        const next = { ...prev };
+        delete next[opp.id];
+        return next;
+      });
+    }
+
+    // Fire API call in background (don't block UI)
     try {
-      const res = await fetch("/api/agents/orchestrator/override", {
+      await fetch("/api/agents/orchestrator/override", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -83,25 +127,8 @@ export default function JpSourcingPage() {
           action,
         }),
       });
-
-      if (!res.ok) {
-        // Even if API failed, show the intended action so user knows it was attempted
-        setApproveResult((prev) => ({
-          ...prev,
-          [opp.id]: { decision: action === "APPROVE" ? "HUMAN_APPROVED" : "HUMAN_REJECTED", error: `API error: ${res.status}` },
-        }));
-        return;
-      }
-
-      const data = await res.json();
-      setApproveResult((prev) => ({ ...prev, [opp.id]: data }));
     } catch (err) {
-      setApproveResult((prev) => ({
-        ...prev,
-        [opp.id]: { decision: action === "APPROVE" ? "HUMAN_APPROVED" : "HUMAN_REJECTED", error: err.message },
-      }));
-    } finally {
-      setApproving(null);
+      console.warn("Override API failed:", err.message);
     }
   };
 
@@ -266,56 +293,56 @@ export default function JpSourcingPage() {
                       {da?.suggested_bid_jpy && <span className="ml-2">· AI suggests: <span className="font-bold text-primary">¥{da.suggested_bid_jpy.toLocaleString()}</span></span>}
                     </p>
                     <div className="flex gap-2">
-                      {approveResult[opp.id] ? (
-                        approveResult[opp.id].decision === "HUMAN_REVIEW" ? (
-                          /* HUMAN_REVIEW: show Approve / Reject action buttons */
-                          <div className="flex items-center gap-1.5">
-                            <span className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-400/15 text-amber-400">
-                              <span className="material-symbols-outlined text-xs">pending</span> Review Required
+                      {(() => {
+                        const res = approveResult[opp.id];
+                        const d = res?.decision;
+                        const isLoading = approving === opp.id;
+
+                        // State: Sent to Pipeline (final)
+                        if (d === "AUTO_APPROVE" || d === "HUMAN_APPROVED") {
+                          return (
+                            <span className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-400/15 text-emerald-400">
+                              <span className="material-symbols-outlined text-sm">check_circle</span> Sent to Pipeline
                             </span>
-                            <button
-                              onClick={() => handleHumanOverride(opp, "APPROVE")}
-                              disabled={approving === opp.id}
-                              className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-500 text-white rounded-lg text-[10px] font-bold hover:shadow-[0_0_10px_rgba(52,211,153,0.3)] transition-all disabled:opacity-50">
-                              {approving === opp.id ? <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span> : <span className="material-symbols-outlined text-xs">check</span>}
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => handleHumanOverride(opp, "REJECT")}
-                              disabled={approving === opp.id}
-                              className="flex items-center gap-1 px-2.5 py-1.5 bg-red-500/80 text-white rounded-lg text-[10px] font-bold hover:shadow-[0_0_10px_rgba(248,113,113,0.3)] transition-all disabled:opacity-50">
-                              <span className="material-symbols-outlined text-xs">close</span>
-                              Reject
-                            </button>
-                          </div>
-                        ) : (
-                        <span className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold ${
-                          approveResult[opp.id].decision === "AUTO_APPROVE" || approveResult[opp.id].decision === "HUMAN_APPROVED" ? "bg-emerald-400/15 text-emerald-400" :
-                          approveResult[opp.id].error ? "bg-red-400/15 text-red-400" :
-                          "bg-red-400/15 text-red-400"
-                        }`}>
-                          <span className="material-symbols-outlined text-sm">
-                            {approveResult[opp.id].decision === "AUTO_APPROVE" || approveResult[opp.id].decision === "HUMAN_APPROVED" ? "check_circle" : "cancel"}
-                          </span>
-                          {approveResult[opp.id].error ? "Error" :
-                           approveResult[opp.id].decision === "AUTO_APPROVE" ? "Approved → Pipeline" :
-                           approveResult[opp.id].decision === "HUMAN_APPROVED" ? "Approved → Pipeline" :
-                           approveResult[opp.id].decision === "HUMAN_REJECTED" ? "Rejected by Operator" :
-                           approveResult[opp.id].decision || "Rejected"}
-                        </span>
-                        )
-                      ) : (
-                        <button
-                          onClick={() => handleApproveBid(opp)}
-                          disabled={approving === opp.id}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:shadow-[0_0_10px_rgba(52,211,153,0.3)] transition-all disabled:opacity-50">
-                          {approving === opp.id ? (
-                            <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Evaluating...</>
-                          ) : (
-                            <><span className="material-symbols-outlined text-sm">gavel</span> Approve Bid</>
-                          )}
-                        </button>
-                      )}
+                          );
+                        }
+
+                        // State: Needs Review → show "Send to Pipeline" + "Reject"
+                        if (d === "HUMAN_REVIEW") {
+                          return (
+                            <>
+                              <button
+                                onClick={() => handleHumanOverride(opp, "APPROVE")}
+                                disabled={isLoading}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:shadow-[0_0_10px_rgba(52,211,153,0.3)] transition-all disabled:opacity-50">
+                                {isLoading ? <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> : <span className="material-symbols-outlined text-sm">send</span>}
+                                Send to Pipeline
+                              </button>
+                              <button
+                                onClick={() => handleHumanOverride(opp, "REJECT")}
+                                disabled={isLoading}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-red-500/80 text-white rounded-lg text-xs font-bold hover:shadow-[0_0_10px_rgba(248,113,113,0.3)] transition-all disabled:opacity-50">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                                Reject
+                              </button>
+                            </>
+                          );
+                        }
+
+                        // State: No decision yet → show "Approve Bid"
+                        return (
+                          <button
+                            onClick={() => handleApproveBid(opp)}
+                            disabled={isLoading}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:shadow-[0_0_10px_rgba(52,211,153,0.3)] transition-all disabled:opacity-50">
+                            {isLoading ? (
+                              <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Evaluating...</>
+                            ) : (
+                              <><span className="material-symbols-outlined text-sm">gavel</span> Approve Bid</>
+                            )}
+                          </button>
+                        );
+                      })()}
                       <button
                         onClick={() => toggleDetails(opp.id)}
                         className={`flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs font-bold transition-all ${
@@ -519,6 +546,7 @@ export default function JpSourcingPage() {
               </div>
             </details>
           )}
+
         </div>
       )}
 

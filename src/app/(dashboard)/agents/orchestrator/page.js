@@ -4,10 +4,8 @@ import { getLatestOpportunities } from "@/lib/agents/jp-sourcing/storage";
 import { checkAllAgents } from "@/lib/agents/orchestrator/ai/agent-monitor";
 import { loadPortfolioState } from "@/lib/agents/orchestrator/ai/portfolio-manager";
 import EvaluateButton from "./_components/EvaluateButton";
-import OverrideButtons from "./_components/OverrideButtons";
+import DecisionHistory from "./_components/DecisionHistory";
 
-const DECISION_STYLES = { AUTO_APPROVE: "bg-emerald-400/15 text-emerald-400", HUMAN_APPROVED: "bg-emerald-400/15 text-emerald-400", HUMAN_REVIEW: "bg-amber-400/15 text-amber-400", REJECT: "bg-slate-400/10 text-slate-400", HUMAN_REJECTED: "bg-red-400/15 text-red-400" };
-const STEP_STYLES = { PASS: "text-emerald-400", FAIL: "text-red-400", FLAG: "text-amber-400" };
 const HEALTH_STYLES = { HEALTHY: "bg-emerald-400", DEGRADED: "bg-amber-400", STALE: "bg-amber-400", DOWN: "bg-red-400", IDLE: "bg-slate-400" };
 
 export default async function OrchestratorPage() {
@@ -17,13 +15,28 @@ export default async function OrchestratorPage() {
   const agentHealth = await checkAllAgents();
   const portfolio = await loadPortfolioState();
 
-  // Get actionable opportunities (BUY/STRONG_BUY that haven't been evaluated)
+  // Deduplicate decisions: keep latest per vehicle (newest first from DB)
+  const seenIds = new Set();
+  const dedupedDecisions = decisions.filter((d) => {
+    const key = d.opportunityId || d.vehicleName || d.id;
+    if (seenIds.has(key)) return false;
+    seenIds.add(key);
+    return true;
+  });
+
+  // Counts from deduped decisions
+  const approvedCount = dedupedDecisions.filter((d) => d.decision === "AUTO_APPROVE" || d.decision === "HUMAN_APPROVED").length;
+  const pendingCount = dedupedDecisions.filter((d) => d.decision === "HUMAN_REVIEW").length;
+  const rejectedCount = dedupedDecisions.filter((d) => d.decision === "REJECT" || d.decision === "HUMAN_REJECTED").length;
+
+  // Get actionable opportunities (BUY/STRONG_BUY that haven't been evaluated yet)
   const oppData = await getLatestOpportunities();
+  const decidedIds = new Set(dedupedDecisions.map((d) => d.opportunityId).filter(Boolean));
   const opportunities = (oppData?.opportunities || []).filter((o) =>
-    o.recommendation === "STRONG_BUY" || o.recommendation === "BUY"
+    (o.recommendation === "STRONG_BUY" || o.recommendation === "BUY") && !decidedIds.has(o.id)
   );
 
-  const fmt = (n) => n != null && !isNaN(n) ? `€${n.toLocaleString()}` : "—";
+  const fmt = (n) => n != null && !isNaN(n) ? `€${n.toLocaleString("de-DE")}` : "—";
 
   return (
     <div className="space-y-6">
@@ -58,16 +71,16 @@ export default async function OrchestratorPage() {
         {/* Key metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="px-3 py-2 rounded-lg bg-emerald-400/5 border border-emerald-400/10 text-center">
-            <p className="font-headline font-bold text-lg text-emerald-400">{decisions.filter((d) => d.decision === "AUTO_APPROVE").length}</p>
+            <p className="font-headline font-bold text-lg text-emerald-400">{approvedCount}</p>
             <p className="text-[9px] text-emerald-400 uppercase">Approved</p>
           </div>
           <div className="px-3 py-2 rounded-lg bg-amber-400/5 border border-amber-400/10 text-center">
-            <p className="font-headline font-bold text-lg text-amber-400">{decisions.filter((d) => d.decision === "HUMAN_REVIEW").length}</p>
-            <p className="text-[9px] text-amber-400 uppercase">Reviewed</p>
+            <p className="font-headline font-bold text-lg text-amber-400">{pendingCount}</p>
+            <p className="text-[9px] text-amber-400 uppercase">Pending</p>
           </div>
-          <div className="px-3 py-2 rounded-lg bg-slate-400/5 border border-slate-400/10 text-center">
-            <p className="font-headline font-bold text-lg text-slate-400">{decisions.filter((d) => d.decision === "REJECT").length}</p>
-            <p className="text-[9px] text-slate-400 uppercase">Rejected</p>
+          <div className="px-3 py-2 rounded-lg bg-red-400/5 border border-red-400/10 text-center">
+            <p className="font-headline font-bold text-lg text-red-400">{rejectedCount}</p>
+            <p className="text-[9px] text-red-400 uppercase">Rejected</p>
           </div>
           <div className="px-3 py-2 rounded-lg bg-primary/5 border border-primary/10 text-center">
             <p className="font-headline font-bold text-lg text-primary">{portfolio.totalVehicles}</p>
@@ -163,76 +176,9 @@ export default async function OrchestratorPage() {
       </div>
 
       {/* Decision History */}
-      {decisions.length > 0 && (
-        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-6">
-          <h3 className="font-headline font-bold text-lg mb-4">Decision History ({decisions.length})</h3>
-          <div className="space-y-3">
-            {decisions.slice(-10).reverse().map((d, i) => (
-              <div key={i} className="bg-surface-container-high/30 rounded-xl p-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="font-headline font-bold text-sm">{d.vehicleName}</h4>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${DECISION_STYLES[d.decision]}`}>{d.decision?.replace("_", " ")}</span>
-                  </div>
-                  <span className="text-[10px] text-on-surface-variant">{new Date(d.evaluatedAt).toLocaleString()}</span>
-                </div>
-
-                {/* Decision step summary */}
-                <div className="flex gap-1 mb-2">
-                  {d.steps?.map((s) => (
-                    <div key={s.step} className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold ${s.result === "PASS" ? "bg-emerald-400/15 text-emerald-400" : s.result === "FAIL" ? "bg-red-400/15 text-red-400" : "bg-amber-400/15 text-amber-400"}`} title={`Step ${s.step}: ${s.name} — ${s.result}`}>
-                      {s.step}
-                    </div>
-                  ))}
-                  <span className="text-[10px] text-on-surface-variant ml-2 self-center">
-                    {d.summary?.passCount}✓ {d.summary?.failCount}✗ {d.summary?.flagCount}⚠
-                  </span>
-                </div>
-
-                <p className="text-xs text-on-surface-variant">{d.decisionReason?.substring(0, 150)}{d.decisionReason?.length > 150 ? "..." : ""}</p>
-
-                {d.financials && (
-                  <div className="flex flex-wrap gap-4 mt-2 text-xs">
-                    <span>Margin: <strong className={d.financials.margin >= 0 ? "text-emerald-400" : "text-red-400"}>{fmt(d.financials.margin)} ({d.financials.marginPct}%)</strong></span>
-                    <span>Risk: <strong>{d.risk?.compositeScore}/3.0</strong></span>
-                    {d.financials.maxBidJpy && <span>Max bid: <strong className="text-secondary">¥{d.financials.maxBidJpy.toLocaleString()}</strong></span>}
-                  </div>
-                )}
-
-                {/* Decision Brief preview */}
-                {d.brief && (
-                  <div className="mt-3 p-3 rounded-lg bg-primary/5 border border-primary/10">
-                    <p className="text-xs font-bold text-primary mb-1">{d.brief.headline}</p>
-                    <p className="text-xs text-on-surface-variant">{d.brief.executive_summary?.substring(0, 200)}</p>
-                    {d.brief.bull_case && (
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <div><p className="text-[9px] uppercase text-emerald-400 font-bold">Bull Case</p><p className="text-[10px] text-on-surface-variant">{d.brief.bull_case?.substring(0, 120)}</p></div>
-                        <div><p className="text-[9px] uppercase text-red-400 font-bold">Bear Case</p><p className="text-[10px] text-on-surface-variant">{d.brief.bear_case?.substring(0, 120)}</p></div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Flag reasons for HUMAN_REVIEW */}
-                {d.decision === "HUMAN_REVIEW" && d.flagReasons?.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {d.flagReasons.map((r, j) => (
-                      <span key={j} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400 text-[10px]">
-                        <span className="material-symbols-outlined text-[10px]">warning</span> {r}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Override buttons for HUMAN_REVIEW decisions */}
-                {d.decision === "HUMAN_REVIEW" && <OverrideButtons decision={d} />}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {decisions.length === 0 && (
+      {decisions.length > 0 ? (
+        <DecisionHistory decisions={decisions} />
+      ) : (
         <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-12 text-center">
           <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">gavel</span>
           <h3 className="font-headline font-bold text-lg mb-2">No Decisions Yet</h3>

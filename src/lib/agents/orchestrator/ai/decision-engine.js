@@ -301,6 +301,7 @@ export function evaluateOpportunity(opportunity, portfolio) {
     decisionReason,
     vehicleName,
     vehicleId: opportunity.id,
+    opportunityId: opportunity.id,
     steps,
     summary: {
       passCount: steps.filter((s) => s.result === "PASS").length,
