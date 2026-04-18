@@ -31,7 +31,25 @@ export default function Topbar() {
   const [criticalCount, setCriticalCount] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
   const [fxRate, setFxRate] = useState(null);
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [jpy, setJpy] = useState("1000000");
+  const [eur, setEur] = useState("");
+  const [swapped, setSwapped] = useState(false);
   const menuRef = useRef(null);
+  const calcRef = useRef(null);
+
+  const onJpyChange = (v) => {
+    setJpy(v);
+    if (!fxRate) return;
+    const n = parseFloat(String(v).replace(/[,\s]/g, ""));
+    setEur(Number.isFinite(n) ? (n / fxRate).toFixed(2) : "");
+  };
+  const onEurChange = (v) => {
+    setEur(v);
+    if (!fxRate) return;
+    const n = parseFloat(String(v).replace(/[,\s]/g, ""));
+    setJpy(Number.isFinite(n) ? String(Math.round(n * fxRate)) : "");
+  };
 
   useEffect(() => {
     fetch("/api/notifications")
@@ -73,8 +91,32 @@ export default function Topbar() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [profileOpen]);
 
+  // Close calculator on outside click
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (calcRef.current && !calcRef.current.contains(e.target)) setCalcOpen(false);
+    };
+    const handleKey = (e) => { if (e.key === "Escape") setCalcOpen(false); };
+    if (calcOpen) {
+      document.addEventListener("mousedown", handleClick);
+      document.addEventListener("keydown", handleKey);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [calcOpen]);
+
+  // Seed EUR from JPY once the live rate arrives
+  useEffect(() => {
+    if (!fxRate || eur) return;
+    const n = parseFloat(String(jpy).replace(/[,\s]/g, ""));
+    if (Number.isFinite(n)) setEur((n / fxRate).toFixed(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fxRate]);
+
   // Close menu on navigation
-  useEffect(() => { setProfileOpen(false); }, [pathname]);
+  useEffect(() => { setProfileOpen(false); setCalcOpen(false); }, [pathname]);
 
   return (
     <header className="h-14 md:h-16 shrink-0 flex items-center justify-between px-4 pl-14 lg:pl-4 sm:px-6 border-b border-outline-variant/10 bg-surface/80 backdrop-blur-xl">
@@ -93,6 +135,89 @@ export default function Topbar() {
           <span className={`text-xs font-mono font-bold ${fxRate ? "text-secondary" : "text-on-surface-variant"}`}>
             {fxRate ? fxRate.toFixed(2) : "—"}
           </span>
+        </div>
+
+        {/* Currency Calculator */}
+        <div className="relative" ref={calcRef}>
+          <button
+            type="button"
+            onClick={() => setCalcOpen((v) => !v)}
+            aria-label="Currency calculator"
+            className="cursor-pointer text-on-surface-variant hover:text-on-surface transition-colors p-1.5 sm:p-2 rounded-xl hover:bg-surface-container-high/50"
+          >
+            <span className="material-symbols-outlined text-lg sm:text-xl">calculate</span>
+          </button>
+          {calcOpen && (
+            <div className="absolute right-0 top-full mt-2 w-80 rounded-2xl bg-surface-container border border-outline-variant/15 shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant/10">
+                <p className="text-sm font-bold text-on-surface flex items-center gap-2">
+                  <span className="material-symbols-outlined text-secondary text-base">currency_exchange</span>
+                  Currency Converter
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCalcOpen(false)}
+                  className="cursor-pointer text-on-surface-variant hover:text-on-surface transition-colors"
+                  aria-label="Close"
+                >
+                  <span className="material-symbols-outlined text-base">close</span>
+                </button>
+              </div>
+              <div className="p-4 flex flex-col gap-3">
+                <label className="block" style={{ order: swapped ? 3 : 1 }}>
+                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">Japanese Yen</span>
+                  <div className="flex items-center mt-1 rounded-xl bg-surface-container-high border border-outline-variant/15 focus-within:border-secondary/50 transition-colors">
+                    <span className="pl-3 text-on-surface-variant font-mono">¥</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={jpy}
+                      onChange={(e) => onJpyChange(e.target.value)}
+                      disabled={!fxRate}
+                      placeholder="0"
+                      className="flex-1 bg-transparent px-2 py-2.5 text-on-surface outline-none font-mono disabled:opacity-40"
+                    />
+                  </div>
+                </label>
+                <div className="flex justify-center" style={{ order: 2 }}>
+                  <button
+                    type="button"
+                    onClick={() => setSwapped((s) => !s)}
+                    aria-label="Swap currency positions"
+                    title="Swap"
+                    className="cursor-pointer text-on-surface-variant hover:text-secondary transition-all p-1.5 rounded-full hover:bg-surface-container-high/70 active:scale-95"
+                  >
+                    <span className={`material-symbols-outlined text-base transition-transform ${swapped ? "rotate-180" : ""}`}>swap_vert</span>
+                  </button>
+                </div>
+                <label className="block" style={{ order: swapped ? 1 : 3 }}>
+                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">Euro</span>
+                  <div className="flex items-center mt-1 rounded-xl bg-surface-container-high border border-outline-variant/15 focus-within:border-secondary/50 transition-colors">
+                    <span className="pl-3 text-on-surface-variant font-mono">€</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={eur}
+                      onChange={(e) => onEurChange(e.target.value)}
+                      disabled={!fxRate}
+                      placeholder="0.00"
+                      className="flex-1 bg-transparent px-2 py-2.5 text-on-surface outline-none font-mono disabled:opacity-40"
+                    />
+                  </div>
+                </label>
+              </div>
+              <div className="px-4 py-2.5 border-t border-outline-variant/10 flex items-center justify-between text-[11px]">
+                <span className="text-on-surface-variant">
+                  {fxRate ? (
+                    <>Live: <span className="font-mono font-bold text-secondary">{fxRate.toFixed(2)}</span> JPY/€</>
+                  ) : (
+                    <span className="text-red-400">Rate unavailable</span>
+                  )}
+                </span>
+                <span className="text-on-surface-variant/60">frankfurter.app</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Notifications */}
