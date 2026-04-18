@@ -1,8 +1,2 @@
 {
-  "crons": [
-    {
-      "path": "/api/agents/de-market/cron",
-      "schedule": "0 */6 * * *"
-    }
-  ]
 }
