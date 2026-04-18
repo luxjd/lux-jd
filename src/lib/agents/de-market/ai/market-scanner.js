@@ -121,8 +121,8 @@ export async function scanModel(model) {
 
   const results = await Promise.allSettled(scrapePromises);
 
-  const mobileListings = results[0].status === "fulfilled" ? results[0].value : [];
-  const autoscoutListings = results[1].status === "fulfilled" ? results[1].value : [];
+  const mobileListings = results[0].status === "fulfilled" ? (results[0].value?.listings || []) : [];
+  const autoscoutListings = results[1].status === "fulfilled" ? (results[1].value?.listings || []) : [];
   const specialistListings = results.slice(2)
     .filter((r) => r.status === "fulfilled")
     .flatMap((r) => r.value);

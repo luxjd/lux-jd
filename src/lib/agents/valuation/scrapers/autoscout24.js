@@ -11,11 +11,14 @@
 import * as cheerio from "cheerio";
 import { runActorAndGetItems } from "./apify-client";
 import { normalizeAutoScout24 } from "./model-normalizer";
+import { buildAutoScout24SearchUrl } from "./search-urls";
 
 export async function scrapeAutoScout24({ make, model, yearFrom, yearTo, maxMileage }) {
+  const searchUrl = buildAutoScout24SearchUrl({ make, model, yearFrom, yearTo, maxMileage });
+
   if (!process.env.APIFY_API_KEY) {
     console.warn("autoscout24: no APIFY_API_KEY, skipping");
-    return [];
+    return { listings: [], searchUrl };
   }
 
   try {
@@ -27,6 +30,11 @@ export async function scrapeAutoScout24({ make, model, yearFrom, yearTo, maxMile
     });
     if (maxMileage) searchParams.set("kmto", String(maxMileage));
 
+    // Note on `searchUrl` returned below: we always surface the make+search form (built at the
+    // top of this function). The model-slug path (Attempt 1) can succeed at scrape time via
+    // residential proxy but still 404 when a user clicks it in a browser — AutoScout24 rotates
+    // those slugs. The make+search form is stable.
+
     // ── Attempt 1: Model-specific URL ──
     if (modelSlug) {
       const modelUrl = `https://www.autoscout24.de/lst/${makeSlug}/${modelSlug}?${searchParams}`;
@@ -35,21 +43,20 @@ export async function scrapeAutoScout24({ make, model, yearFrom, yearTo, maxMile
       let listings = await fetchAndParse(modelUrl, matchWords, true);
       if (listings.length > 0) {
         console.log(`autoscout24: ${listings.length} listings from model-specific URL`);
-        return listings;
+        return { listings, searchUrl };
       }
     }
 
     // ── Attempt 2: Make-only URL with text search ──
-    // Add model as search text parameter
     const makeOnlyParams = new URLSearchParams(searchParams);
-    makeOnlyParams.set("search", model); // Use full model name as search text
+    makeOnlyParams.set("search", model);
     const makeUrl = `https://www.autoscout24.de/lst/${makeSlug}?${makeOnlyParams}`;
     console.log(`autoscout24: falling back to make-only URL with search="${model}"`);
 
     let listings = await fetchAndParse(makeUrl, matchWords, false);
     if (listings.length > 0) {
       console.log(`autoscout24: ${listings.length} listings from make-only search`);
-      return listings;
+      return { listings, searchUrl };
     }
 
     // ── Attempt 3: Make-only URL WITHOUT model filter (broadest) ──
@@ -59,14 +66,14 @@ export async function scrapeAutoScout24({ make, model, yearFrom, yearTo, maxMile
     listings = await fetchAndParse(broadUrl, matchWords, false);
     if (listings.length > 0) {
       console.log(`autoscout24: ${listings.length} listings from broad search`);
-      return listings;
+      return { listings, searchUrl };
     }
 
     console.log("autoscout24: all attempts returned 0 listings");
-    return [];
+    return { listings: [], searchUrl };
   } catch (err) {
     console.error("autoscout24 error:", err.message);
-    return [];
+    return { listings: [], searchUrl };
   }
 }
 
@@ -171,7 +178,10 @@ function parseListings(html, matchWords, skipFilter) {
       if (!price) return;
 
       const kmMatch = text.match(/([\d.]+)\s*km/);
-      const mileage = kmMatch ? parseInt(kmMatch[1].replace(/\./g, "")) : 0;
+      let mileage = kmMatch ? parseInt(kmMatch[1].replace(/\./g, "")) : 0;
+      // DOM sometimes concatenates adjacent spans without whitespace (e.g. year "2018" + "17.500 km")
+      // → "201817500" parses as 201M km. Clamp to realistic range.
+      if (!Number.isFinite(mileage) || mileage > 999999 || mileage < 0) mileage = 0;
 
       const yearMatch = text.match(/(?:\d{2}\/)(20\d{2})/) || text.match(/\b(20[012]\d)\b/);
       const year = yearMatch ? parseInt(yearMatch[1]) : 0;

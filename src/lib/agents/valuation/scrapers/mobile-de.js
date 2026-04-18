@@ -12,51 +12,35 @@
 import * as cheerio from "cheerio";
 import { runActorAndGetItems } from "./apify-client";
 import { normalizeMobileDe } from "./model-normalizer";
+import { buildMobileDeSearchUrl } from "./search-urls";
 
 export async function scrapeMobileDe({ make, model, yearFrom, yearTo, maxMileage }) {
+  const searchUrl = buildMobileDeSearchUrl({ make, model, yearFrom, yearTo, maxMileage });
+
   if (!process.env.APIFY_API_KEY) {
     console.warn("mobile.de: no APIFY_API_KEY, skipping");
-    return [];
+    return { listings: [], searchUrl };
   }
 
   const { searchModel, makeId, modelId } = normalizeMobileDe(make, model);
-
-  // Build mobile.de search URL
-  const searchParams = new URLSearchParams({
-    dam: "false", isSearchRequest: "true", s: "Car", vc: "Car",
-    fr: `${yearFrom}:${yearTo}`,
-  });
-  if (maxMileage) searchParams.set("ml", `:${maxMileage}`);
-
-  if (modelId && makeId) {
-    searchParams.set("makeModelVariant1.makeId", makeId);
-    searchParams.set("makeModelVariant1.modelId", modelId);
-  } else if (makeId) {
-    searchParams.set("makeModelVariant1.makeId", makeId);
-    searchParams.set("makeModelVariant1.modelDescription", searchModel);
-  } else {
-    searchParams.set("makeModelVariant1.modelDescription", `${make} ${searchModel}`);
-  }
-
-  const targetUrl = `https://suchen.mobile.de/fahrzeuge/search.html?${searchParams}`;
   console.log(`mobile.de: searching "${searchModel}" (makeId=${makeId}, modelId=${modelId || "none"})`);
 
   // ── Strategy 1: Generic web-scraper with residential proxy ──
-  let listings = await tryGenericScraper(targetUrl);
+  let listings = await tryGenericScraper(searchUrl);
   if (listings.length > 0) {
     console.log(`mobile.de: ${listings.length} listings from generic scraper`);
-    return listings;
+    return { listings, searchUrl };
   }
 
   // ── Strategy 2: Google SERP fallback ──
   listings = await tryGoogleSerp(make, searchModel, yearFrom, yearTo);
   if (listings.length > 0) {
     console.log(`mobile.de: ${listings.length} listings from Google SERP fallback`);
-    return listings;
+    return { listings, searchUrl };
   }
 
   console.warn("mobile.de: all strategies failed — no listings found");
-  return [];
+  return { listings: [], searchUrl };
 }
 
 // ══════════════════════════════════════════
@@ -158,7 +142,8 @@ async function tryGoogleSerp(make, searchModel, yearFrom, yearTo) {
       if (!price) continue;
 
       const kmMatch = combined.match(/([\d.]+)\s*km/);
-      const mileage = kmMatch ? parseInt(kmMatch[1].replace(/\./g, "")) : 0;
+      let mileage = kmMatch ? parseInt(kmMatch[1].replace(/\./g, "")) : 0;
+      if (!Number.isFinite(mileage) || mileage > 999999 || mileage < 0) mileage = 0;
 
       const yearMatch = combined.match(/\b(20[012]\d)\b/);
       const year = yearMatch ? parseInt(yearMatch[1]) : 0;
@@ -216,7 +201,8 @@ function parseListingsFromHtml(html) {
       if (!price) return;
 
       const kmMatch = text.match(/([\d.]+)\s*km/);
-      const mileage = kmMatch ? parseInt(kmMatch[1].replace(/\./g, "")) : 0;
+      let mileage = kmMatch ? parseInt(kmMatch[1].replace(/\./g, "")) : 0;
+      if (!Number.isFinite(mileage) || mileage > 999999 || mileage < 0) mileage = 0;
 
       const yearMatch = text.match(/\b(20[012]\d)\b/);
       const year = yearMatch ? parseInt(yearMatch[1]) : 0;

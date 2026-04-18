@@ -118,6 +118,8 @@ export default function ValuationForm({ onSubmit, loading }) {
   const isReady = () => {
     for (const field of missingRequired) {
       const answer = answers[field.key];
+      // askingPriceJpy is the only required field the agent can infer on its own.
+      if (field.key === "askingPriceJpy" && answer === "__NOT_AVAILABLE__") continue;
       if (!answer || answer === "__NOT_AVAILABLE__") return false;
     }
     return true;
@@ -153,7 +155,7 @@ export default function ValuationForm({ onSubmit, loading }) {
       year: merged.year,
       mileageKm: merged.mileageKm,
       driveSide: merged.driveSide || "RHD",
-      askingPriceJpy: merged.askingPriceJpy,
+      askingPriceJpy: merged.askingPriceJpy ?? null,
       exteriorColor: merged.exteriorColor || "Unknown",
       interiorColor: merged.interiorColor || "",
       serviceHistory: merged.serviceHistory,
@@ -322,6 +324,7 @@ export default function ValuationForm({ onSubmit, loading }) {
 
   const allRequiredAnswered = missingRequired.every(f => {
     const a = answers[f.key];
+    if (f.key === "askingPriceJpy" && a === "__NOT_AVAILABLE__") return true;
     return a && a !== "__NOT_AVAILABLE__";
   });
 
@@ -386,14 +389,35 @@ export default function ValuationForm({ onSubmit, loading }) {
 
           <div className="space-y-4">
             {missingRequired.map((field) => {
-              const answered = answers[field.key] && answers[field.key] !== "__NOT_AVAILABLE__";
+              const answerVal = answers[field.key];
+              const answered = answerVal && answerVal !== "__NOT_AVAILABLE__";
+              const skipped = answerVal === "__NOT_AVAILABLE__";
+              const canDelegate = field.key === "askingPriceJpy";
               return (
-                <div key={field.key} className={`p-4 rounded-xl border transition-all ${answered ? "bg-emerald-400/5 border-emerald-400/20" : "bg-surface-container-high border-outline-variant/15"}`}>
+                <div key={field.key} className={`p-4 rounded-xl border transition-all ${
+                  skipped && canDelegate ? "bg-primary/5 border-primary/30" :
+                  answered ? "bg-emerald-400/5 border-emerald-400/20" :
+                  "bg-surface-container-high border-outline-variant/15"
+                }`}>
                   <p className="text-sm font-medium text-on-surface mb-2 flex items-center gap-2">
                     {answered && <span className="material-symbols-outlined text-emerald-400 text-sm">check_circle</span>}
+                    {skipped && canDelegate && <span className="material-symbols-outlined text-primary text-sm">auto_awesome</span>}
                     {field.question}
                   </p>
-                  {field.key === "make" ? (
+                  {skipped && canDelegate ? (
+                    <div className="flex items-center justify-between gap-3 mt-1">
+                      <p className="text-xs text-on-surface-variant">
+                        Agent will estimate the highest JPY price that still meets your target margin from the live German market data.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => updateAnswer(field.key, "")}
+                        className="text-xs whitespace-nowrap px-3 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all"
+                      >
+                        Enter a price
+                      </button>
+                    </div>
+                  ) : field.key === "make" ? (
                     <select
                       value={answers[field.key] || ""}
                       onChange={(e) => updateAnswer(field.key, e.target.value)}
@@ -421,13 +445,25 @@ export default function ValuationForm({ onSubmit, loading }) {
                       ))}
                     </div>
                   ) : (
-                    <input
-                      type={["year", "mileageKm", "askingPriceJpy"].includes(field.key) ? "number" : "text"}
-                      value={answers[field.key] === "__NOT_AVAILABLE__" ? "" : answers[field.key] || ""}
-                      onChange={(e) => updateAnswer(field.key, e.target.value)}
-                      placeholder={`Enter ${field.label.toLowerCase()}...`}
-                      className="w-full px-4 py-2.5 rounded-lg bg-surface-container border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 transition-all text-sm"
-                    />
+                    <>
+                      <input
+                        type={["year", "mileageKm", "askingPriceJpy"].includes(field.key) ? "number" : "text"}
+                        value={answers[field.key] === "__NOT_AVAILABLE__" ? "" : answers[field.key] || ""}
+                        onChange={(e) => updateAnswer(field.key, e.target.value)}
+                        placeholder={`Enter ${field.label.toLowerCase()}...`}
+                        className="w-full px-4 py-2.5 rounded-lg bg-surface-container border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 transition-all text-sm"
+                      />
+                      {canDelegate && !answered && (
+                        <button
+                          type="button"
+                          onClick={() => markNotAvailable(field.key)}
+                          className="mt-2 w-full text-xs px-3 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                          I don&apos;t have a price — let the agent suggest a max bid
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               );
@@ -558,11 +594,18 @@ export default function ValuationForm({ onSubmit, loading }) {
         {loading ? "Processing Valuation..." : !isReady() ? "Answer required questions above" : "Generate Valuation Report"}
       </button>
 
-      {!isReady() && missingRequired.length > 0 && (
-        <p className="text-center text-xs text-on-surface-variant">
-          {missingRequired.filter(f => !answers[f.key] || answers[f.key] === "__NOT_AVAILABLE__").length} required field{missingRequired.filter(f => !answers[f.key] || answers[f.key] === "__NOT_AVAILABLE__").length !== 1 ? "s" : ""} still needed
-        </p>
-      )}
+      {!isReady() && missingRequired.length > 0 && (() => {
+        const stillNeeded = missingRequired.filter(f => {
+          const a = answers[f.key];
+          if (f.key === "askingPriceJpy" && a === "__NOT_AVAILABLE__") return false;
+          return !a || a === "__NOT_AVAILABLE__";
+        }).length;
+        return (
+          <p className="text-center text-xs text-on-surface-variant">
+            {stillNeeded} required field{stillNeeded !== 1 ? "s" : ""} still needed
+          </p>
+        );
+      })()}
     </div>
   );
 }

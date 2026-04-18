@@ -158,7 +158,7 @@ function ValuationPageInner() {
         fd.append("year", input.year);
         fd.append("mileageKm", input.mileageKm);
         fd.append("driveSide", input.driveSide);
-        fd.append("askingPriceJpy", input.askingPriceJpy);
+        if (input.askingPriceJpy != null) fd.append("askingPriceJpy", input.askingPriceJpy);
         fd.append("exteriorColor", input.exteriorColor);
         fd.append("interiorColor", input.interiorColor || "");
         fd.append("serviceHistory", input.serviceHistory || "UNKNOWN");

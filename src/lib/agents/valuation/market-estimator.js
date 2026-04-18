@@ -15,6 +15,7 @@ import { callClaude, isAIAvailable } from "@/lib/claude";
 import { formatNumber } from "@/lib/format";
 import { scrapeMobileDe } from "./scrapers/mobile-de";
 import { scrapeAutoScout24 } from "./scrapers/autoscout24";
+import { buildMobileDeSearchUrl, buildAutoScout24SearchUrl } from "./scrapers/search-urls";
 import { removeOutliers, validateMarketOutput } from "./validation";
 
 const ANALYSIS_SYSTEM = `You are a senior German luxury car pricing analyst with 15+ years of experience at premium dealerships. You are given REAL comparable listings scraped from mobile.de and AutoScout24. Your price estimates directly influence €50,000-€400,000 purchase decisions. Be precise and evidence-based — reference specific comparables to justify your adjustments.`;
@@ -143,8 +144,18 @@ export async function estimateMarketValue(input) {
     scrapeAutoScout24({ make: input.make, model: input.model, yearFrom, yearTo, maxMileage }),
   ]);
 
-  let mobileListings = mobileResults.status === "fulfilled" ? mobileResults.value : [];
-  let autoscoutListings = autoscoutResults.status === "fulfilled" ? autoscoutResults.value : [];
+  const fallbackSearchUrls = {
+    mobile_de: buildMobileDeSearchUrl({ make: input.make, model: input.model, yearFrom, yearTo, maxMileage }),
+    autoscout24: buildAutoScout24SearchUrl({ make: input.make, model: input.model, yearFrom, yearTo, maxMileage }),
+  };
+
+  const primaryMobile = mobileResults.status === "fulfilled" ? mobileResults.value : { listings: [], searchUrl: fallbackSearchUrls.mobile_de };
+  const primaryAuto = autoscoutResults.status === "fulfilled" ? autoscoutResults.value : { listings: [], searchUrl: fallbackSearchUrls.autoscout24 };
+
+  let mobileListings = primaryMobile.listings;
+  let autoscoutListings = primaryAuto.listings;
+  let mobileSearchUrl = primaryMobile.searchUrl || fallbackSearchUrls.mobile_de;
+  let autoscoutSearchUrl = primaryAuto.searchUrl || fallbackSearchUrls.autoscout24;
 
   console.log(`Primary scrape: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}`);
 
@@ -162,10 +173,18 @@ export async function estimateMarketValue(input) {
       scrapeAutoScout24({ make: input.make, model: input.model, yearFrom: wideYearFrom, yearTo: wideYearTo, maxMileage: wideMileage }),
     ]);
 
-    if (wideM.status === "fulfilled") mobileListings = wideM.value;
-    if (wideA.status === "fulfilled") autoscoutListings = wideA.value;
+    if (wideM.status === "fulfilled") {
+      mobileListings = wideM.value.listings;
+      mobileSearchUrl = wideM.value.searchUrl || mobileSearchUrl;
+    }
+    if (wideA.status === "fulfilled") {
+      autoscoutListings = wideA.value.listings;
+      autoscoutSearchUrl = wideA.value.searchUrl || autoscoutSearchUrl;
+    }
     console.log(`Widened scrape: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}`);
   }
+
+  const searchUrls = { mobile_de: mobileSearchUrl, autoscout24: autoscoutSearchUrl };
 
   // Step 2: Merge & deduplicate
   const allListings = deduplicate([...mobileListings, ...autoscoutListings]);
@@ -194,7 +213,7 @@ export async function estimateMarketValue(input) {
   // ── Fallback: Claude AI market estimation when scrapers fail ──
   if ((!stats || filteredListings.length === 0) && isAIAvailable()) {
     console.warn("No scraped listings — falling back to Claude AI market estimation");
-    return estimateWithAI(input);
+    return estimateWithAI(input, searchUrls);
   }
 
   if (!stats || filteredListings.length === 0) {
@@ -257,6 +276,7 @@ export async function estimateMarketValue(input) {
     })),
     data_source: `mobile.de (${mobileListings.length}) + autoscout24 (${autoscoutListings.length})`,
     scraped_count: { mobile_de: mobileListings.length, autoscout24: autoscoutListings.length },
+    search_urls: searchUrls,
   };
 }
 
@@ -273,18 +293,18 @@ import { runActorAndGetItems } from "./scrapers/apify-client";
  * search snippets, then send real prices to Claude for structured analysis.
  * Falls back to pure AI estimation if web search also fails.
  */
-async function estimateWithAI(input) {
+async function estimateWithAI(input, searchUrls) {
   // ── Step 1: Web search for real prices ──
   const webPrices = await searchWebForPrices(input);
 
   if (webPrices.length > 0) {
     console.log(`Market estimator: found ${webPrices.length} web prices — using web-grounded estimation`);
-    return estimateFromWebPrices(input, webPrices);
+    return estimateFromWebPrices(input, webPrices, searchUrls);
   }
 
   // ── Step 2: Pure AI fallback (no real data at all) ──
   console.log("Market estimator: web search found no prices — using pure AI estimation");
-  return estimateFromTrainingData(input);
+  return estimateFromTrainingData(input, searchUrls);
 }
 
 /**
@@ -370,7 +390,7 @@ async function searchWebForPrices(input) {
  * Estimate market value from real web search prices + Claude analysis.
  * Higher confidence than pure AI because we have real price data points.
  */
-async function estimateFromWebPrices(input, webPrices) {
+async function estimateFromWebPrices(input, webPrices, searchUrls) {
   // Calculate basic stats from web prices
   const sortedPrices = webPrices.map((p) => p.price).sort((a, b) => a - b);
   const n = sortedPrices.length;
@@ -445,6 +465,10 @@ Return ONLY valid JSON:
     scraped_count: { mobile_de: 0, autoscout24: 0, web_search: n },
     ai_fallback: false,
     web_search_fallback: true,
+    search_urls: searchUrls || {
+      mobile_de: buildMobileDeSearchUrl({ make: input.make, model: input.model, yearFrom: input.year - 2, yearTo: input.year + 2, maxMileage: input.mileageKm + 30000 }),
+      autoscout24: buildAutoScout24SearchUrl({ make: input.make, model: input.model, yearFrom: input.year - 2, yearTo: input.year + 2, maxMileage: input.mileageKm + 30000 }),
+    },
   };
 }
 
@@ -452,7 +476,7 @@ Return ONLY valid JSON:
  * Pure AI estimation — last resort when even web search fails.
  * Uses Claude's training knowledge only. Lowest confidence.
  */
-async function estimateFromTrainingData(input) {
+async function estimateFromTrainingData(input, searchUrls) {
   const result = await callClaude({
     prompt: `You are a senior German luxury car pricing expert. No live market data is available — provide your best estimate based on your knowledge of the German luxury car market.
 
@@ -501,5 +525,9 @@ Return ONLY valid JSON:
     scraped_count: { mobile_de: 0, autoscout24: 0 },
     ai_reasoning: result.reasoning || null,
     ai_fallback: true,
+    search_urls: searchUrls || {
+      mobile_de: buildMobileDeSearchUrl({ make: input.make, model: input.model, yearFrom: input.year - 2, yearTo: input.year + 2, maxMileage: input.mileageKm + 30000 }),
+      autoscout24: buildAutoScout24SearchUrl({ make: input.make, model: input.model, yearFrom: input.year - 2, yearTo: input.year + 2, maxMileage: input.mileageKm + 30000 }),
+    },
   };
 }

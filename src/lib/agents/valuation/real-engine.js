@@ -21,6 +21,7 @@ import { formatEur } from "@/lib/format";
 import { analyzePhotos } from "./photo-analyzer";
 import { parseAuctionSheet } from "./sheet-parser";
 import { estimateMarketValue } from "./market-estimator";
+import { buildMobileDeSearchUrl, buildAutoScout24SearchUrl } from "./scrapers/search-urls";
 import { assessRiskAndRecommend } from "./risk-recommender";
 import { fetchFxRate } from "./fx-fetcher";
 import { validateInput } from "./validation";
@@ -385,8 +386,23 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
   }
   const estimatedSalePrice = marketResult.estimated_sale_price_eur || marketResult.price_statistics.median;
   const hasModifications = condition.modifications.length > 0;
+  const pricingGuidanceMode = validatedInput.askingPriceJpy == null;
+
+  // In guidance mode, back-calculate a max-bid ceiling BEFORE the landed-cost breakdown,
+  // using provisional fixed costs (none depend on purchase price — TUV, freight, transport, OPEX).
+  // The detailed landed cost is then rendered AT that ceiling so the user sees a realistic breakdown.
+  let effectiveAskingPriceJpy = validatedInput.askingPriceJpy;
+  let guidanceMaxBid = null;
+  if (pricingGuidanceMode) {
+    const provisionalTuv = getTuvCost(validatedInput.make, validatedInput.driveSide, hasModifications, condition.tuvRiskFlags);
+    const provisionalInsurance = Math.round(estimatedSalePrice * 0.7 * 0.02);
+    const provisionalFixed = 400 + 175 + 2800 + provisionalInsurance + 600 + provisionalTuv.cost + 150 + 450 + 1200 + 500 + OPEX_PER_VEHICLE;
+    guidanceMaxBid = calculateMaxBid(estimatedSalePrice, fxResult.rate, provisionalFixed, { minMarginEur: MIN_MARGIN_EUR, minMarginPct: MIN_MARGIN_PCT, fxBufferPct: FX_BUFFER_PCT });
+    effectiveAskingPriceJpy = guidanceMaxBid || Math.round(estimatedSalePrice * 0.35 * fxResult.rate);
+  }
+
   const landedCost = calculateLandedCost(
-    validatedInput.askingPriceJpy, fxResult.rate, estimatedSalePrice,
+    effectiveAskingPriceJpy, fxResult.rate, estimatedSalePrice,
     validatedInput.make, validatedInput.driveSide, hasModifications, condition.tuvRiskFlags, FX_BUFFER_PCT
   );
 
@@ -458,7 +474,7 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       modifications: condition.modifications,
       panelConditions: condition.panelConditions,
       damageCodes: condition.damageCodes,
-      askingPriceJpy: validatedInput.askingPriceJpy,
+      askingPriceJpy: effectiveAskingPriceJpy,
       purchaseEur: landedCost.purchasePriceEur,
       totalLandedCost: landedCost.totalLandedCostEur,
       estimatedSalePrice,
@@ -491,6 +507,9 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
     timestamp: new Date().toISOString(),
     aiPowered: isAIAvailable(),
     fxLive: fxResult.live,
+    pricingGuidanceMode,
+    suggestedMaxBidJpy: pricingGuidanceMode ? (guidanceMaxBid || deterministicMaxBid) : null,
+    askingPriceJpyProvided: validatedInput.askingPriceJpy,
 
     vehicleSummary: {
       make: validatedInput.make,
@@ -569,6 +588,22 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       trendDirection: marketResult?.trend_direction || "STABLE",
       dataFreshness: new Date().toISOString(),
       dataSource: marketResult?.data_source || "mobile.de + autoscout24 + Claude AI",
+      searchUrls: marketResult?.search_urls || {
+        mobile_de: buildMobileDeSearchUrl({
+          make: validatedInput.make,
+          model: validatedInput.model,
+          yearFrom: validatedInput.year - 2,
+          yearTo: validatedInput.year + 2,
+          maxMileage: validatedInput.mileageKm + 30000,
+        }),
+        autoscout24: buildAutoScout24SearchUrl({
+          make: validatedInput.make,
+          model: validatedInput.model,
+          yearFrom: validatedInput.year - 2,
+          yearTo: validatedInput.year + 2,
+          maxMileage: validatedInput.mileageKm + 30000,
+        }),
+      },
     },
 
     landedCost,

@@ -18,13 +18,14 @@ export async function POST(request) {
   if (contentType.includes("multipart/form-data")) {
     const formData = await request.formData();
 
+    const rawAskingPrice = formData.get("askingPriceJpy");
     input = {
       make: formData.get("make"),
       model: formData.get("model"),
       year: parseInt(formData.get("year")),
       mileageKm: parseInt(formData.get("mileageKm")),
       driveSide: formData.get("driveSide"),
-      askingPriceJpy: parseInt(formData.get("askingPriceJpy")),
+      askingPriceJpy: rawAskingPrice ? parseInt(rawAskingPrice) : null,
       exteriorColor: formData.get("exteriorColor"),
       interiorColor: formData.get("interiorColor") || "",
       serviceHistory: formData.get("serviceHistory") || "UNKNOWN",
@@ -53,7 +54,7 @@ export async function POST(request) {
     input = await request.json();
   }
 
-  const required = ["make", "model", "year", "mileageKm", "driveSide", "askingPriceJpy", "exteriorColor"];
+  const required = ["make", "model", "year", "mileageKm", "driveSide", "exteriorColor"];
   for (const field of required) {
     if (!input[field]) {
       return Response.json({ error: `Missing required field: ${field}` }, { status: 400 });

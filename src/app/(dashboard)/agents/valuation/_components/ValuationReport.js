@@ -43,21 +43,32 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
         </div>
       </div>
 
-      {/* Verdict Banner */}
-      <div className={`rounded-2xl border-2 p-8 text-center print:p-4 print:border print:border-gray-300 ${VERDICT_STYLES[v.verdict]}`}>
-        <span className="material-symbols-outlined text-5xl mb-3 block print:text-3xl">{VERDICT_ICONS[v.verdict]}</span>
-        <h2 className="font-headline text-2xl sm:text-4xl font-bold mb-2 print:text-2xl">{v.verdict}</h2>
-        <p className="text-sm max-w-2xl mx-auto opacity-90">{v.verdictReasoning}</p>
-        {v.maxBidJpy && (
-          <div className="mt-4 inline-block px-4 py-2 rounded-xl bg-black/20 print:bg-gray-100">
-            <span className="text-xs uppercase tracking-widest opacity-70">Max Recommended Bid</span>
-            <p className="font-headline text-2xl font-bold">{formatJpy(v.maxBidJpy)}</p>
-            {m.deterministicMaxBidJpy && m.deterministicMaxBidJpy !== v.maxBidJpy && (
-              <p className="text-[10px] opacity-60">Deterministic: {formatJpy(m.deterministicMaxBidJpy)}</p>
-            )}
-          </div>
-        )}
-      </div>
+      {/* Verdict Banner — or Pricing Guidance hero when no asking price was provided */}
+      {r.pricingGuidanceMode ? (
+        <PricingGuidanceHero
+          suggestedMaxBidJpy={r.suggestedMaxBidJpy || m.deterministicMaxBidJpy || v.maxBidJpy}
+          estimatedSalePrice={m.estimatedSalePrice || mkt.estimatedSalePrice}
+          totalLandedCost={m.totalLandedCost || lc.totalLandedCostEur}
+          grossMarginEur={m.grossMarginEur}
+          fxRate={fx.rate}
+          fxLive={fx.live}
+        />
+      ) : (
+        <div className={`rounded-2xl border-2 p-8 text-center print:p-4 print:border print:border-gray-300 ${VERDICT_STYLES[v.verdict]}`}>
+          <span className="material-symbols-outlined text-5xl mb-3 block print:text-3xl">{VERDICT_ICONS[v.verdict]}</span>
+          <h2 className="font-headline text-2xl sm:text-4xl font-bold mb-2 print:text-2xl">{v.verdict}</h2>
+          <p className="text-sm max-w-2xl mx-auto opacity-90">{v.verdictReasoning}</p>
+          {v.maxBidJpy && (
+            <div className="mt-4 inline-block px-4 py-2 rounded-xl bg-black/20 print:bg-gray-100">
+              <span className="text-xs uppercase tracking-widest opacity-70">Max Recommended Bid</span>
+              <p className="font-headline text-2xl font-bold">{formatJpy(v.maxBidJpy)}</p>
+              {m.deterministicMaxBidJpy && m.deterministicMaxBidJpy !== v.maxBidJpy && (
+                <p className="text-[10px] opacity-60">Deterministic: {formatJpy(m.deterministicMaxBidJpy)}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Data Source Banner — tells the user exactly where pricing data came from */}
       {(() => {
@@ -539,6 +550,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
                 Live Data
               </span>
             </h3>
+            <FindCarLinks searchUrls={mkt.searchUrls} />
             <div className="overflow-x-auto">
               <table className="w-full min-w-[600px]">
                 <thead>
@@ -553,7 +565,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
                     <tr key={c.id || i} className="border-b border-outline-variant/10 hover:bg-surface-container-high/30 print:border-gray-100">
                       <td className="py-2 px-3 text-sm font-bold">{c.title || "—"}</td>
                       <td className="py-2 px-3 text-sm font-mono">{fmtFull(c.price)}</td>
-                      <td className="py-2 px-3 text-sm text-on-surface-variant">{c.mileage ? `${formatKm(c.mileage)} km` : "—"}</td>
+                      <td className="py-2 px-3 text-sm text-on-surface-variant">{c.mileage && c.mileage < 1000000 ? `${formatKm(c.mileage)} km` : "—"}</td>
                       <td className="py-2 px-3 text-sm text-on-surface-variant">{c.location || "—"}</td>
                       <td className="py-2 px-3 text-sm text-on-surface-variant">{c.platform || "—"}</td>
                     </tr>
@@ -578,6 +590,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
             <p className="text-xs text-on-surface-variant mb-4">
               Scrapers were blocked — these prices were found via Google search. Fewer details available than direct scraping.
             </p>
+            <FindCarLinks searchUrls={mkt.searchUrls} />
             <div className="overflow-x-auto">
               <table className="w-full min-w-[500px]">
                 <thead>
@@ -626,6 +639,9 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
               <p className="text-[10px] text-on-surface-variant/50 mt-3">
                 {mkt.dataSource || "Claude AI estimation"} &middot; Verify manually before bidding
               </p>
+              <div className="mt-4 flex justify-center">
+                <FindCarLinks searchUrls={mkt.searchUrls} />
+              </div>
             </div>
           </div>
         );
@@ -699,6 +715,103 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
         {r.fxLive && <span> &middot; <span className="text-emerald-400">Live FX</span></span>}
         {fx.volatility?.stdDevPct != null && <span> &middot; FX Vol: {fx.volatility.stdDevPct}%</span>}
       </p>
+    </div>
+  );
+}
+
+function PricingGuidanceHero({ suggestedMaxBidJpy, estimatedSalePrice, totalLandedCost, grossMarginEur, fxRate, fxLive }) {
+  const hasBid = suggestedMaxBidJpy && suggestedMaxBidJpy > 0;
+  return (
+    <div className="rounded-2xl border-2 border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 p-8 text-center print:p-4 print:border print:border-gray-300">
+      <span className="material-symbols-outlined text-5xl mb-3 block text-primary print:text-3xl">auto_awesome</span>
+      <p className="text-xs uppercase tracking-widest text-primary/80 font-bold mb-2">Pricing Guidance</p>
+      {hasBid ? (
+        <>
+          <h2 className="font-headline text-3xl sm:text-5xl font-bold mb-2 print:text-2xl text-on-surface">
+            Pay up to {formatJpy(suggestedMaxBidJpy)}
+          </h2>
+          <p className="text-sm max-w-2xl mx-auto text-on-surface-variant mb-5">
+            The highest JPY bid that still hits your target margin, given the live German market value and landed costs to get this vehicle sale-ready in Germany.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto text-left">
+            <div className="px-4 py-3 rounded-xl bg-black/20 print:bg-gray-100">
+              <p className="text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">DE market value</p>
+              <p className="font-mono font-bold text-on-surface">{fmtFull(estimatedSalePrice)}</p>
+            </div>
+            <div className="px-4 py-3 rounded-xl bg-black/20 print:bg-gray-100">
+              <p className="text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Landed cost at max bid</p>
+              <p className="font-mono font-bold text-on-surface">{fmtFull(totalLandedCost)}</p>
+            </div>
+            <div className="px-4 py-3 rounded-xl bg-black/20 print:bg-gray-100">
+              <p className="text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Target margin at ceiling</p>
+              <p className="font-mono font-bold text-emerald-400">{fmtFull(grossMarginEur)}</p>
+            </div>
+          </div>
+          {fxRate && (
+            <p className="text-[10px] text-on-surface-variant/70 mt-4">
+              At FX {fxRate?.toFixed?.(2) || fxRate} JPY/€ {fxLive ? "(live)" : "(cached)"} &middot; Bid above this price and the margin target slips
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <h2 className="font-headline text-2xl sm:text-3xl font-bold mb-2 text-on-surface">No profitable bid possible</h2>
+          <p className="text-sm max-w-2xl mx-auto text-on-surface-variant">
+            Even at the lowest realistic purchase price, landed costs plus the target margin exceed the German market value for this vehicle. Consider a cheaper variant, different year, or skip this listing.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Defensive: reports saved before the URL fix still carry /lst/<make>/<model-slug> URLs
+// that 404 when clicked (AutoScout24 rotates slugs). Rewrite to the stable make+search form.
+function sanitizeAutoScout24Url(url) {
+  if (!url || typeof url !== "string") return url;
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("autoscout24")) return url;
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (parts[0] === "lst" && parts.length >= 3) {
+      const make = parts[1];
+      const modelFromSlug = parts.slice(2).join(" ").replace(/-/g, " ");
+      u.pathname = `/lst/${make}`;
+      if (!u.searchParams.get("search")) u.searchParams.set("search", modelFromSlug);
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+function FindCarLinks({ searchUrls }) {
+  if (!searchUrls?.mobile_de && !searchUrls?.autoscout24) return null;
+  const autoscoutUrl = sanitizeAutoScout24Url(searchUrls?.autoscout24);
+  return (
+    <div className="flex flex-wrap gap-2 mb-4 print:hidden">
+      {searchUrls?.mobile_de && (
+        <a
+          href={searchUrls.mobile_de}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 hover:bg-emerald-400/20 transition"
+        >
+          <span className="material-symbols-outlined text-sm">open_in_new</span>
+          Find on mobile.de
+        </a>
+      )}
+      {autoscoutUrl && (
+        <a
+          href={autoscoutUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-blue-400/10 text-blue-400 border border-blue-400/20 hover:bg-blue-400/20 transition"
+        >
+          <span className="material-symbols-outlined text-sm">open_in_new</span>
+          Find on AutoScout24
+        </a>
+      )}
     </div>
   );
 }

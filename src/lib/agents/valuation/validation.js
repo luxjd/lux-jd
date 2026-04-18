@@ -35,7 +35,7 @@ export function validateInput(input) {
   if (!input.year || input.year < 1990 || input.year > new Date().getFullYear() + 1) errors.push(`year must be 1990-${new Date().getFullYear() + 1}`);
   if (input.mileageKm == null || input.mileageKm < 0 || input.mileageKm > 999999) errors.push("mileageKm must be 0-999999");
   if (!VALID_DRIVE_SIDES.includes(input.driveSide)) errors.push("driveSide must be LHD or RHD");
-  if (!input.askingPriceJpy || input.askingPriceJpy <= 0 || input.askingPriceJpy > 500000000) errors.push("askingPriceJpy must be 1-500000000");
+  if (input.askingPriceJpy != null && input.askingPriceJpy !== "" && (input.askingPriceJpy <= 0 || input.askingPriceJpy > 500000000)) errors.push("askingPriceJpy must be 1-500000000 when provided");
   if (!input.exteriorColor || typeof input.exteriorColor !== "string") errors.push("exteriorColor is required");
 
   // Optional field sanitization
@@ -63,7 +63,7 @@ export function validateInput(input) {
     model: input.model.trim(),
     year: parseInt(input.year),
     mileageKm: parseInt(input.mileageKm),
-    askingPriceJpy: parseInt(input.askingPriceJpy),
+    askingPriceJpy: (input.askingPriceJpy != null && input.askingPriceJpy !== "") ? parseInt(input.askingPriceJpy) : null,
     exteriorColor: input.exteriorColor.trim(),
     interiorColor: input.interiorColor?.trim() || "",
     serviceHistory: VALID_SERVICE_HISTORY.includes(input.serviceHistory) ? input.serviceHistory : "UNKNOWN",
