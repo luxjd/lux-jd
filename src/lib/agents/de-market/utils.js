@@ -28,9 +28,5 @@ export function hoursSince(isoString) {
   return (Date.now() - new Date(isoString).getTime()) / (1000 * 60 * 60);
 }
 
-// Format EUR currency
-export function formatEur(amount) {
-  if (amount >= 1000000) return `€${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 1000) return `€${(amount / 1000).toFixed(0)}K`;
-  return `€${amount.toLocaleString()}`;
-}
+// Format EUR currency (compact, used in de-market summaries)
+export { formatEurCompact as formatEur } from "@/lib/format";

@@ -12,6 +12,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatNumber } from "@/lib/format";
 
 const SYSTEM_PROMPT = `You are the world's most knowledgeable luxury automotive concierge for LuxJD, a premium dealership in Germany. You have encyclopedic knowledge of Ferrari, Porsche, Mercedes-AMG, Lamborghini, Bentley, Aston Martin, Jaguar, Maserati, BMW M, and Range Rover.
 
@@ -51,13 +52,13 @@ RESPOND IN: ${language === "DE" ? "German (formal Sie)" : language === "FR" ? "F
 VEHICLE DETAILS:
 Make/Model: ${vehicle.make} ${vehicle.model}
 Year: ${vehicle.year}
-Mileage: ${vehicle.mileageKm?.toLocaleString() || "Low"} km
+Mileage: ${vehicle.mileageKm != null ? formatNumber(vehicle.mileageKm) : "Low"} km
 Color: ${vehicle.exteriorColor} / ${vehicle.interiorColor || "Leather"}
 Drive Side: ${vehicle.driveSide}
 Engine: ${vehicle.engineSpec || "Standard specification"}
 Service History: ${vehicle.serviceHistory || "Available on request"}
 Condition: ${vehicle.conditionNotes || "Excellent overall condition, meticulously maintained"}
-Listed Price: €${vehicle.listingPrice?.toLocaleString() || vehicle.currentPrice?.toLocaleString() || "On request"}
+Listed Price: €${vehicle.listingPrice != null ? formatNumber(vehicle.listingPrice) : vehicle.currentPrice != null ? formatNumber(vehicle.currentPrice) : "On request"}
 Key Features: ${vehicle.specNotes || "Full factory specification"}
 Days on Market: ${vehicle.daysOnMarket || 0}
 

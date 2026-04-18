@@ -6,6 +6,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatNumber } from "@/lib/format";
 
 /**
  * Generate customs declaration data.
@@ -168,9 +169,9 @@ export async function reviewCustomsDocuments(declaration) {
 Vehicle: ${declaration.vehicle.make} ${declaration.vehicle.model} ${declaration.vehicle.year}
 VIN: ${declaration.vehicle.vin}
 HS Code: ${declaration.vehicle.hsCode}
-CIF Value: €${declaration.financial.cifValueEur.toLocaleString()}
-Duty (10%): €${declaration.financial.customsDutyEur.toLocaleString()}
-VAT (19%): €${declaration.financial.importVatEur.toLocaleString()}
+CIF Value: €${formatNumber(declaration.financial.cifValueEur)}
+Duty (10%): €${formatNumber(declaration.financial.customsDutyEur)}
+VAT (19%): €${formatNumber(declaration.financial.importVatEur)}
 Port: ${declaration.portOfEntry}
 
 Documents present: ${Object.entries(declaration.documents).filter(([,v]) => v).map(([k]) => k).join(", ")}

@@ -11,6 +11,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatNumber } from "@/lib/format";
 
 const SYSTEM_PROMPT = `You are a luxury vehicle pricing strategist for the German market. You set competitive but profitable listing prices based on market data, vehicle condition, specification, and seasonal demand.`;
 
@@ -18,21 +19,21 @@ const PRICING_PROMPT = (vehicle, tvr) => `Set the optimal initial listing price 
 
 VEHICLE:
 ${vehicle.make} ${vehicle.model} ${vehicle.year}
-${vehicle.mileageKm?.toLocaleString()} km | ${vehicle.driveSide} | ${vehicle.exteriorColor}
+${formatNumber(vehicle.mileageKm)} km | ${vehicle.driveSide} | ${vehicle.exteriorColor}
 Condition: ${vehicle.conditionGrade || "GOOD"} | Service: ${vehicle.serviceHistory || "Unknown"}
 Notable specs: ${vehicle.specNotes || "Standard"}
 
 MARKET DATA (from DE Market Agent):
-Median: €${tvr?.marketValue?.medianEur?.toLocaleString() || "N/A"}
-P25: €${tvr?.marketValue?.p25Eur?.toLocaleString() || "N/A"}
-P75: €${tvr?.marketValue?.p75Eur?.toLocaleString() || "N/A"}
+Median: €${tvr?.marketValue?.medianEur != null ? formatNumber(tvr.marketValue.medianEur) : "N/A"}
+P25: €${tvr?.marketValue?.p25Eur != null ? formatNumber(tvr.marketValue.p25Eur) : "N/A"}
+P75: €${tvr?.marketValue?.p75Eur != null ? formatNumber(tvr.marketValue.p75Eur) : "N/A"}
 Velocity: ${tvr?.demand?.velocityScore || "N/A"}/100
 Avg Days on Market: ${tvr?.demand?.avgDaysOnMarket || "N/A"}
 Trend: ${tvr?.demand?.trendDirection || "STABLE"}
 Season: April (spring — good for convertibles)
 
-OUR LANDED COST: €${vehicle.landedCostEur?.toLocaleString() || "N/A"}
-MINIMUM MARGIN: €${vehicle.minimumMarginEur?.toLocaleString() || "15,000"} (20%)
+OUR LANDED COST: €${vehicle.landedCostEur != null ? formatNumber(vehicle.landedCostEur) : "N/A"}
+MINIMUM MARGIN: €${vehicle.minimumMarginEur != null ? formatNumber(vehicle.minimumMarginEur) : "15,000"} (20%)
 
 Return ONLY valid JSON:
 {

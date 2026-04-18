@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { formatJpy, formatKm } from "@/lib/format";
 
 const MAKES = [
   "Ferrari", "Porsche", "Lamborghini", "Mercedes-Benz", "Mercedes-AMG",
@@ -28,8 +29,8 @@ const FIELD_LABELS = {
 function formatValue(key, value) {
   if (value === null || value === undefined) return null;
   if (key === "accidentHistory") return value ? "Yes" : "No";
-  if (key === "askingPriceJpy") return `¥${Number(value).toLocaleString()}`;
-  if (key === "mileageKm") return `${Number(value).toLocaleString()} km`;
+  if (key === "askingPriceJpy") return formatJpy(value);
+  if (key === "mileageKm") return `${formatKm(value)} km`;
   if (key === "auctionGrade") return String(value);
   return String(value);
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { formatEur, formatKm } from "@/lib/format";
 
 export default function InquirySimulator() {
   const [vehicles, setVehicles] = useState([]);
@@ -141,7 +142,7 @@ export default function InquirySimulator() {
                 <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm focus:outline-none focus:border-primary/50">
                   {vehicles.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.make} {v.model} {v.year} — {v.listingPrice ? `€${v.listingPrice.toLocaleString()}` : "No price"}
+                      {v.make} {v.model} {v.year} — {v.listingPrice ? formatEur(v.listingPrice) : "No price"}
                     </option>
                   ))}
                 </select>
@@ -168,7 +169,7 @@ export default function InquirySimulator() {
 
             {vehicle && (
               <div className="p-3 rounded-xl bg-surface-container-high/30 text-xs text-on-surface-variant">
-                {vehicle.make} {vehicle.model} {vehicle.year} · {vehicle.exteriorColor} · {vehicle.driveSide} · {(vehicle.mileageKm || 0).toLocaleString()} km
+                {vehicle.make} {vehicle.model} {vehicle.year} · {vehicle.exteriorColor} · {vehicle.driveSide} · {formatKm(vehicle.mileageKm || 0)} km
                 {vehicle.engineSpec && ` · ${vehicle.engineSpec}`}
                 {vehicle.specNotes && ` · ${vehicle.specNotes}`}
               </div>
@@ -275,7 +276,7 @@ export default function InquirySimulator() {
               <h4 className="text-xs uppercase tracking-widest text-secondary mb-2">Negotiation Analysis</h4>
               <p className="text-sm">{result.negotiation.reasoning}</p>
               {result.negotiation.counterOffer && (
-                <p className="text-sm font-bold text-secondary mt-1">Counter offer: €{result.negotiation.counterOffer.toLocaleString()}</p>
+                <p className="text-sm font-bold text-secondary mt-1">Counter offer: {formatEur(result.negotiation.counterOffer)}</p>
               )}
             </div>
           )}

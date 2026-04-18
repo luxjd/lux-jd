@@ -12,6 +12,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatNumber } from "@/lib/format";
 import { scrapeMobileDe } from "./scrapers/mobile-de";
 import { scrapeAutoScout24 } from "./scrapers/autoscout24";
 import { removeOutliers, validateMarketOutput } from "./validation";
@@ -22,7 +23,7 @@ const ANALYSIS_PROMPT = (input, stats, listings, outlierCount) => `Estimate the 
 
 TARGET VEHICLE:
 - Make/Model: ${input.make} ${input.model} (${input.year})
-- Mileage: ${input.mileageKm?.toLocaleString()} km
+- Mileage: ${formatNumber(input.mileageKm)} km
 - Exterior: ${input.exteriorColor}
 - Interior: ${input.interiorColor || "Not specified"}
 - Drive Side: ${input.driveSide}
@@ -34,14 +35,14 @@ TARGET VEHICLE:
 - Specs/Options: ${input.specificationNotes || "None noted"}
 
 REAL MARKET DATA (${listings.length} listings scraped just now):
-- Median: €${stats.median?.toLocaleString()}
-- Mean: €${stats.mean?.toLocaleString()}
-- P25: €${stats.p25?.toLocaleString()}
-- P75: €${stats.p75?.toLocaleString()}
-- Range: €${stats.min?.toLocaleString()} — €${stats.max?.toLocaleString()}
+- Median: €${formatNumber(stats.median)}
+- Mean: €${formatNumber(stats.mean)}
+- P25: €${formatNumber(stats.p25)}
+- P75: €${formatNumber(stats.p75)}
+- Range: €${formatNumber(stats.min)} — €${formatNumber(stats.max)}
 
 TOP COMPARABLES:
-${listings.slice(0, 15).map((l, i) => `${i + 1}. ${l.title} — €${l.price?.toLocaleString()} | ${l.mileage?.toLocaleString()} km | ${l.year || "?"} | ${l.platform} | ${l.dealer || "Private"}`).join("\n")}
+${listings.slice(0, 15).map((l, i) => `${i + 1}. ${l.title} — €${formatNumber(l.price)} | ${formatNumber(l.mileage)} km | ${l.year || "?"} | ${l.platform} | ${l.dealer || "Private"}`).join("\n")}
 
 APPLY THESE 7 ADJUSTMENTS (each must be calculated individually):
 
@@ -383,14 +384,14 @@ async function estimateFromWebPrices(input, webPrices) {
     prompt: `You are a senior German luxury car pricing analyst. I searched the web for current market prices and found REAL listings.
 
 TARGET VEHICLE:
-${input.make} ${input.model} (${input.year}) | ${input.mileageKm?.toLocaleString()} km | ${input.driveSide} | ${input.exteriorColor}
+${input.make} ${input.model} (${input.year}) | ${formatNumber(input.mileageKm)} km | ${input.driveSide} | ${input.exteriorColor}
 Condition/Grade: ${input.auctionGrade || "Unknown"} | Service: ${input.serviceHistory || "Unknown"} | Accident: ${input.accidentHistory ? "YES" : "No"}
 Specs: ${input.specificationNotes || "None"}
 
 REAL WEB PRICES FOUND (${webPrices.length} results):
-${webPrices.map((p, i) => `${i + 1}. €${p.price.toLocaleString()} — ${p.title} [${p.source}]`).join("\n")}
+${webPrices.map((p, i) => `${i + 1}. €${formatNumber(p.price)} — ${p.title} [${p.source}]`).join("\n")}
 
-Price stats: Median €${median.toLocaleString()}, Mean €${mean.toLocaleString()}, Range €${sortedPrices[0].toLocaleString()} — €${sortedPrices[n - 1].toLocaleString()}
+Price stats: Median €${formatNumber(median)}, Mean €${formatNumber(mean)}, Range €${formatNumber(sortedPrices[0])} — €${formatNumber(sortedPrices[n - 1])}
 
 Based on these REAL prices, estimate the fair sale price for this specific vehicle. Apply adjustments for mileage, color, condition, drive side vs the listings found.
 
@@ -455,7 +456,7 @@ async function estimateFromTrainingData(input) {
   const result = await callClaude({
     prompt: `You are a senior German luxury car pricing expert. No live market data is available — provide your best estimate based on your knowledge of the German luxury car market.
 
-TARGET: ${input.make} ${input.model} (${input.year}) | ${input.mileageKm?.toLocaleString()} km | ${input.driveSide} | ${input.exteriorColor}
+TARGET: ${input.make} ${input.model} (${input.year}) | ${formatNumber(input.mileageKm)} km | ${input.driveSide} | ${input.exteriorColor}
 Grade: ${input.auctionGrade || "?"} | Service: ${input.serviceHistory || "?"} | Accident: ${input.accidentHistory ? "YES" : "No"}
 
 Return ONLY valid JSON:

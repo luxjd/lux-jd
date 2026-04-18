@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { formatEur, formatJpy, formatKm } from "@/lib/format";
 import ScanButton from "./_components/ScanButton";
 
 const REC_STYLES = {
@@ -11,7 +12,7 @@ const REC_STYLES = {
   PASS: "bg-slate-400/10 text-slate-400",
 };
 const RISK_STYLES = { LOW: "text-emerald-400", MEDIUM: "text-amber-400", HIGH: "text-red-400" };
-const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";
+const fmt = formatEur;
 
 export default function JpSourcingPage() {
   const [status, setStatus] = useState(null);
@@ -224,7 +225,7 @@ export default function JpSourcingPage() {
                       <span className={`text-[10px] font-bold uppercase ${RISK_STYLES[opp.risk?.compositeLevel]}`}>{opp.risk?.compositeLevel} RISK ({opp.risk?.compositeScore})</span>
                     </div>
                     <p className="text-sm text-on-surface-variant">
-                      {opp.vehicle?.year} · {opp.vehicle?.mileageKm?.toLocaleString()} km · {opp.vehicle?.driveSide} · {opp.vehicle?.exteriorColor || "—"}
+                      {opp.vehicle?.year} · {formatKm(opp.vehicle?.mileageKm)} km · {opp.vehicle?.driveSide} · {opp.vehicle?.exteriorColor || "—"}
                       {opp.vehicle?.auctionGrade && ` · Grade ${opp.vehicle.auctionGrade}`}
                     </p>
                     <p className="text-xs text-on-surface-variant mt-1">
@@ -256,7 +257,7 @@ export default function JpSourcingPage() {
                   <div className="flex flex-wrap items-center gap-4 sm:gap-6 shrink-0">
                     <div className="text-center">
                       <p className="text-[10px] uppercase text-on-surface-variant tracking-wider">JP Price</p>
-                      <p className="font-headline font-bold text-sm">¥{opp.pricing?.askingPriceJpy?.toLocaleString()}</p>
+                      <p className="font-headline font-bold text-sm">{formatJpy(opp.pricing?.askingPriceJpy)}</p>
                       <p className="text-[10px] text-on-surface-variant">{fmt(opp.pricing?.askingPriceEur)}</p>
                     </div>
                     <div className="text-center">
@@ -289,8 +290,8 @@ export default function JpSourcingPage() {
                 {opp.maxBidJpy && (
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mt-3 pt-3 border-t border-outline-variant/10 gap-2">
                     <p className="text-xs text-on-surface-variant">
-                      Max bid: <span className="font-bold text-secondary">¥{opp.maxBidJpy.toLocaleString()}</span>
-                      {da?.suggested_bid_jpy && <span className="ml-2">· AI suggests: <span className="font-bold text-primary">¥{da.suggested_bid_jpy.toLocaleString()}</span></span>}
+                      Max bid: <span className="font-bold text-secondary">{formatJpy(opp.maxBidJpy)}</span>
+                      {da?.suggested_bid_jpy && <span className="ml-2">· AI suggests: <span className="font-bold text-primary">{formatJpy(da.suggested_bid_jpy)}</span></span>}
                     </p>
                     <div className="flex gap-2">
                       {(() => {

@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { getVelocityStyle } from "@/lib/agents/de-market/constants";
-
-const formatEur = (n) => n != null ? `€${Math.round(n).toLocaleString()}` : "—";
+import { formatEur, formatEurCompact } from "@/lib/format";
 
 export default function ModelDetailPage({ params }) {
   const [modelId, setModelId] = useState(null);
@@ -102,15 +101,15 @@ export default function ModelDetailPage({ params }) {
                       <div key={i} className="flex-1 relative h-full group">
                         <div className="absolute w-full bg-primary/30 hover:bg-primary/60 rounded-sm transition-colors" style={{ bottom: "0", height: `${pct}%` }} />
                         <div className="absolute -top-6 left-1/2 -translate-x-1/2 hidden group-hover:block bg-surface-container border border-outline-variant/20 rounded px-1.5 py-0.5 text-[9px] font-mono whitespace-nowrap z-10">
-                          €{price.toLocaleString()}
+                          {formatEur(price)}
                         </div>
                       </div>
                     );
                   })}
                 </div>
                 <div className="flex justify-between mt-1">
-                  <span className="text-[9px] text-on-surface-variant">€{minP.toLocaleString()}</span>
-                  <span className="text-[9px] text-on-surface-variant">€{maxP.toLocaleString()}</span>
+                  <span className="text-[9px] text-on-surface-variant">{formatEur(minP)}</span>
+                  <span className="text-[9px] text-on-surface-variant">{formatEur(maxP)}</span>
                 </div>
               </>
             );

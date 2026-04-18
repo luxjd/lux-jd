@@ -2,6 +2,7 @@
  * Notifications API — aggregates alerts, escalations, and pending items from all agents.
  */
 
+import { formatEur } from "@/lib/format";
 import { getDecisions } from "@/lib/agents/orchestrator/storage";
 import { getEscalations } from "@/lib/agents/concierge/storage";
 import { getFxAlerts } from "@/lib/agents/finance/storage";
@@ -24,7 +25,7 @@ export async function GET() {
       icon: "gavel",
       title: `Purchase approval needed: ${d.vehicleName}`,
       description: d.brief?.headline || d.decisionReason?.substring(0, 100),
-      detail: `Margin €${d.financials?.margin?.toLocaleString()} (${d.financials?.marginPct}%) · Risk ${d.risk?.compositeScore}/3.0 · ${d.flagReasons?.length || 0} flag(s)`,
+      detail: `Margin ${formatEur(d.financials?.margin)} (${d.financials?.marginPct}%) · Risk ${d.risk?.compositeScore}/3.0 · ${d.flagReasons?.length || 0} flag(s)`,
       actionUrl: "/agents/orchestrator",
       timestamp: d.evaluatedAt,
     });
@@ -98,7 +99,7 @@ export async function GET() {
         source: "Listing Agent",
         icon: "sell",
         title: `Day ${dom}: Price review needed for ${l.vehicle?.make} ${l.vehicle?.model}`,
-        description: `Current price €${l.currentPrice?.toLocaleString()} — Day 42 strategic review required per pricing policy.`,
+        description: `Current price ${formatEur(l.currentPrice)} — Day 42 strategic review required per pricing policy.`,
         actionUrl: "/agents/listing",
         timestamp: l.createdAt,
       });

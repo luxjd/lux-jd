@@ -30,6 +30,7 @@ export default function Topbar() {
   const [notifCount, setNotifCount] = useState(0);
   const [criticalCount, setCriticalCount] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [fxRate, setFxRate] = useState(null);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -40,6 +41,25 @@ export default function Topbar() {
         setCriticalCount(d.byCritical || 0);
       })
       .catch(() => {});
+  }, [pathname]);
+
+  // Live EUR/JPY from finance agent's cached status. Refreshes every 60s; also
+  // re-fetches on navigation so it stays current when the user returns to the tab.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      fetch("/api/agents/finance/status")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (cancelled || !d) return;
+          const rate = Number(d.fxRate);
+          if (Number.isFinite(rate)) setFxRate(rate);
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
   }, [pathname]);
 
   // Close menu on outside click
@@ -67,10 +87,12 @@ export default function Topbar() {
 
       <div className="flex items-center gap-2 sm:gap-4 shrink-0">
         {/* Live FX indicator */}
-        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-high/50 border border-outline-variant/10">
+        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-high/50 border border-outline-variant/10" title={fxRate ? "Live EUR/JPY" : "EUR/JPY unavailable"}>
           <span className="material-symbols-outlined text-secondary text-sm">currency_exchange</span>
           <span className="text-xs font-mono text-on-surface">EUR/JPY</span>
-          <span className="text-xs font-mono font-bold text-secondary">166.80</span>
+          <span className={`text-xs font-mono font-bold ${fxRate ? "text-secondary" : "text-on-surface-variant"}`}>
+            {fxRate ? fxRate.toFixed(2) : "—"}
+          </span>
         </div>
 
         {/* Notifications */}

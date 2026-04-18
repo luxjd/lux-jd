@@ -4,6 +4,7 @@ import { generateDecisionBrief } from "@/lib/agents/orchestrator/ai/brief-genera
 import { saveDecision, updateAgentStatus } from "@/lib/agents/orchestrator/storage";
 import { savePipelineVehicle, addPipelineEvent } from "@/lib/agents/logistics/storage";
 import { recordLandedCosts } from "@/lib/agents/finance/ai/finance-orchestrator";
+import { formatEur, formatJpy } from "@/lib/format";
 import { agentGuard } from "@/lib/settings";
 import { db } from "@/lib/db-storage";
 import { after } from "next/server";
@@ -71,7 +72,7 @@ export async function POST(request) {
       fromStatus: null,
       toStatus: "SOURCED",
       agent: "orchestrator",
-      message: `AUTO-APPROVED: ${opp.vehicle?.make} ${opp.vehicle?.model} (${opp.vehicle?.year}). Margin €${evaluation.financials.margin.toLocaleString()} (${evaluation.financials.marginPct}%). Max bid ¥${evaluation.financials.maxBidJpy?.toLocaleString()}.`,
+      message: `AUTO-APPROVED: ${opp.vehicle?.make} ${opp.vehicle?.model} (${opp.vehicle?.year}). Margin ${formatEur(evaluation.financials.margin)} (${evaluation.financials.marginPct}%). Max bid ${formatJpy(evaluation.financials.maxBidJpy)}.`,
     });
 
     // Record financial transactions in background

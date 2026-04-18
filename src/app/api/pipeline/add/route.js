@@ -1,5 +1,6 @@
 import { savePipelineVehicle, addPipelineEvent } from "@/lib/agents/logistics/storage";
 import { recordLandedCosts } from "@/lib/agents/finance/ai/finance-orchestrator";
+import { formatEur } from "@/lib/format";
 
 export async function POST(request) {
   try {
@@ -100,7 +101,7 @@ export async function POST(request) {
       fromStatus: null,
       toStatus: "SOURCED",
       agent: "valuation",
-      message: `${vs.make} ${vs.model} (${vs.year}) added to pipeline from valuation. Verdict: ${rec.verdict}. Estimated margin: €${(ma.grossMarginEur || 0).toLocaleString()}.`,
+      message: `${vs.make} ${vs.model} (${vs.year}) added to pipeline from valuation. Verdict: ${rec.verdict}. Estimated margin: ${formatEur(ma.grossMarginEur || 0)}.`,
     });
 
     return Response.json({ vehicleId, status: "SOURCED" });

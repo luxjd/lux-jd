@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { STAGES, STAGE_DURATIONS } from "@/lib/agents/logistics/pipeline";
+import { formatKm } from "@/lib/format";
 
 export default function PipelinePage() {
   const [vehicles, setVehicles] = useState([]);
@@ -304,7 +305,7 @@ function TimelineView({ stageData, totalVehicles }) {
                               {v.make} {v.model}
                             </p>
                             <p className="text-[11px] text-on-surface-variant">
-                              {v.year} · {(v.mileage || 0).toLocaleString()} km
+                              {v.year} · {formatKm(v.mileage || 0)} km
                               {v.color && ` · ${v.color}`}
                             </p>
                           </div>
@@ -457,7 +458,7 @@ function KanbanView({ stageData }) {
                       </div>
                       <p className="text-sm font-bold mb-0.5">{v.model}</p>
                       <p className="text-[11px] text-on-surface-variant mb-2">
-                        {v.year} · {(v.mileage || 0).toLocaleString()} km
+                        {v.year} · {formatKm(v.mileage || 0)} km
                       </p>
 
                       {/* Mini progress */}

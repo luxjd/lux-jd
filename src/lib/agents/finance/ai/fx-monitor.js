@@ -6,6 +6,7 @@
  */
 
 import { fetchFxRate } from "@/lib/agents/valuation/fx-fetcher";
+import { formatEur } from "@/lib/format";
 
 // Alert thresholds per PRD
 const ALERT_THRESHOLDS = {
@@ -156,7 +157,7 @@ export function calculatePortfolioFxExposure(vehicles, currentRate) {
     },
     perVehicle: exposures,
     hedgingRecommendation: Math.abs(totalImpact) > 5000
-      ? `Portfolio FX exposure is €${Math.abs(totalImpact).toLocaleString()} ${totalImpact > 0 ? "favorable" : "unfavorable"}. Consider hedging ${totalPurchaseJpy > 10000000 ? "with forward contracts" : "by accumulating JPY during favorable windows"}.`
+      ? `Portfolio FX exposure is ${formatEur(Math.abs(totalImpact))} ${totalImpact > 0 ? "favorable" : "unfavorable"}. Consider hedging ${totalPurchaseJpy > 10000000 ? "with forward contracts" : "by accumulating JPY during favorable windows"}.`
       : "FX exposure within acceptable range. No hedging action needed.",
     calculatedAt: new Date().toISOString(),
   };
@@ -181,9 +182,9 @@ export function calculateFxImpact(vehicle, currentRate) {
     impactEur: impact,
     direction: impact > 0 ? "FAVORABLE" : impact < 0 ? "UNFAVORABLE" : "NEUTRAL",
     explanation: impact > 0
-      ? `JPY weakened since purchase — you'd pay €${Math.abs(impact).toLocaleString()} less today`
+      ? `JPY weakened since purchase — you'd pay ${formatEur(Math.abs(impact))} less today`
       : impact < 0
-      ? `JPY strengthened since purchase — cost increased by €${Math.abs(impact).toLocaleString()}`
+      ? `JPY strengthened since purchase — cost increased by ${formatEur(Math.abs(impact))}`
       : "No FX impact — rate unchanged",
   };
 }

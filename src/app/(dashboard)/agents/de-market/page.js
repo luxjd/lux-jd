@@ -3,9 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { getVelocityStyle } from "@/lib/agents/de-market/constants";
+import { formatEur } from "@/lib/format";
 import AgentStatusHeader from "./_components/AgentStatusHeader";
-
-const formatEur = (n) => n != null ? `€${Math.round(n).toLocaleString()}` : "—";
 
 export default function DeMarketAgentPage() {
   const [status, setStatus] = useState(null);

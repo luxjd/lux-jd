@@ -8,6 +8,7 @@
  */
 
 import { fetchFxRate } from "@/lib/agents/valuation/fx-fetcher";
+import { formatNumber } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
 
 /**
@@ -94,7 +95,7 @@ export async function generateTVR(scan, settings = null) {
     generatedAt: new Date().toISOString(),
     validUntil: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
 
-    reasoningChain: `Based on ${scan.pricing?.sample_size || 0} active listings across ${Object.keys(scan.data_sources || {}).length} platforms. Median price €${median?.toLocaleString()} with ${scan.trend?.direction?.toLowerCase()} trend (${scan.trend?.change_7d_pct > 0 ? "+" : ""}${scan.trend?.change_7d_pct || 0}% 7d, ${scan.trend?.change_30d_pct > 0 ? "+" : ""}${scan.trend?.change_30d_pct || 0}% 30d, ${scan.trend?.change_90d_pct > 0 ? "+" : ""}${scan.trend?.change_90d_pct || 0}% 90d). Velocity score ${scan.demand?.velocity_score}/100 (${scan.demand?.inquiry_rate} demand). Recommended max landed cost = median €${median?.toLocaleString()} - minimum margin €${Math.round(minMargin)?.toLocaleString()} = €${recommendedMaxLanded?.toLocaleString()}. FX at ¥${fxData.rate}/€ (${fxData.live ? "live" : "cached"}).`,
+    reasoningChain: `Based on ${scan.pricing?.sample_size || 0} active listings across ${Object.keys(scan.data_sources || {}).length} platforms. Median price €${formatNumber(median)} with ${scan.trend?.direction?.toLowerCase()} trend (${scan.trend?.change_7d_pct > 0 ? "+" : ""}${scan.trend?.change_7d_pct || 0}% 7d, ${scan.trend?.change_30d_pct > 0 ? "+" : ""}${scan.trend?.change_30d_pct || 0}% 30d, ${scan.trend?.change_90d_pct > 0 ? "+" : ""}${scan.trend?.change_90d_pct || 0}% 90d). Velocity score ${scan.demand?.velocity_score}/100 (${scan.demand?.inquiry_rate} demand). Recommended max landed cost = median €${formatNumber(median)} - minimum margin €${formatNumber(Math.round(minMargin))} = €${formatNumber(recommendedMaxLanded)}. FX at ¥${fxData.rate}/€ (${fxData.live ? "live" : "cached"}).`,
   };
 }
 

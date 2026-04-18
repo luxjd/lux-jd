@@ -12,6 +12,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatEur, formatNumber } from "@/lib/format";
 
 // Rule-based keyword detection (fast, always works)
 const ESCALATION_RULES = [
@@ -78,7 +79,7 @@ export async function checkEscalation(inquiry, offerPrice = null, askingPrice = 
     triggers.push({
       trigger: "LOW_OFFER",
       priority: "HIGH",
-      reason: `Offer €${offerPrice.toLocaleString()} is below 90% of asking €${askingPrice.toLocaleString()} (-${(((askingPrice - offerPrice) / askingPrice) * 100).toFixed(1)}%)`,
+      reason: `Offer ${formatEur(offerPrice)} is below 90% of asking ${formatEur(askingPrice)} (-${(((askingPrice - offerPrice) / askingPrice) * 100).toFixed(1)}%)`,
       detectedBy: "PRICE_RULE",
     });
   }
@@ -86,7 +87,7 @@ export async function checkEscalation(inquiry, offerPrice = null, askingPrice = 
   // ─── AI-powered sentiment analysis (catches subtle triggers) ───
   if (isAIAvailable() && triggers.length === 0) {
     const aiCheck = await callClaude({
-      prompt: `Analyze this customer message for any escalation triggers. The customer is inquiring about a luxury vehicle listed at €${askingPrice?.toLocaleString() || "N/A"}.
+      prompt: `Analyze this customer message for any escalation triggers. The customer is inquiring about a luxury vehicle listed at €${askingPrice != null ? formatNumber(askingPrice) : "N/A"}.
 
 Message: "${inquiry}"
 

@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { getAgentStatus, getLatestPortfolio, getLatestTaxReport, getFxHistory, getFxAlerts, getAllTransactions } from "@/lib/agents/finance/storage";
+import { formatEur } from "@/lib/format";
 import RunCheckButton from "./_components/RunCheckButton";
 
-const fmt = (n) => n != null && !isNaN(n) ? `€${n.toLocaleString()}` : "—";
+const fmt = formatEur;
+const EM_DASH = "—";
 
 export default async function FinanceAgentPage() {
   const status = await getAgentStatus();
@@ -50,12 +52,14 @@ export default async function FinanceAgentPage() {
               <p className={`font-headline font-bold text-lg ${(portfolio.summary.totalMargin || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(portfolio.summary.totalMargin)}</p>
               <p className={`text-[10px] uppercase ${(portfolio.summary.totalMargin || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>Total Margin</p>
             </div>
-            <div className="px-3 py-2 rounded-lg bg-primary/5 border border-primary/10">
-              <p className="font-headline font-bold text-lg text-primary">{fmt(portfolio.summary.totalCapitalDeployed)}</p>
-              <p className="text-[10px] text-primary uppercase">Capital Deployed</p>
+            <div className="px-3 py-2 rounded-lg bg-sky-400/5 border border-sky-400/15">
+              <p className="font-headline font-bold text-lg text-sky-300">{fmt(portfolio.summary.totalCapitalDeployed)}</p>
+              <p className="text-[10px] text-sky-300 uppercase">Capital Deployed</p>
             </div>
             <div className="px-3 py-2 rounded-lg bg-secondary/5 border border-secondary/10">
-              <p className="font-headline font-bold text-lg text-secondary">{portfolio.summary.avgMarginPct || 0}%</p>
+              <p className="font-headline font-bold text-lg text-secondary">
+                {(portfolio.summary.sold || 0) > 0 ? `${portfolio.summary.avgMarginPct || 0}%` : EM_DASH}
+              </p>
               <p className="text-[10px] text-secondary uppercase">Avg Margin</p>
             </div>
             <div className="px-3 py-2 rounded-lg bg-surface-container-high/30 border border-outline-variant/10">
@@ -103,8 +107,8 @@ export default async function FinanceAgentPage() {
                   { label: "Total Revenue", value: fmt(portfolio.summary.totalRevenue) },
                   { label: "Realized Margin", value: fmt(portfolio.summary.realizedMargin), colored: true, raw: portfolio.summary.realizedMargin },
                   { label: "Unrealized Margin", value: fmt(portfolio.summary.unrealizedMargin), colored: true, raw: portfolio.summary.unrealizedMargin },
-                  { label: "Avg Days to Sell", value: `${portfolio.summary.avgDaysToSell}d` },
-                  { label: "Capital Turnover", value: `${portfolio.summary.capitalTurnover}x` },
+                  { label: "Avg Days to Sell", value: (portfolio.summary.sold || 0) > 0 ? `${portfolio.summary.avgDaysToSell}d` : EM_DASH },
+                  { label: "Capital Turnover", value: (portfolio.summary.sold || 0) > 0 ? `${portfolio.summary.capitalTurnover}x` : EM_DASH },
                   { label: "VAT Reclaimable", value: fmt(portfolio.summary.totalVatReclaimable) },
                 ].map((r, i) => (
                   <div key={i} className="flex justify-between text-sm">

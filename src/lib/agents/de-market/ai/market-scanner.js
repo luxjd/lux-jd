@@ -6,6 +6,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatNumber } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
 import { scrapeMobileDe } from "@/lib/agents/valuation/scrapers/mobile-de";
 import { scrapeAutoScout24 } from "@/lib/agents/valuation/scrapers/autoscout24";
@@ -19,14 +20,14 @@ const ANALYSIS_SYSTEM = `You are a senior German luxury car market analyst. You 
 const ANALYSIS_PROMPT = (model, stats, listings) => `Analyze this REAL market data for ${model.make} ${model.model} (${model.yearRange[0]}-${model.yearRange[1]}) in the German market.
 
 SCRAPED DATA (${listings.length} real listings found just now):
-- Median: €${finalStats.median.toLocaleString()}
-- Mean: €${finalStats.mean.toLocaleString()}
-- P25: €${finalStats.p25.toLocaleString()}
-- P75: €${finalStats.p75.toLocaleString()}
-- Min: €${finalStats.min.toLocaleString()} / Max: €${finalStats.max.toLocaleString()}
+- Median: €${formatNumber(finalStats.median)}
+- Mean: €${formatNumber(finalStats.mean)}
+- P25: €${formatNumber(finalStats.p25)}
+- P75: €${formatNumber(finalStats.p75)}
+- Min: €${formatNumber(finalStats.min)} / Max: €${formatNumber(finalStats.max)}
 
 ALL LISTINGS:
-${listings.slice(0, 20).map((l, i) => `${i + 1}. ${l.title} — €${l.price.toLocaleString()} | ${l.mileage.toLocaleString()} km | ${l.year} | ${l.platform}`).join("\n")}
+${listings.slice(0, 20).map((l, i) => `${i + 1}. ${l.title} — €${formatNumber(l.price)} | ${formatNumber(l.mileage)} km | ${l.year} | ${l.platform}`).join("\n")}
 
 Based on this REAL data, provide market intelligence. Return ONLY valid JSON:
 {
@@ -275,7 +276,7 @@ export async function scanModel(model) {
     comparable_listings: comparableListings,
     data_sources: dataSources,
 
-    market_notes: aiAnalysis?.market_notes || `${allListings.length} real listings found. Median price €${finalStats.median.toLocaleString()}.`,
+    market_notes: aiAnalysis?.market_notes || `${allListings.length} real listings found. Median price €${formatNumber(finalStats.median)}.`,
     recommended_max_landed_cost_eur: Math.round(finalStats.median - minMargin),
     minimum_acceptable_margin_eur: Math.round(minMargin),
 

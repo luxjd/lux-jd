@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getAllListings, getAgentStatus } from "@/lib/agents/listing/storage";
 import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
+import { formatEur, formatKm } from "@/lib/format";
 import CreateListingButton from "./_components/CreateListingButton";
 
 const STATUS_STYLES = { ACTIVE: "bg-emerald-400/15 text-emerald-400", SOLD: "bg-primary/15 text-primary", DRAFT: "bg-amber-400/15 text-amber-400", PAUSED: "bg-slate-400/10 text-slate-400" };
@@ -18,7 +19,7 @@ export default async function ListingAgentPage() {
   const pipelineData = await getPipelineVehicles();
   const readyVehicles = (pipelineData?.vehicles || []).filter((v) => v.currentStage === "READY_FOR_SALE" || v.currentStage === "TUV");
 
-  const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";
+  const fmt = formatEur;
 
   return (
     <div className="space-y-6">
@@ -86,7 +87,7 @@ export default async function ListingAgentPage() {
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${STATUS_STYLES[l.status]}`}>{l.status}</span>
                     {l.aiPowered && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">AI</span>}
                   </div>
-                  <p className="text-xs text-on-surface-variant">{l.vehicle?.exteriorColor} · {l.vehicle?.driveSide} · {l.vehicle?.mileageKm?.toLocaleString()} km</p>
+                  <p className="text-xs text-on-surface-variant">{l.vehicle?.exteriorColor} · {l.vehicle?.driveSide} · {formatKm(l.vehicle?.mileageKm)} km</p>
                   <p className="text-xs text-on-surface-variant mt-1">
                     Published to {l.publishing?.totalPublished || 0} platforms ·
                     Strategy: {l.pricing?.pricing_strategy || "N/A"} ·

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { formatEur } from "@/lib/format";
 
 export default function FinancePage() {
   const [data, setData] = useState(null);
@@ -24,7 +25,7 @@ export default function FinancePage() {
   const portfolio = data?.pnl?.portfolio || {};
   const fx = data?.fx || {};
   const soldVehicles = data?.pnl?.soldVehicles || [];
-  const fmt = (n) => n != null ? `€${Math.round(n).toLocaleString()}` : "—";
+  const fmt = formatEur;
 
   return (
     <div className="space-y-6">

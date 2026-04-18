@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatEur } from "@/lib/format";
 
 export default function CreateListingButton({ vehicles }) {
   const [creating, setCreating] = useState(false);
@@ -76,7 +77,7 @@ export default function CreateListingButton({ vehicles }) {
             Listing created in {((result.duration || 0) / 1000).toFixed(0)}s
           </div>
           <p className="text-xs opacity-80">
-            Published to {result.platformsPublished} platforms · Price: €{result.initialPrice?.toLocaleString()} · Strategy: {result.pricingStrategy}
+            Published to {result.platformsPublished} platforms · Price: {formatEur(result.initialPrice)} · Strategy: {result.pricingStrategy}
           </p>
         </div>
       )}

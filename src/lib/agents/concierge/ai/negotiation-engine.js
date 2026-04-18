@@ -10,6 +10,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatEur, formatNumber } from "@/lib/format";
 
 /**
  * Evaluate an offer against the listing price.
@@ -35,13 +36,13 @@ export function evaluateOffer(offerPrice, askingPrice, floorPrice = null) {
     action = "COUNTER";
     authority = "AUTO";
     counterOffer = Math.round(askingPrice * 0.95);
-    reasoning = `Offer at -${discountPct.toFixed(1)}% — countering at -5% (€${counterOffer.toLocaleString()}).`;
+    reasoning = `Offer at -${discountPct.toFixed(1)}% — countering at -5% (${formatEur(counterOffer)}).`;
   } else if (discountPct <= 10) {
     // -8% to -10%: escalate
     action = "ESCALATE";
     authority = "HUMAN_REQUIRED";
     counterOffer = Math.round(askingPrice * 0.92);
-    reasoning = `Offer at -${discountPct.toFixed(1)}% — exceeds auto-authority. Escalating to human. Suggested counter: €${counterOffer.toLocaleString()} (-8%).`;
+    reasoning = `Offer at -${discountPct.toFixed(1)}% — exceeds auto-authority. Escalating to human. Suggested counter: ${formatEur(counterOffer)} (-8%).`;
   } else if (discountPct <= 15) {
     // -10% to -15%: decline
     action = "DECLINE";
@@ -74,8 +75,8 @@ export async function generateNegotiationResponse(evaluation, vehicle, language 
   if (!isAIAvailable()) {
     return {
       response_text: language === "DE"
-        ? `Vielen Dank für Ihr Angebot. ${evaluation.action === "ACCEPT" ? "Wir nehmen Ihr Angebot gerne an." : evaluation.action === "COUNTER" ? `Wir können Ihnen das Fahrzeug für €${evaluation.counterOffer?.toLocaleString()} anbieten.` : "Leider können wir dieses Angebot nicht akzeptieren."}`
-        : `Thank you for your offer. ${evaluation.action === "ACCEPT" ? "We are happy to accept." : evaluation.action === "COUNTER" ? `We can offer the vehicle at €${evaluation.counterOffer?.toLocaleString()}.` : "Unfortunately, we are unable to accept this offer."}`,
+        ? `Vielen Dank für Ihr Angebot. ${evaluation.action === "ACCEPT" ? "Wir nehmen Ihr Angebot gerne an." : evaluation.action === "COUNTER" ? `Wir können Ihnen das Fahrzeug für ${formatEur(evaluation.counterOffer)} anbieten.` : "Leider können wir dieses Angebot nicht akzeptieren."}`
+        : `Thank you for your offer. ${evaluation.action === "ACCEPT" ? "We are happy to accept." : evaluation.action === "COUNTER" ? `We can offer the vehicle at ${formatEur(evaluation.counterOffer)}.` : "Unfortunately, we are unable to accept this offer."}`,
       aiPowered: false,
     };
   }
@@ -83,10 +84,10 @@ export async function generateNegotiationResponse(evaluation, vehicle, language 
   const result = await callClaude({
     prompt: `Generate a ${language === "DE" ? "German" : "English"} negotiation response for a ${vehicle.make} ${vehicle.model} ${vehicle.year}.
 
-Asking price: €${evaluation.askingPrice.toLocaleString()}
-Customer offer: €${evaluation.offerPrice.toLocaleString()} (-${evaluation.discountPct}%)
+Asking price: €${formatNumber(evaluation.askingPrice)}
+Customer offer: €${formatNumber(evaluation.offerPrice)} (-${evaluation.discountPct}%)
 Our action: ${evaluation.action}
-${evaluation.counterOffer ? `Counter offer: €${evaluation.counterOffer.toLocaleString()}` : ""}
+${evaluation.counterOffer ? `Counter offer: €${formatNumber(evaluation.counterOffer)}` : ""}
 
 ${evaluation.action === "ACCEPT" ? "Write a warm acceptance. Discuss next steps (payment, handover)." :
   evaluation.action === "COUNTER" ? "Politely counter. Justify our price with vehicle quality, specification, market positioning. Be firm but friendly." :

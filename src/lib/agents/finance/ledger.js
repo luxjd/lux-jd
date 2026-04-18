@@ -8,6 +8,8 @@
  * - cost_tracking_completeness must reach 100% before READY_FOR_SALE
  */
 
+import { formatJpy } from "@/lib/format";
+
 export const COST_CATEGORIES = [
   "PURCHASE", "AUCTION_FEE", "TRANSPORT_JP", "EXPORT_DOCS",
   "FREIGHT", "INSURANCE", "CUSTOMS_DUTY", "IMPORT_VAT",
@@ -86,7 +88,7 @@ export function generateTransactionsFromLandedCost(vehicleId, landedCost, fxRate
     }
   };
 
-  add("PURCHASE", landedCost.purchasePriceEur, `Purchase at ¥${landedCost.purchasePriceJpy?.toLocaleString()}`, "EUR");
+  add("PURCHASE", landedCost.purchasePriceEur, `Purchase at ${formatJpy(landedCost.purchasePriceJpy)}`, "EUR");
   add("AUCTION_FEE", landedCost.auctionFeesEur, "Auction buyer premium (4%)");
   add("TRANSPORT_JP", landedCost.jpTransportEur || 400, "Enclosed Japan inland transport");
   add("EXPORT_DOCS", landedCost.exportDocsEur || 175, "Export documentation (EPC + radiation cert)");

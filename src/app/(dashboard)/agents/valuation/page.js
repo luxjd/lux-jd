@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { formatEur } from "@/lib/format";
 import ValuationForm from "./_components/ValuationForm";
 import ProcessingSteps from "./_components/ProcessingSteps";
 import ValuationReport from "./_components/ValuationReport";
@@ -361,7 +362,7 @@ function ValuationPageInner() {
                               }`}>{v.verdict || "—"}</span>
                             </td>
                             <td className={`py-2 px-3 text-sm font-mono ${(v.marginEur || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                              {v.marginEur != null ? `€${v.marginEur.toLocaleString()}` : "—"}
+                              {formatEur(v.marginEur)}
                             </td>
                             <td className="py-2 px-3 text-sm text-on-surface-variant">
                               {v.confidence != null ? `${(v.confidence * 100).toFixed(0)}%` : "—"}

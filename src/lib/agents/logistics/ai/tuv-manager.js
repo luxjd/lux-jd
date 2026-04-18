@@ -6,6 +6,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatNumber } from "@/lib/format";
 
 // TUV stations with luxury import experience
 export const TUV_STATIONS = [
@@ -62,7 +63,7 @@ Engine: ${vehicle.engineSpec || "Standard"}
 Drive Side: ${vehicle.driveSide}
 Origin: Japan
 EU Type Approval: ${isEuSpec(vehicle.make) ? "YES — EU WVTA likely available" : "May need individual approval"}
-Mileage: ${vehicle.mileageKm?.toLocaleString()} km
+Mileage: ${formatNumber(vehicle.mileageKm)} km
 Modifications: ${vehicle.modifications || "None known"}
 CoC available: ${isEuSpec(vehicle.make) ? "Likely — contact manufacturer" : "Unlikely"}
 

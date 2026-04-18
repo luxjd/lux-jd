@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { formatEur } from "@/lib/format";
 
 const TABS = ["ALL", "ACTIVE", "SOLD", "DRAFT"];
 const STATUS_STYLES = { ACTIVE: "bg-emerald-400/15 text-emerald-400", SOLD: "bg-primary/15 text-primary", DRAFT: "bg-amber-400/15 text-amber-400", PAUSED: "bg-slate-400/10 text-slate-400" };
@@ -43,7 +44,7 @@ export default function ListingsPage() {
     : [];
 
   const filtered = tab === "ALL" ? allListings : allListings.filter((l) => l.status === tab);
-  const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";
+  const fmt = formatEur;
 
   return (
     <div className="space-y-6">

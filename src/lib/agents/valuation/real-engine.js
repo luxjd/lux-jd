@@ -17,6 +17,7 @@
  */
 
 import { isAIAvailable, callClaude } from "@/lib/claude";
+import { formatEur } from "@/lib/format";
 import { analyzePhotos } from "./photo-analyzer";
 import { parseAuctionSheet } from "./sheet-parser";
 import { estimateMarketValue } from "./market-estimator";
@@ -300,7 +301,7 @@ async function getHistoricalComparison(make, model, year) {
     const passCount = verdicts.filter((v) => v === "PASS").length;
 
     let summary = `Found ${sameModel.length} previous valuations for similar ${make} ${model} vehicles.`;
-    if (avgMargin != null) summary += ` Average margin was €${avgMargin.toLocaleString()}.`;
+    if (avgMargin != null) summary += ` Average margin was ${formatEur(avgMargin)}.`;
     if (verdicts.length) summary += ` Verdicts: ${buyCount} BUY, ${verdicts.length - buyCount - passCount} REVIEW, ${passCount} PASS.`;
 
     return {
@@ -616,7 +617,7 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       verdict: riskRecommendation.verdict,
       verdictReasoning: riskRecommendation.verdict_reasoning,
       maxBidJpy: riskRecommendation.max_bid_jpy || deterministicMaxBid,
-      maxBidReasoning: riskRecommendation.max_bid_reasoning || `Deterministic calculation based on minimum ${MIN_MARGIN_PCT}% / €${MIN_MARGIN_EUR.toLocaleString()} margin threshold`,
+      maxBidReasoning: riskRecommendation.max_bid_reasoning || `Deterministic calculation based on minimum ${MIN_MARGIN_PCT}% / ${formatEur(MIN_MARGIN_EUR)} margin threshold`,
       keyStrengths: riskRecommendation.key_strengths || [],
       keyConcerns: riskRecommendation.key_concerns || [],
       actionItems: riskRecommendation.action_items || [],
@@ -625,7 +626,7 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
     historicalComparison: historicalComparison || null,
 
     reasoning: riskRecommendation?.verdict_reasoning
-      ? `${riskRecommendation.verdict_reasoning} The vehicle's total landed cost of €${landedCost.totalLandedCostEur.toLocaleString()} against an estimated German market value of €${estimatedSalePrice.toLocaleString()} yields a ${grossMarginPct}% gross margin (€${grossMargin.toLocaleString()}). Margin scenarios: pessimistic €${pessimisticMargin.toLocaleString()}, base €${grossMargin.toLocaleString()}, optimistic €${optimisticMargin.toLocaleString()}. Confidence in this estimate is ${(confidence * 100).toFixed(0)}% based on ${comparableCount} comparable listings, ${conditionConf >= 0.8 ? "strong" : conditionConf >= 0.5 ? "moderate" : "limited"} condition data, and ${fxResult.live ? "live" : "cached"} FX rate of ¥${fxResult.rate}/€.${fxResult.volatility?.alert ? ` ⚠ FX volatility alert: ${fxResult.volatility.alertReason}` : ""}${historicalComparison ? ` Historical context: ${historicalComparison.summary}` : ""}`
+      ? `${riskRecommendation.verdict_reasoning} The vehicle's total landed cost of ${formatEur(landedCost.totalLandedCostEur)} against an estimated German market value of ${formatEur(estimatedSalePrice)} yields a ${grossMarginPct}% gross margin (${formatEur(grossMargin)}). Margin scenarios: pessimistic ${formatEur(pessimisticMargin)}, base ${formatEur(grossMargin)}, optimistic ${formatEur(optimisticMargin)}. Confidence in this estimate is ${(confidence * 100).toFixed(0)}% based on ${comparableCount} comparable listings, ${conditionConf >= 0.8 ? "strong" : conditionConf >= 0.5 ? "moderate" : "limited"} condition data, and ${fxResult.live ? "live" : "cached"} FX rate of ¥${fxResult.rate}/€.${fxResult.volatility?.alert ? ` ⚠ FX volatility alert: ${fxResult.volatility.alertReason}` : ""}${historicalComparison ? ` Historical context: ${historicalComparison.summary}` : ""}`
       : null,
 
     comparableListings: marketResult?.comparable_listings?.map((c, i) => ({

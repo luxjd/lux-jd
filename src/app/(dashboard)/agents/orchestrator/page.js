@@ -3,6 +3,7 @@ import { getAgentStatus, getDecisions, getLatestPortfolioSnapshot } from "@/lib/
 import { getLatestOpportunities } from "@/lib/agents/jp-sourcing/storage";
 import { checkAllAgents } from "@/lib/agents/orchestrator/ai/agent-monitor";
 import { loadPortfolioState } from "@/lib/agents/orchestrator/ai/portfolio-manager";
+import { formatEur } from "@/lib/format";
 import EvaluateButton from "./_components/EvaluateButton";
 import DecisionHistory from "./_components/DecisionHistory";
 
@@ -36,7 +37,7 @@ export default async function OrchestratorPage() {
     (o.recommendation === "STRONG_BUY" || o.recommendation === "BUY") && !decidedIds.has(o.id)
   );
 
-  const fmt = (n) => n != null && !isNaN(n) ? `€${n.toLocaleString("de-DE")}` : "—";
+  const fmt = formatEur;
 
   return (
     <div className="space-y-6">

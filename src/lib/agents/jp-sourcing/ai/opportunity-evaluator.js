@@ -12,6 +12,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatEur } from "@/lib/format";
 import { fetchFxRate } from "@/lib/agents/valuation/fx-fetcher";
 
 const MIN_MARGIN_EUR = parseInt(process.env.MIN_MARGIN_EUR || "15000");
@@ -226,7 +227,7 @@ export function evaluateOpportunity(vehicle, tvr, fxRate) {
     risk,
     recommendation,
     maxBidJpy,
-    maxBidReasoning: `Median DE value €${deMedian.toLocaleString()} - min margin €${MIN_MARGIN_EUR.toLocaleString()} = max landed €${maxBidEur.toLocaleString()}, converted at buffered FX ¥${bufferedRate.toFixed(2)}/€`,
+    maxBidReasoning: `Median DE value ${formatEur(deMedian)} - min margin ${formatEur(MIN_MARGIN_EUR)} = max landed ${formatEur(maxBidEur)}, converted at buffered FX ¥${bufferedRate.toFixed(2)}/€`,
     evaluatedAt: new Date().toISOString(),
   };
 }

@@ -10,6 +10,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatEur, formatNumber } from "@/lib/format";
 
 const VAT_RATE = 0.19;
 
@@ -47,7 +48,7 @@ export function compareTaxTreatments(vehicle, salePrice, landedCostExclVat, impo
       netVatLiability: regelNetVat,
       effectiveMargin: regelEffectiveMargin,
       marginPct: salePrice > 0 ? Number(((regelEffectiveMargin / salePrice) * 100).toFixed(1)) : 0,
-      explanation: `Full VAT (€${regelSaleVat.toLocaleString()}) on sale, but import VAT (€${regelVatReclaimed.toLocaleString()}) reclaimed. Net VAT: €${regelNetVat.toLocaleString()}.`,
+      explanation: `Full VAT (${formatEur(regelSaleVat)}) on sale, but import VAT (${formatEur(regelVatReclaimed)}) reclaimed. Net VAT: ${formatEur(regelNetVat)}.`,
     },
 
     differenzbesteuerung: {
@@ -58,15 +59,15 @@ export function compareTaxTreatments(vehicle, salePrice, landedCostExclVat, impo
       netVatLiability: diffNetVat,
       effectiveMargin: diffEffectiveMargin,
       marginPct: salePrice > 0 ? Number(((diffEffectiveMargin / salePrice) * 100).toFixed(1)) : 0,
-      explanation: `VAT only on margin (€${diffVat.toLocaleString()}), but import VAT (€${importVat.toLocaleString()}) NOT reclaimable. Significantly worse for imports.`,
+      explanation: `VAT only on margin (${formatEur(diffVat)}), but import VAT (${formatEur(importVat)}) NOT reclaimable. Significantly worse for imports.`,
     },
 
     recommendation: {
       recommended: regelBetter ? "REGELBESTEUERUNG" : "DIFFERENZBESTEUERUNG",
       advantage: advantage,
       reasoning: regelBetter
-        ? `Regelbesteuerung yields €${advantage.toLocaleString()} higher net margin because the import VAT of €${importVat.toLocaleString()} is reclaimable — critical for imports.`
-        : `Differenzbesteuerung yields €${advantage.toLocaleString()} higher net margin. This is unusual for imports — review the calculation.`,
+        ? `Regelbesteuerung yields ${formatEur(advantage)} higher net margin because the import VAT of ${formatEur(importVat)} is reclaimable — critical for imports.`
+        : `Differenzbesteuerung yields ${formatEur(advantage)} higher net margin. This is unusual for imports — review the calculation.`,
     },
 
     calculatedAt: new Date().toISOString(),
@@ -116,9 +117,9 @@ export async function reviewTaxCompliance(portfolioPnL, currentMonth) {
 Portfolio status:
 - Vehicles in pipeline: ${portfolioPnL.summary?.inPipeline || 0}
 - Vehicles sold: ${portfolioPnL.summary?.sold || 0}
-- Total revenue: €${portfolioPnL.summary?.totalRevenue?.toLocaleString() || 0}
-- Total costs: €${portfolioPnL.summary?.totalCosts?.toLocaleString() || 0}
-- Total VAT reclaimable: €${portfolioPnL.summary?.totalVatReclaimable?.toLocaleString() || 0}
+- Total revenue: €${portfolioPnL.summary?.totalRevenue != null ? formatNumber(portfolioPnL.summary.totalRevenue) : 0}
+- Total costs: €${portfolioPnL.summary?.totalCosts != null ? formatNumber(portfolioPnL.summary.totalCosts) : 0}
+- Total VAT reclaimable: €${portfolioPnL.summary?.totalVatReclaimable != null ? formatNumber(portfolioPnL.summary.totalVatReclaimable) : 0}
 - Current month: ${currentMonth}
 
 Return ONLY valid JSON:

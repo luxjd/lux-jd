@@ -6,6 +6,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatNumber } from "@/lib/format";
 
 const SYSTEM_PROMPT = `You are the Chief Investment Officer of LuxJD, a luxury vehicle arbitrage firm. You write concise, decisive executive briefs for vehicle acquisition decisions. Your briefs are legendary for their clarity — every word earns its place.
 
@@ -30,16 +31,16 @@ SOURCE: ${opportunity.source?.auctionHouse} Lot ${opportunity.source?.lotNumber}
 ${evaluation.steps.map((s) => `Step ${s.step} ${s.name}: ${s.result} — ${s.reasoning}`).join("\n")}
 
 FINANCIALS:
-- JP Ask: ¥${opportunity.pricing?.askingPriceJpy?.toLocaleString()} (€${opportunity.pricing?.askingPriceEur?.toLocaleString()})
-- Landed Cost: €${evaluation.financials.landedCost.toLocaleString()}
-- DE Market Value: €${opportunity.pricing?.deMarketMedian?.toLocaleString()}
-- Margin: €${evaluation.financials.margin.toLocaleString()} (${evaluation.financials.marginPct}%)
+- JP Ask: ¥${formatNumber(opportunity.pricing?.askingPriceJpy)} (€${formatNumber(opportunity.pricing?.askingPriceEur)})
+- Landed Cost: €${formatNumber(evaluation.financials.landedCost)}
+- DE Market Value: €${formatNumber(opportunity.pricing?.deMarketMedian)}
+- Margin: €${formatNumber(evaluation.financials.margin)} (${evaluation.financials.marginPct}%)
 - Confidence: ${(opportunity.confidence * 100).toFixed(0)}%
 - Risk: ${evaluation.risk.compositeScore}/3.0 (${evaluation.risk.compositeLevel})
 
 VEHICLE DETAILS:
 - ${opportunity.vehicle?.year} ${opportunity.vehicle?.make} ${opportunity.vehicle?.model}
-- ${opportunity.vehicle?.mileageKm?.toLocaleString()} km | ${opportunity.vehicle?.driveSide} | ${opportunity.vehicle?.exteriorColor}
+- ${formatNumber(opportunity.vehicle?.mileageKm)} km | ${opportunity.vehicle?.driveSide} | ${opportunity.vehicle?.exteriorColor}
 - Grade: ${opportunity.vehicle?.auctionGrade} | Service: ${opportunity.vehicle?.serviceHistory}
 - Condition: ${opportunity.vehicle?.conditionNotes || "N/A"}
 

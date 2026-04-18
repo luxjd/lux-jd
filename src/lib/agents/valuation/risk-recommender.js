@@ -1,4 +1,5 @@
 import { callClaude } from "@/lib/claude";
+import { formatNumber } from "@/lib/format";
 import { validateRiskOutput } from "./validation";
 
 const SYSTEM_PROMPT = `You are a senior automotive investment analyst specializing in Japanese-to-European luxury vehicle arbitrage. You evaluate acquisition opportunities with rigorous financial discipline. Your recommendations directly influence purchasing decisions on vehicles worth €50,000-€400,000. Be conservative — a missed deal costs nothing, a bad purchase costs everything.`;
@@ -7,7 +8,7 @@ const USER_PROMPT = (data) => `Evaluate this vehicle acquisition opportunity. Al
 
 VEHICLE:
 ${data.make} ${data.model} ${data.year}
-${data.mileageKm?.toLocaleString()} km | ${data.driveSide} | ${data.exteriorColor}
+${formatNumber(data.mileageKm)} km | ${data.driveSide} | ${data.exteriorColor}
 Service History: ${data.serviceHistory || "Unknown"}
 Service Book Present: ${data.serviceBookPresent != null ? (data.serviceBookPresent ? "Yes" : "No") : "Unknown"}
 Auction Grade: ${data.auctionGrade || "N/A"}${data.interiorGrade ? ` (Interior: ${data.interiorGrade})` : ""}
@@ -30,20 +31,20 @@ DAMAGE CODES:
 ${data.damageCodes?.length ? data.damageCodes.map((d) => `  ${d.location}: ${d.code} — ${d.meaning} [${d.severity}]`).join("\n") : "None found"}
 
 FINANCIALS:
-Asking Price: ¥${data.askingPriceJpy?.toLocaleString()} (€${data.purchaseEur?.toLocaleString()})
-Total Landed Cost: €${data.totalLandedCost?.toLocaleString()}
-Estimated DE Sale Price: €${data.estimatedSalePrice?.toLocaleString()}
-Gross Margin: €${data.grossMargin?.toLocaleString()} (${data.grossMarginPct}%)
-Cash Outlay Required: €${data.cashOutlay?.toLocaleString()}
+Asking Price: ¥${formatNumber(data.askingPriceJpy)} (€${formatNumber(data.purchaseEur)})
+Total Landed Cost: €${formatNumber(data.totalLandedCost)}
+Estimated DE Sale Price: €${formatNumber(data.estimatedSalePrice)}
+Gross Margin: €${formatNumber(data.grossMargin)} (${data.grossMarginPct}%)
+Cash Outlay Required: €${formatNumber(data.cashOutlay)}
 FX Rate: ¥${data.fxRate}/€
 ${data.fxVolatilityAlert ? `⚠ FX ALERT: ${data.fxVolatilityAlertReason}` : "FX Stability: Normal"}
-Deterministic Max Bid: ¥${data.deterministicMaxBid?.toLocaleString()} (pre-calculated)
-${data.maxPurchaseEur ? `Max Purchase Limit: €${data.maxPurchaseEur.toLocaleString()} (company policy)` : ""}
+Deterministic Max Bid: ¥${formatNumber(data.deterministicMaxBid)} (pre-calculated)
+${data.maxPurchaseEur ? `Max Purchase Limit: €${formatNumber(data.maxPurchaseEur)} (company policy)` : ""}
 
 MARGIN SCENARIOS:
-Pessimistic (P25 sale): €${data.pessimisticMargin?.toLocaleString()}
-Base (median sale): €${data.grossMargin?.toLocaleString()}
-Optimistic (P75 sale): €${data.optimisticMargin?.toLocaleString()}
+Pessimistic (P25 sale): €${formatNumber(data.pessimisticMargin)}
+Base (median sale): €${formatNumber(data.grossMargin)}
+Optimistic (P75 sale): €${formatNumber(data.optimisticMargin)}
 
 MARKET:
 Comparable Listings: ${data.comparableCount}
@@ -83,9 +84,9 @@ Return ONLY valid JSON:
 }
 
 VERDICT RULES (STRICT — you MUST follow these thresholds set by the user):
-- BUY: Gross margin >= €${data.minMarginEur?.toLocaleString() || "15,000"} AND >= ${data.minMarginPct || 20}% AND overall_risk <= 3.0 AND no HIGH individual risks AND pessimistic margin > €0${data.maxPurchaseEur ? ` AND total landed cost <= €${data.maxPurchaseEur.toLocaleString()}` : ""}
+- BUY: Gross margin >= €${data.minMarginEur != null ? formatNumber(data.minMarginEur) : "15,000"} AND >= ${data.minMarginPct || 20}% AND overall_risk <= 3.0 AND no HIGH individual risks AND pessimistic margin > €0${data.maxPurchaseEur ? ` AND total landed cost <= €${formatNumber(data.maxPurchaseEur)}` : ""}
 - REVIEW: Margin meets BUY threshold but one or more: overall_risk 3.0-4.0, one HIGH risk, pessimistic margin < €0, FX alert active
-- PASS: Margin < €${data.minMarginEur?.toLocaleString() || "15,000"} OR < ${data.minMarginPct || 20}% OR overall_risk > 4.0 OR multiple HIGH risks OR accident history with poor condition${data.maxPurchaseEur ? ` OR total landed cost > €${data.maxPurchaseEur.toLocaleString()}` : ""}`;
+- PASS: Margin < €${data.minMarginEur != null ? formatNumber(data.minMarginEur) : "15,000"} OR < ${data.minMarginPct || 20}% OR overall_risk > 4.0 OR multiple HIGH risks OR accident history with poor condition${data.maxPurchaseEur ? ` OR total landed cost > €${formatNumber(data.maxPurchaseEur)}` : ""}`;
 
 /**
  * Assess risks and generate final BUY/REVIEW/PASS recommendation.

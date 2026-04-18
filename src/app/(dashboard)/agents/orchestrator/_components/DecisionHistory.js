@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { formatEur, formatJpy } from "@/lib/format";
 
 const DECISION_STYLES = {
   AUTO_APPROVE: "bg-emerald-400/15 text-emerald-400",
@@ -10,8 +11,8 @@ const DECISION_STYLES = {
   HUMAN_REJECTED: "bg-red-400/15 text-red-400",
 };
 
-const fmt = (n) => n != null && !isNaN(n) ? `€${Number(n).toLocaleString("de-DE")}` : "—";
-const fmtJpy = (n) => n != null && !isNaN(n) ? `¥${Number(n).toLocaleString("de-DE")}` : "—";
+const fmt = formatEur;
+const fmtJpy = formatJpy;
 
 function DecisionCard({ d, onOverride }) {
   const [loading, setLoading] = useState(null);

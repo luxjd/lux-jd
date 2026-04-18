@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getLatestOpportunities } from "@/lib/agents/jp-sourcing/storage";
+import { formatEur, formatJpy, formatKm } from "@/lib/format";
 
 const REC_STYLES = {
   STRONG_BUY: "bg-emerald-400/15 text-emerald-400",
@@ -41,7 +42,6 @@ export default async function OpportunitiesPage() {
       }))
     : [];
 
-  const fmt = (n) => n != null ? `€${n.toLocaleString()}` : "—";
 
   return (
     <div className="space-y-6">
@@ -75,7 +75,7 @@ export default async function OpportunitiesPage() {
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${RISK_STYLES[opp.riskLevel] || RISK_STYLES.MEDIUM}`}>{opp.riskLevel || "MEDIUM"} RISK</span>
                   </div>
                   <p className="text-sm text-on-surface-variant">
-                    {opp.year} · {(opp.mileage || opp.mileageKm || 0).toLocaleString()} km · {opp.driveSide || "LHD"} · {opp.color} · Grade {opp.grade || opp.auctionGrade || "N/A"}
+                    {opp.year} · {formatKm(opp.mileage || opp.mileageKm || 0)} km · {opp.driveSide || "LHD"} · {opp.color} · Grade {opp.grade || opp.auctionGrade || "N/A"}
                   </p>
                   <p className="text-xs text-on-surface-variant mt-1">{opp.auctionHouse} · {opp.auctionDate || "Upcoming"}</p>
                   {opp.thesis && (
@@ -86,21 +86,21 @@ export default async function OpportunitiesPage() {
                 <div className="flex flex-wrap items-center gap-3 sm:gap-6">
                   <div className="text-center">
                     <p className="text-[10px] uppercase text-on-surface-variant tracking-wider">JP Price</p>
-                    <p className="font-headline font-bold text-sm">{opp.jpPriceJpy ? `¥${opp.jpPriceJpy.toLocaleString()}` : fmt(opp.jpPriceEur)}</p>
+                    <p className="font-headline font-bold text-sm">{opp.jpPriceJpy ? formatJpy(opp.jpPriceJpy) : formatEur(opp.jpPriceEur)}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-[10px] uppercase text-on-surface-variant tracking-wider">DE Value</p>
-                    <p className="font-headline font-bold text-sm">{fmt(opp.estimatedDeValue)}</p>
+                    <p className="font-headline font-bold text-sm">{formatEur(opp.estimatedDeValue)}</p>
                   </div>
                   {opp.landedCost && (
                     <div className="text-center">
                       <p className="text-[10px] uppercase text-on-surface-variant tracking-wider">Landed</p>
-                      <p className="font-headline font-bold text-sm">{fmt(opp.landedCost)}</p>
+                      <p className="font-headline font-bold text-sm">{formatEur(opp.landedCost)}</p>
                     </div>
                   )}
                   <div className="text-center">
                     <p className={`text-[10px] uppercase tracking-wider ${opp.marginEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>Margin</p>
-                    <p className={`font-headline font-bold text-lg ${opp.marginEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(opp.marginEur)}</p>
+                    <p className={`font-headline font-bold text-lg ${opp.marginEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatEur(opp.marginEur)}</p>
                     <p className={`text-[10px] ${opp.marginEur >= 0 ? "text-emerald-400" : "text-red-400"}`}>{opp.spreadPct}%</p>
                   </div>
                   <div className="text-center">

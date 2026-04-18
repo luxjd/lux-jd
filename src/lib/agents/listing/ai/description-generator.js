@@ -10,6 +10,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatNumber } from "@/lib/format";
 
 const SYSTEM_PROMPT = `You are a premium automotive copywriter for LuxJD, a luxury vehicle dealership specializing in Japanese-sourced imports to Germany. You write in the voice of a high-end dealer — professional, knowledgeable, trustworthy, never salesy.
 
@@ -27,7 +28,7 @@ VEHICLE DATA:
 Make: ${vehicle.make}
 Model: ${vehicle.model}
 Year: ${vehicle.year}
-Mileage: ${vehicle.mileageKm?.toLocaleString()} km
+Mileage: ${formatNumber(vehicle.mileageKm)} km
 Drive Side: ${vehicle.driveSide}
 Exterior: ${vehicle.exteriorColor}
 Interior: ${vehicle.interiorColor || "Leather"}
@@ -39,7 +40,7 @@ Accident History: ${vehicle.accidentHistory ? "Minor (disclosed)" : "Clean — n
 Specification Notes: ${vehicle.specNotes || "Factory specification"}
 Condition: ${vehicle.conditionNotes || "Excellent overall condition"}
 
-LISTING PRICE: €${vehicle.listingPrice?.toLocaleString() || "TBD"}
+LISTING PRICE: €${vehicle.listingPrice != null ? formatNumber(vehicle.listingPrice) : "TBD"}
 
 Return ONLY valid JSON:
 

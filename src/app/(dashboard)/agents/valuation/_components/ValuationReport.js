@@ -1,7 +1,9 @@
 "use client";
 
-const fmt = (n) => { if (n == null || isNaN(n)) return "€—"; return n >= 1000000 ? `€${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `€${(n / 1000).toFixed(0)}K` : `€${n.toLocaleString()}`; };
-const fmtFull = (n) => { if (n == null || isNaN(n)) return "€—"; return `€${n.toLocaleString()}`; };
+import { formatEur, formatEurCompact, formatJpy, formatKm } from "@/lib/format";
+
+const fmt = formatEurCompact;
+const fmtFull = (n) => formatEur(n, { dash: "€—" });
 const RISK_COLORS = { LOW: "text-emerald-400 bg-emerald-400/10", MEDIUM: "text-amber-400 bg-amber-400/10", HIGH: "text-red-400 bg-red-400/10" };
 const VERDICT_STYLES = { BUY: "bg-emerald-400/15 text-emerald-400 border-emerald-400/30", REVIEW: "bg-amber-400/15 text-amber-400 border-amber-400/30", PASS: "bg-slate-400/10 text-slate-400 border-slate-400/20" };
 const VERDICT_ICONS = { BUY: "check_circle", REVIEW: "help", PASS: "block" };
@@ -49,9 +51,9 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
         {v.maxBidJpy && (
           <div className="mt-4 inline-block px-4 py-2 rounded-xl bg-black/20 print:bg-gray-100">
             <span className="text-xs uppercase tracking-widest opacity-70">Max Recommended Bid</span>
-            <p className="font-headline text-2xl font-bold">¥{v.maxBidJpy.toLocaleString()}</p>
+            <p className="font-headline text-2xl font-bold">{formatJpy(v.maxBidJpy)}</p>
             {m.deterministicMaxBidJpy && m.deterministicMaxBidJpy !== v.maxBidJpy && (
-              <p className="text-[10px] opacity-60">Deterministic: ¥{m.deterministicMaxBidJpy.toLocaleString()}</p>
+              <p className="text-[10px] opacity-60">Deterministic: {formatJpy(m.deterministicMaxBidJpy)}</p>
             )}
           </div>
         )}
@@ -141,7 +143,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
               {r.vehicleSummary.fullModelName || `${r.vehicleSummary.make} ${r.vehicleSummary.model}`}
             </h3>
             <p className="text-on-surface-variant">
-              {r.vehicleSummary.year} &middot; {r.vehicleSummary.mileageKm?.toLocaleString()} km &middot; {r.vehicleSummary.driveSide} &middot; {r.vehicleSummary.exteriorColor}
+              {r.vehicleSummary.year} &middot; {formatKm(r.vehicleSummary.mileageKm)} km &middot; {r.vehicleSummary.driveSide} &middot; {r.vehicleSummary.exteriorColor}
               {r.vehicleSummary.auctionGrade && ` · Grade ${r.vehicleSummary.auctionGrade}`}
             </p>
             {r.vehicleSummary.engineSpec && (
@@ -238,7 +240,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
           <h3 className="font-headline font-bold text-lg mb-4">Landed Cost Breakdown</h3>
           <div className="space-y-2">
             {[
-              { label: `Purchase (¥${lc.purchasePriceJpy?.toLocaleString()})`, value: lc.purchasePriceEur, icon: "gavel" },
+              { label: `Purchase (${formatJpy(lc.purchasePriceJpy)})`, value: lc.purchasePriceEur, icon: "gavel" },
               { label: "Auction fees (4%)", value: lc.auctionFeesEur, icon: "receipt" },
               { label: "JP Transport", value: lc.jpTransportEur, icon: "local_shipping" },
               { label: "Export docs", value: lc.exportDocsEur, icon: "description" },
@@ -551,7 +553,7 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
                     <tr key={c.id || i} className="border-b border-outline-variant/10 hover:bg-surface-container-high/30 print:border-gray-100">
                       <td className="py-2 px-3 text-sm font-bold">{c.title || "—"}</td>
                       <td className="py-2 px-3 text-sm font-mono">{fmtFull(c.price)}</td>
-                      <td className="py-2 px-3 text-sm text-on-surface-variant">{c.mileage ? c.mileage.toLocaleString() + " km" : "—"}</td>
+                      <td className="py-2 px-3 text-sm text-on-surface-variant">{c.mileage ? `${formatKm(c.mileage)} km` : "—"}</td>
                       <td className="py-2 px-3 text-sm text-on-surface-variant">{c.location || "—"}</td>
                       <td className="py-2 px-3 text-sm text-on-surface-variant">{c.platform || "—"}</td>
                     </tr>

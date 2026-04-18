@@ -6,6 +6,7 @@
  */
 
 import { callClaude, isAIAvailable } from "@/lib/claude";
+import { formatNumber } from "@/lib/format";
 
 const SYSTEM_PROMPT = `You are a senior Japanese-to-European luxury vehicle arbitrage analyst. You evaluate acquisition opportunities with rigorous financial discipline. Your recommendations directly influence purchasing decisions on vehicles worth €50,000-€400,000.
 
@@ -15,7 +16,7 @@ const ANALYSIS_PROMPT = (opp) => `Perform a deep analysis on this acquisition op
 
 VEHICLE:
 ${opp.vehicle.make} ${opp.vehicle.model} ${opp.vehicle.year}
-${opp.vehicle.mileageKm?.toLocaleString()} km | ${opp.vehicle.driveSide} | ${opp.vehicle.exteriorColor}
+${formatNumber(opp.vehicle.mileageKm)} km | ${opp.vehicle.driveSide} | ${opp.vehicle.exteriorColor}
 Grade: ${opp.vehicle.auctionGrade} | Service: ${opp.vehicle.serviceHistory}
 Accident: ${opp.vehicle.accidentHistory ? "YES" : "No"}
 Source: ${opp.source.auctionHouse} Lot ${opp.source.lotNumber}
@@ -24,10 +25,10 @@ Condition: ${opp.vehicle.conditionNotes || "N/A"}
 Auction Sheet: ${opp.vehicle.auctionSheetNotes || "N/A"}
 
 FINANCIALS:
-JP Ask: ¥${opp.pricing.askingPriceJpy?.toLocaleString()} (€${opp.pricing.askingPriceEur?.toLocaleString()})
-DE Median: €${opp.pricing.deMarketMedian?.toLocaleString()}
-Landed Cost: €${opp.landedCost.totalLandedCostEur?.toLocaleString()}
-Gross Margin: €${opp.margin.grossMarginEur?.toLocaleString()} (${opp.margin.grossMarginPct}%)
+JP Ask: ¥${formatNumber(opp.pricing.askingPriceJpy)} (€${formatNumber(opp.pricing.askingPriceEur)})
+DE Median: €${formatNumber(opp.pricing.deMarketMedian)}
+Landed Cost: €${formatNumber(opp.landedCost.totalLandedCostEur)}
+Gross Margin: €${formatNumber(opp.margin.grossMarginEur)} (${opp.margin.grossMarginPct}%)
 Risk Score: ${opp.risk.compositeScore}/3.0 (${opp.risk.compositeLevel})
 Confidence: ${opp.confidence}
 

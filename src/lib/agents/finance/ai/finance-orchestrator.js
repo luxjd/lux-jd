@@ -11,6 +11,7 @@
  */
 
 import { isAIAvailable } from "@/lib/claude";
+import { formatEur } from "@/lib/format";
 import { createTransaction, generateTransactionsFromLandedCost, calculateCompleteness } from "../ledger";
 import { calculateVehiclePnL, calculatePortfolioPnL } from "./pnl-engine";
 import { checkFxRate, calculateFxImpact, calculatePortfolioFxExposure } from "./fx-monitor";
@@ -51,11 +52,11 @@ export async function recordSale(vehicleId, salePrice, date) {
     vehicleId,
     category: "SALE_PROCEEDS",
     amountEur: salePrice,
-    description: `Vehicle sold for €${salePrice.toLocaleString()}`,
+    description: `Vehicle sold for ${formatEur(salePrice)}`,
     date,
   });
   await addTransaction(txn);
-  await updateAgentStatus({ status: "ONLINE", lastAction: `Recorded sale of ${vehicleId} for €${salePrice.toLocaleString()}` });
+  await updateAgentStatus({ status: "ONLINE", lastAction: `Recorded sale of ${vehicleId} for ${formatEur(salePrice)}` });
   return txn;
 }
 

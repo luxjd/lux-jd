@@ -22,6 +22,8 @@
  * Results: AUTO_APPROVE | HUMAN_REVIEW | REJECT
  */
 
+import { formatEur, formatJpy } from "@/lib/format";
+
 const MIN_MARGIN_EUR = parseInt(process.env.MIN_MARGIN_EUR || "15000");
 const MIN_MARGIN_PCT = parseInt(process.env.MIN_MARGIN_PCT || "20");
 const MAX_BRAND_CONCENTRATION = parseInt(process.env.MAX_BRAND_CONCENTRATION_PCT || "30") / 100;
@@ -60,13 +62,13 @@ export function evaluateOpportunity(opportunity, portfolio) {
     step: 1,
     name: "MARGIN CHECK",
     icon: "payments",
-    check: `Margin >= €${MIN_MARGIN_EUR.toLocaleString()} AND >= ${MIN_MARGIN_PCT}%`,
-    actual: `€${margin.toLocaleString()} (${marginPct}%)`,
+    check: `Margin >= ${formatEur(MIN_MARGIN_EUR)} AND >= ${MIN_MARGIN_PCT}%`,
+    actual: `${formatEur(margin)} (${marginPct}%)`,
     result: step1Pass ? "PASS" : "FAIL",
     critical: true,
     reasoning: step1Pass
-      ? `Margin of €${margin.toLocaleString()} (${marginPct}%) exceeds both thresholds.`
-      : `Margin of €${margin.toLocaleString()} (${marginPct}%) ${margin < MIN_MARGIN_EUR ? `below €${MIN_MARGIN_EUR.toLocaleString()} absolute minimum` : `below ${MIN_MARGIN_PCT}% minimum percentage`}.`,
+      ? `Margin of ${formatEur(margin)} (${marginPct}%) exceeds both thresholds.`
+      : `Margin of ${formatEur(margin)} (${marginPct}%) ${margin < MIN_MARGIN_EUR ? `below ${formatEur(MIN_MARGIN_EUR)} absolute minimum` : `below ${MIN_MARGIN_PCT}% minimum percentage`}.`,
   });
   if (!step1Pass) hasReject = true;
 
@@ -152,11 +154,11 @@ export function evaluateOpportunity(opportunity, portfolio) {
     name: "CAPITAL CHECK",
     icon: "account_balance",
     check: `Deployment <= ${MAX_CAPITAL_DEPLOYMENT * 100}% of available capital`,
-    actual: `€${newDeployment.toLocaleString()} / €${maxCapital.toLocaleString()} = ${(deploymentPct * 100).toFixed(1)}%`,
+    actual: `${formatEur(newDeployment)} / ${formatEur(maxCapital)} = ${(deploymentPct * 100).toFixed(1)}%`,
     result: step5Pass ? "PASS" : "FAIL",
     critical: true,
     reasoning: step5Pass
-      ? `Adding €${cashOutlay.toLocaleString()} keeps deployment at ${(deploymentPct * 100).toFixed(1)}% — within ${MAX_CAPITAL_DEPLOYMENT * 100}% limit.`
+      ? `Adding ${formatEur(cashOutlay)} keeps deployment at ${(deploymentPct * 100).toFixed(1)}% — within ${MAX_CAPITAL_DEPLOYMENT * 100}% limit.`
       : `Capital deployment would reach ${(deploymentPct * 100).toFixed(1)}% — exceeds ${MAX_CAPITAL_DEPLOYMENT * 100}% safety limit. Cannot commit more capital.`,
   });
   if (!step5Pass) hasReject = true;
@@ -202,13 +204,13 @@ export function evaluateOpportunity(opportunity, portfolio) {
     step: 7,
     name: "VALUE THRESHOLD",
     icon: "gavel",
-    check: `Landed cost <= €${HUMAN_REVIEW_THRESHOLD.toLocaleString()} for auto-approval; <= 25% of total capital`,
-    actual: `€${landedCost.toLocaleString()} ${aboveThreshold ? "> threshold" : "<= threshold"}${aboveSingleVehicleLimit ? " | > 25% capital" : ""}`,
+    check: `Landed cost <= ${formatEur(HUMAN_REVIEW_THRESHOLD)} for auto-approval; <= 25% of total capital`,
+    actual: `${formatEur(landedCost)} ${aboveThreshold ? "> threshold" : "<= threshold"}${aboveSingleVehicleLimit ? " | > 25% capital" : ""}`,
     result: step7NeedsHuman ? "FLAG" : "PASS",
     critical: false,
     reasoning: step7NeedsHuman
-      ? `${aboveThreshold ? `Landed cost €${landedCost.toLocaleString()} exceeds €${HUMAN_REVIEW_THRESHOLD.toLocaleString()} auto-approval threshold.` : ""} ${aboveSingleVehicleLimit ? "Vehicle represents >25% of total available capital." : ""} MANDATORY human approval required.`
-      : `Landed cost €${landedCost.toLocaleString()} within auto-approval threshold.`,
+      ? `${aboveThreshold ? `Landed cost ${formatEur(landedCost)} exceeds ${formatEur(HUMAN_REVIEW_THRESHOLD)} auto-approval threshold.` : ""} ${aboveSingleVehicleLimit ? "Vehicle represents >25% of total available capital." : ""} MANDATORY human approval required.`
+      : `Landed cost ${formatEur(landedCost)} within auto-approval threshold.`,
   });
   if (step7NeedsHuman) { hasFlag = true; flagReasons.push("Above value threshold — mandatory human approval"); }
 
@@ -223,7 +225,7 @@ export function evaluateOpportunity(opportunity, portfolio) {
     name: "PRICING DEVIATION",
     icon: "price_change",
     check: "Listing price within 10% of market median",
-    actual: `${pricingDeviation.toFixed(1)}% deviation (List: €${listingPrice.toLocaleString()} vs Median: €${deMarketMedian.toLocaleString()})`,
+    actual: `${pricingDeviation.toFixed(1)}% deviation (List: ${formatEur(listingPrice)} vs Median: ${formatEur(deMarketMedian)})`,
     result: step8Pass ? "PASS" : "FLAG",
     critical: false,
     reasoning: step8Pass
@@ -242,7 +244,7 @@ export function evaluateOpportunity(opportunity, portfolio) {
     name: "OFFER PRICE",
     icon: "request_quote",
     check: "Bid >= 92% of asking price (below requires human approval)",
-    actual: `Bid ¥${maxBidCalc.toLocaleString()} = ${offerPct.toFixed(1)}% of asking ¥${askingPriceJpy.toLocaleString()}`,
+    actual: `Bid ${formatJpy(maxBidCalc)} = ${offerPct.toFixed(1)}% of asking ${formatJpy(askingPriceJpy)}`,
     result: step9Pass ? "PASS" : "FLAG",
     critical: false,
     reasoning: step9Pass
@@ -286,7 +288,7 @@ export function evaluateOpportunity(opportunity, portfolio) {
     decisionReason = `HUMAN REVIEW REQUIRED — ${flagReasons.length} flag(s): ${flagReasons.join("; ")}. All critical checks passed but requires operator judgment.`;
   } else {
     decision = "AUTO_APPROVE";
-    decisionReason = `AUTO-APPROVED — all ${steps.length} checks passed. ${vehicleName} meets all acquisition criteria. Margin €${margin.toLocaleString()} (${marginPct}%), risk ${riskScore}/3.0, confidence ${(confidence * 100).toFixed(0)}%.`;
+    decisionReason = `AUTO-APPROVED — all ${steps.length} checks passed. ${vehicleName} meets all acquisition criteria. Margin ${formatEur(margin)} (${marginPct}%), risk ${riskScore}/3.0, confidence ${(confidence * 100).toFixed(0)}%.`;
   }
 
   // Max bid calculation
