@@ -56,8 +56,11 @@ export async function generateTVR(scan, settings = null) {
       minEur: scan.pricing?.min_eur,
       maxEur: scan.pricing?.max_eur,
       sampleSize: scan.pricing?.sample_size,
+      marginOfErrorPct: scan.pricing?.marginOfErrorPct ?? null,
+      salesMix: scan.pricing?.salesMix || null,
       specPremiumModifiers: scan.spec_premiums?.colors || {},
       optionPremiums: scan.spec_premiums?.options || {},
+      specPremiumSource: scan.spec_premiums?.seededBrand ? "seeded+ai" : "ai-only",
     },
 
     demand: {
@@ -73,6 +76,8 @@ export async function generateTVR(scan, settings = null) {
       change90dPct: scan.trend?.change_90d_pct,
       seasonalFactor: scan.trend?.seasonal_factor,
       seasonalNotes: scan.trend?.seasonal_notes,
+      trendSource: scan.trend?.data_source || "fallback",
+      trendDataPoints: scan.trend?.data_points || 0,
     },
 
     financialThresholds: {

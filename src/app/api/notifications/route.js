@@ -16,9 +16,9 @@ export async function GET() {
   // ─── Orchestrator: Pending HUMAN_REVIEW decisions ───
   const decisions = await getDecisions();
   const pendingReviews = (decisions.decisions || []).filter((d) => d.decision === "HUMAN_REVIEW");
-  for (const d of pendingReviews.slice(-5)) {
+  for (const [i, d] of pendingReviews.slice(-5).entries()) {
     notifications.push({
-      id: `orch-${d.evaluatedAt}`,
+      id: d.id ? `orch-${d.id}` : `orch-${d.createdAt || `idx-${i}`}`,
       type: "APPROVAL_NEEDED",
       priority: "HIGH",
       source: "Orchestrator",
@@ -27,15 +27,15 @@ export async function GET() {
       description: d.brief?.headline || d.decisionReason?.substring(0, 100),
       detail: `Margin ${formatEur(d.financials?.margin)} (${d.financials?.marginPct}%) · Risk ${d.risk?.compositeScore}/3.0 · ${d.flagReasons?.length || 0} flag(s)`,
       actionUrl: "/agents/orchestrator",
-      timestamp: d.evaluatedAt,
+      timestamp: d.createdAt,
     });
   }
 
   // ─── Concierge: Escalated leads ───
   const escalations = await getEscalations();
-  for (const e of (escalations.escalations || []).slice(-5)) {
+  for (const [i, e] of (escalations.escalations || []).slice(-5).entries()) {
     notifications.push({
-      id: `esc-${e.timestamp}`,
+      id: e.id ? `esc-${e.id}` : `esc-${e.timestamp || `idx-${i}`}`,
       type: "ESCALATION",
       priority: e.triggers?.some((t) => t.priority === "CRITICAL") ? "CRITICAL" : "HIGH",
       source: "Concierge Agent",
@@ -49,9 +49,9 @@ export async function GET() {
 
   // ─── Finance: FX alerts ───
   const fxAlerts = await getFxAlerts();
-  for (const a of (fxAlerts.alerts || []).slice(-3)) {
+  for (const [i, a] of (fxAlerts.alerts || []).slice(-3).entries()) {
     notifications.push({
-      id: `fx-${a.timestamp}`,
+      id: a.id ? `fx-${a.id}` : `fx-${a.timestamp || `idx-${i}`}`,
       type: "FX_ALERT",
       priority: a.level === "CRITICAL" ? "CRITICAL" : a.level === "WARN" ? "HIGH" : "LOW",
       source: "Finance Agent",
@@ -65,7 +65,7 @@ export async function GET() {
 
   // ─── Logistics: Delayed vehicles (stuck in stage too long) ───
   const pipeline = await getPipelineVehicles();
-  for (const v of (pipeline.vehicles || [])) {
+  for (const [i, v] of (pipeline.vehicles || []).entries()) {
     const stageIdx = STAGES.indexOf(v.currentStage);
     if (stageIdx < 0) continue;
     const expectedDays = STAGE_DURATIONS[v.currentStage] || 7;
@@ -73,7 +73,7 @@ export async function GET() {
 
     if (actualDays > expectedDays * 1.5) {
       notifications.push({
-        id: `delay-${v.id}`,
+        id: `delay-${v.id || `idx-${i}`}`,
         type: "PIPELINE_DELAY",
         priority: actualDays > expectedDays * 3 ? "HIGH" : "MEDIUM",
         source: "Logistics Agent",
@@ -88,12 +88,12 @@ export async function GET() {
 
   // ─── Listing: Price reduction triggers ───
   const listings = await getAllListings();
-  for (const l of (listings.listings || [])) {
+  for (const [i, l] of (listings.listings || []).entries()) {
     if (l.status !== "ACTIVE") continue;
     const dom = l.daysOnMarket || 0;
     if (dom >= 42 && dom < 56) {
       notifications.push({
-        id: `price-review-${l.id}`,
+        id: `price-review-${l.id || `idx-${i}`}`,
         type: "PRICE_REVIEW",
         priority: "MEDIUM",
         source: "Listing Agent",

@@ -12,19 +12,22 @@ import { scrapeMobileDe } from "@/lib/agents/valuation/scrapers/mobile-de";
 import { scrapeAutoScout24 } from "@/lib/agents/valuation/scrapers/autoscout24";
 import { scrapeElferspot } from "../scrapers/elferspot";
 import { scrapeClassicDriver } from "../scrapers/classicdriver";
+import { scrapeAllSites } from "../scrapers/site-serp";
 import { runActorAndGetItems } from "@/lib/agents/valuation/scrapers/apify-client";
 import { recordListingSnapshot, computeDemandVelocity } from "../demand-tracker";
+import { computeTrendFromHistory } from "../trend-regression";
+import { getSeedPremiums, mergeSeedWithAi } from "../spec-premiums";
 
 const ANALYSIS_SYSTEM = `You are a senior German luxury car market analyst. You are given REAL scraped listing data from mobile.de and AutoScout24. Analyze the data to produce accurate market intelligence. Only base your analysis on the actual data provided — do not invent listings or prices.`;
 
 const ANALYSIS_PROMPT = (model, stats, listings) => `Analyze this REAL market data for ${model.make} ${model.model} (${model.yearRange[0]}-${model.yearRange[1]}) in the German market.
 
 SCRAPED DATA (${listings.length} real listings found just now):
-- Median: €${formatNumber(finalStats.median)}
-- Mean: €${formatNumber(finalStats.mean)}
-- P25: €${formatNumber(finalStats.p25)}
-- P75: €${formatNumber(finalStats.p75)}
-- Min: €${formatNumber(finalStats.min)} / Max: €${formatNumber(finalStats.max)}
+- Median: €${formatNumber(stats.median)}
+- Mean: €${formatNumber(stats.mean)}
+- P25: €${formatNumber(stats.p25)}
+- P75: €${formatNumber(stats.p75)}
+- Min: €${formatNumber(stats.min)} / Max: €${formatNumber(stats.max)}
 
 ALL LISTINGS:
 ${listings.slice(0, 20).map((l, i) => `${i + 1}. ${l.title} — €${formatNumber(l.price)} | ${formatNumber(l.mileage)} km | ${l.year} | ${l.platform}`).join("\n")}
@@ -109,6 +112,7 @@ export async function scanModel(model) {
   const scrapePromises = [
     scrapeMobileDe({ make: model.make, model: model.model, yearFrom, yearTo, maxMileage }),
     scrapeAutoScout24({ make: model.make, model: model.model, yearFrom, yearTo, maxMileage }),
+    scrapeAllSites({ make: model.make, model: model.model, yearFrom, yearTo }),
   ];
 
   // Add specialist platforms where relevant (per spec Section 6.1.2)
@@ -121,15 +125,19 @@ export async function scanModel(model) {
 
   const results = await Promise.allSettled(scrapePromises);
 
-  const mobileListings = results[0].status === "fulfilled" ? (results[0].value?.listings || []) : [];
-  const autoscoutListings = results[1].status === "fulfilled" ? (results[1].value?.listings || []) : [];
-  const specialistListings = results.slice(2)
-    .filter((r) => r.status === "fulfilled")
-    .flatMap((r) => r.value);
+  const tagSaleType = (arr, saleType) => (arr || []).map((l) => ({ ...l, saleType: l.saleType || saleType }));
+  const mobileListings = tagSaleType(results[0].status === "fulfilled" ? (results[0].value?.listings || []) : [], "retail");
+  const autoscoutListings = tagSaleType(results[1].status === "fulfilled" ? (results[1].value?.listings || []) : [], "retail");
+  const siteSerp = results[2].status === "fulfilled" ? (results[2].value || { listings: [], bySaleType: {}, byPlatform: {} }) : { listings: [], bySaleType: {}, byPlatform: {} };
+  const siteSerpListings = siteSerp.listings;
+  const specialistListings = tagSaleType(
+    results.slice(3).filter((r) => r.status === "fulfilled").flatMap((r) => r.value),
+    "specialist"
+  );
 
-  console.log(`DE Market [${model.id}]: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}, specialist=${specialistListings.length}`);
+  console.log(`DE Market [${model.id}]: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}, site-serp=${siteSerpListings.length} (retail ${siteSerp.bySaleType.retail || 0} / auction ${siteSerp.bySaleType.auction || 0} / specialist ${siteSerp.bySaleType.specialist || 0}), specialist-direct=${specialistListings.length}`);
 
-  const allListings = deduplicate([...mobileListings, ...autoscoutListings, ...specialistListings]);
+  const allListings = deduplicate([...mobileListings, ...autoscoutListings, ...siteSerpListings, ...specialistListings]);
   const stats = calcStats(allListings);
 
   // ── Fallback: Google web search when all scrapers fail ──
@@ -203,10 +211,29 @@ export async function scanModel(model) {
   const dataSources = {
     "mobile.de": mobileListings.length,
     "AutoScout24": autoscoutListings.length,
+    ...siteSerp.byPlatform,
     ...(specialistListings.length > 0 && {
       ...(isPorsche && { "elferspot.com": specialistListings.filter((l) => l.platform === "elferspot.com").length }),
       ...((isExotic || isPorsche) && { "classicdriver.com": specialistListings.filter((l) => l.platform === "classicdriver.com").length }),
     }),
+  };
+
+  // ─── Real trend regression from historical snapshots ───
+  const realTrend = await computeTrendFromHistory(model.id, finalStats.median).catch(() => null);
+
+  // ─── Merge seeded spec premiums with AI-generated ones (seed wins on conflict) ───
+  const seedPremiums = getSeedPremiums(model.make);
+  const mergedPremiums = mergeSeedWithAi(seedPremiums, aiAnalysis?.spec_premiums);
+
+  // ─── Confidence interval from price spread + sample size ───
+  const iqrPct = finalStats.median > 0 ? ((finalStats.p75 - finalStats.p25) / finalStats.median) * 100 : 0;
+  const sampleFactor = Math.min(1.0, 30 / Math.max(1, allListings.length));
+  const marginOfErrorPct = Number((iqrPct * 0.5 * (0.5 + 0.5 * sampleFactor)).toFixed(1));
+
+  const salesMix = {
+    retail: allListings.filter((l) => (l.saleType || "retail") === "retail").length,
+    auction: allListings.filter((l) => l.saleType === "auction").length,
+    specialist: allListings.filter((l) => l.saleType === "specialist").length,
   };
 
   // Confidence based on real data volume
@@ -227,15 +254,16 @@ export async function scanModel(model) {
     yearRange: model.yearRange,
     segment: model.segment,
 
-    pricing,
+    pricing: { ...pricing, marginOfErrorPct, salesMix },
 
-    trend: aiAnalysis?.trend || {
+    trend: realTrend || aiAnalysis?.trend || {
       direction: "STABLE",
       change_7d_pct: 0,
       change_30d_pct: 0,
       change_90d_pct: 0,
       seasonal_factor: "NEUTRAL",
       seasonal_notes: "Insufficient data for trend analysis",
+      data_source: "fallback",
     },
 
     demand: await (async () => {
@@ -271,7 +299,7 @@ export async function scanModel(model) {
       };
     })(),
 
-    spec_premiums: aiAnalysis?.spec_premiums || { colors: {}, options: {}, avoid_specs: [] },
+    spec_premiums: mergedPremiums,
 
     comparable_listings: comparableListings,
     data_sources: dataSources,
