@@ -10,6 +10,7 @@
  * 6. Mark READY_FOR_SALE (triggers Listing Agent)
  */
 
+import { after } from "next/server";
 import { validateTransition, calculateETAs, STAGES, isPhotoRequired, estimateTotalDaysRemaining } from "../pipeline";
 import { createShipment, getShipmentProgress } from "./shipping-tracker";
 import { generateCustomsDeclaration, reviewCustomsDocuments } from "./customs-engine";
@@ -209,6 +210,33 @@ export async function advanceStage(vehicleId, targetStage, options = {}) {
       sideEffects.costWarning = "Finance Agent has not confirmed all costs. Use override to proceed.";
     }
     sideEffects.readyForSale = vehicle.costsComplete;
+
+    // Spec §6.3.1 — hand off to Listing Agent once the vehicle is cleared for
+    // sale (TUV passed + costs confirmed). Fire-and-forget so the Logistics
+    // transition returns fast; the Listing Agent is idempotent per vehicle
+    // (checks for existing listings before creating).
+    if (vehicle.costsComplete && !options.skipListingHandoff) {
+      sideEffects.listingHandoff = "queued";
+      after(async () => {
+        try {
+          const { getAllListings } = await import("@/lib/agents/listing/storage");
+          const existing = (await getAllListings()).listings || [];
+          if (existing.some((l) => l.vehicleId === vehicleId && l.status !== "LOST")) {
+            console.log(`Listing handoff skipped: ${vehicleId} already has a listing`);
+            return;
+          }
+          const { createListing } = await import("@/lib/agents/listing/ai/listing-orchestrator");
+          await createListing({
+            ...vehicle,
+            id: vehicleId,
+            estimatedSalePrice: vehicle.estimatedSalePrice,
+            landedCostEur: vehicle.landedCostEur || vehicle.landedCost?.totalLandedCostEur,
+          });
+        } catch (err) {
+          console.warn(`Listing auto-handoff failed for ${vehicleId}:`, err.message);
+        }
+      });
+    }
   }
 
   // ─── Update vehicle state ───

@@ -42,6 +42,16 @@ Condition: ${vehicle.conditionNotes || "Excellent overall condition"}
 
 LISTING PRICE: €${vehicle.listingPrice != null ? formatNumber(vehicle.listingPrice) : "TBD"}
 
+FACTORY OPTIONS WITH MARKET VALUE (join of DE Market premiums + this vehicle's equipment):
+${
+  Array.isArray(vehicle.matchedOptions) && vehicle.matchedOptions.length > 0
+    ? vehicle.matchedOptions.slice(0, 20).map((o) =>
+        `- ${o.canonicalName || o.option}${o.premiumEur ? ` — market premium €${formatNumber(o.premiumEur)}${o.reason ? ` (${o.reason})` : ""}` : ""}`
+      ).join("\n")
+    : "- (none recorded)"
+}
+${vehicle.totalOptionPremiumEur ? `Total option premium value: €${formatNumber(vehicle.totalOptionPremiumEur)}` : ""}
+
 Return ONLY valid JSON:
 
 {

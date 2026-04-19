@@ -14,6 +14,8 @@ import { getLatestTVRs } from "@/lib/agents/de-market/storage";
 import { generateListingContent } from "./description-generator";
 import { calculateListingPrice, checkPriceReduction } from "./pricing-engine";
 import { publishToAllPlatforms, updatePriceOnAllPlatforms } from "./platform-publisher";
+import { translateVehicleDocs } from "./translator";
+import { matchOptionsToMarketValue } from "./option-matcher";
 import { saveListing, updateListingPrice, getAllListings, updateAgentStatus, getAgentStatus } from "../storage";
 
 /**
@@ -42,15 +44,24 @@ export async function createListing(vehicle, { onProgress = null } = {}) {
       (vModel?.includes(tvrModel) || tvrModel?.includes(vModel));
   });
 
+  // ─── Step 1b: Translate any Japanese residue (spec §6.3.2 step 2) ───
+  onProgress?.("translating", "Translating Japanese auction docs into DE/EN...");
+  const translatedVehicle = await translateVehicleDocs(vehicle);
+
+  // ─── Step 1c: Join factory options to TVR market-value premiums (spec §6.3.2 step 2) ───
+  const optionMatch = matchOptionsToMarketValue(translatedVehicle, tvr);
+
   // ─── Step 2: Generate content + pricing in parallel ───
   onProgress?.("generating", "Generating listing descriptions for 5 platforms...");
 
   const [content, pricing] = await Promise.all([
     generateListingContent({
-      ...vehicle,
+      ...translatedVehicle,
       listingPrice: tvr?.marketValue?.medianEur || 150000,
+      matchedOptions: optionMatch.matchedOptions,
+      totalOptionPremiumEur: optionMatch.totalPremiumEur,
     }),
-    calculateListingPrice(vehicle, tvr),
+    calculateListingPrice(translatedVehicle, tvr),
   ]);
 
   if (!content) {
@@ -61,7 +72,7 @@ export async function createListing(vehicle, { onProgress = null } = {}) {
   // ─── Step 3: Publish to all platforms ───
   onProgress?.("publishing", "Publishing to mobile.de, AutoScout24, ClassicDriver...");
 
-  const publishResult = publishToAllPlatforms(vehicle, content, pricing);
+  const publishResult = await publishToAllPlatforms(translatedVehicle, content, pricing);
 
   // ─── Step 4: Assemble and persist ───
   const listingId = `lst-${Date.now()}`;
@@ -81,6 +92,9 @@ export async function createListing(vehicle, { onProgress = null } = {}) {
     },
     content,
     pricing,
+    matchedOptions: optionMatch.matchedOptions,
+    optionPremiumTotalEur: optionMatch.totalPremiumEur,
+    translations: translatedVehicle._translations || null,
     currentPrice: pricing.initial_price_eur,
     publishing: publishResult,
     platforms: publishResult.platforms,
