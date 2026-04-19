@@ -1,7 +1,6 @@
 import { getAllTransactions, getTransactionsByVehicle } from "@/lib/agents/finance/storage";
 import { recordTransaction, recordSale, recordLandedCosts } from "@/lib/agents/finance/ai/finance-orchestrator";
 import { agentGuard } from "@/lib/settings";
-import { db } from "@/lib/db-storage";
 
 export async function GET(request) {
   const blocked = await agentGuard("finance");
@@ -37,22 +36,9 @@ export async function POST(request) {
     return Response.json({ success: true, transaction: txn });
   }
 
-  // Record single transaction
+  // Record single transaction. `recordTransaction` already persists via the
+  // finance storage helpers (Prisma); the route used to wrap a second
+  // `db.transactions.create(...)` on top, producing a duplicate row.
   const txn = await recordTransaction(body);
-
-  // Also save to PostgreSQL
-  try {
-    await db.transactions.create({
-      vehicleId: body.vehicleId,
-      category: body.category,
-      amountEur: body.amountEur,
-      amountOriginal: body.amountOriginal || body.amountEur,
-      currency: body.currency || "EUR",
-      fxRate: body.fxRate || null,
-      description: body.description || "",
-      documentRef: body.documentRef || null,
-    });
-  } catch (e) { console.warn("DB save txn failed:", e.message); }
-
   return Response.json({ success: true, transaction: txn });
 }

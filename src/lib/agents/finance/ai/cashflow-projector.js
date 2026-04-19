@@ -30,16 +30,19 @@ export function projectCashFlow(vehicles, transactions, weeksAhead = 8) {
       const enteredAt = new Date(v.addedAt || v.stageHistory?.[0]?.enteredAt || now);
       const daysInPipeline = (weekStart - enteredAt) / (1000 * 60 * 60 * 24);
 
-      // Estimate when customs duty is due (~45 days after purchase)
+      // Estimate when customs duty is due (~45 days after purchase).
+      // Spec §3.1 / §4.3: EU customs duty = 10% of CIF. Fallback percentages
+      // aligned with the rest of the system (JP Sourcing landed-cost calc,
+      // Logistics customs declaration, regulatory baseline).
       if (daysInPipeline >= 40 && daysInPipeline < 47) {
-        const duty = v.landedCost?.customsDutyEur || Math.round((v.purchasePriceEur || 80000) * 0.14);
+        const duty = v.landedCost?.customsDutyEur || Math.round((v.purchasePriceEur || 80000) * 0.10);
         outflows += duty;
         events.push({ type: "CUSTOMS_DUTY", vehicle: `${v.make} ${v.model}`, amount: -duty });
       }
 
-      // Estimate when VAT is due (~45 days)
+      // Estimate when VAT is due (~45 days). Spec: German import VAT = 19%.
       if (daysInPipeline >= 42 && daysInPipeline < 49) {
-        const vat = v.landedCost?.importVatEur || Math.round((v.purchasePriceEur || 80000) * 0.22);
+        const vat = v.landedCost?.importVatEur || Math.round((v.purchasePriceEur || 80000) * 0.19);
         outflows += vat;
         events.push({ type: "IMPORT_VAT", vehicle: `${v.make} ${v.model}`, amount: -vat, note: "Reclaimable" });
       }
@@ -51,9 +54,9 @@ export function projectCashFlow(vehicles, transactions, weeksAhead = 8) {
         events.push({ type: "SALE_PROCEEDS", vehicle: `${v.make} ${v.model}`, amount: salePrice });
       }
 
-      // VAT reclaim (~4-8 weeks after customs)
+      // VAT reclaim (~4-8 weeks after customs) — same 19% basis.
       if (daysInPipeline >= 70 && daysInPipeline < 77) {
-        const vatReclaim = v.landedCost?.importVatEur || Math.round((v.purchasePriceEur || 80000) * 0.22);
+        const vatReclaim = v.landedCost?.importVatEur || Math.round((v.purchasePriceEur || 80000) * 0.19);
         inflows += vatReclaim;
         events.push({ type: "VAT_RECLAIM", vehicle: `${v.make} ${v.model}`, amount: vatReclaim });
       }

@@ -91,6 +91,13 @@ export function generateVatDeclaration(transactions, month, year) {
 
   const netVat = salesVat - inputVat;
 
+  // Umsatzsteuer-Voranmeldung is due by the 10th of the month following the
+  // reporting period. `month` is 1-12 here; passing it as the 0-indexed
+  // `Date` month effectively means "next month", which correctly rolls
+  // December over to January of the following year.
+  const dueDateObj = new Date(Date.UTC(year, month, 10));
+  const dueDate = dueDateObj.toISOString().split("T")[0];
+
   return {
     period: monthStr,
     declaration: "Umsatzsteuer-Voranmeldung",
@@ -99,7 +106,7 @@ export function generateVatDeclaration(transactions, month, year) {
     netVatLiability: netVat,
     isRefund: netVat < 0,
     refundAmount: netVat < 0 ? Math.abs(netVat) : 0,
-    dueDate: `${year}-${String(month + 1).padStart(2, "0")}-10`,
+    dueDate,
     transactionCount: monthTxns.length,
     generatedAt: new Date().toISOString(),
   };

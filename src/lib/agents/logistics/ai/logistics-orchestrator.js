@@ -22,6 +22,14 @@ import {
   updateAgentStatus, getPipelineVehicles,
   getPreShipInspection, getInlandTransports, addInlandTransport,
 } from "../storage";
+// Spec §6.4.2 point 1 + KPI §11.2: Finance is the authority on "98%+ cost
+// tracking completeness before sale". Logistics used to gate READY_FOR_SALE
+// on a two-field existence check of the landedCost blob; now routes through
+// the Finance ledger's real category coverage instead.
+import { getTransactionsByVehicle } from "@/lib/agents/finance/storage";
+import { calculateCompleteness } from "@/lib/agents/finance/ledger";
+
+const FINANCE_COMPLETENESS_THRESHOLD = 98;
 
 /**
  * Add a new vehicle to the pipeline at SOURCED stage.
@@ -79,11 +87,16 @@ export async function advanceStage(vehicleId, targetStage, options = {}) {
   const currentStage = vehicle.currentStage;
 
   // ─── Pre-validation: set flags for READY_FOR_SALE transition ───
+  // Finance's calculateCompleteness is the spec-authoritative check. Cache
+  // the result on the vehicle so the side-effect block below can reuse it
+  // without another DB round-trip.
+  let financeCompleteness = null;
   if (targetStage === "READY_FOR_SALE") {
     vehicle.tuvPassed = true;
-    const costItems = vehicle.landedCost || vehicle.costBreakdown || {};
-    const hasCosts = !!(costItems.purchasePriceEur || vehicle.purchasePriceJpy) && !!(costItems.freightEur);
-    vehicle.costsComplete = hasCosts || !!options.override;
+    const txns = await getTransactionsByVehicle(vehicleId);
+    financeCompleteness = calculateCompleteness(txns);
+    vehicle.costsComplete =
+      financeCompleteness.completeness >= FINANCE_COMPLETENESS_THRESHOLD || !!options.override;
   }
 
   // ─── Validate transition ───
@@ -185,29 +198,29 @@ export async function advanceStage(vehicleId, targetStage, options = {}) {
     }
   }
 
-  // TUV → READY_FOR_SALE: Verify TUV passed + Finance costs confirmed
+  // TUV → READY_FOR_SALE: Verify TUV passed + Finance completeness ≥98%
   if (targetStage === "READY_FOR_SALE") {
     vehicle.tuvPassed = true;
 
-    // Check if Finance Agent has confirmed costs
-    // Costs are confirmed if: all major cost items have been recorded as transactions
-    const costItems = vehicle.landedCost || vehicle.costBreakdown || {};
-    const hasPurchaseCost = !!(costItems.purchasePriceEur || vehicle.purchasePriceJpy);
-    const hasFreightCost = !!(costItems.freightEur);
+    if (financeCompleteness) {
+      sideEffects.costCompleteness = financeCompleteness.completeness;
+      sideEffects.recordedCategories = financeCompleteness.recordedCategories.length;
+      sideEffects.transactionCount = financeCompleteness.totalTransactions;
 
-    if (hasPurchaseCost && hasFreightCost) {
-      vehicle.costsComplete = true;
-      sideEffects.costsConfirmed = true;
-    } else if (options.override) {
-      // Allow override with explicit flag
-      vehicle.costsComplete = true;
-      sideEffects.costsOverridden = true;
-      sideEffects.costWarning = "Costs marked complete via manual override — Finance Agent should verify";
-    } else {
-      // Block if costs not tracked — Finance Agent must confirm
-      vehicle.costsComplete = false;
-      sideEffects.costsPending = true;
-      sideEffects.costWarning = "Finance Agent has not confirmed all costs. Use override to proceed.";
+      if (financeCompleteness.completeness >= FINANCE_COMPLETENESS_THRESHOLD) {
+        vehicle.costsComplete = true;
+        sideEffects.costsConfirmed = true;
+      } else if (options.override) {
+        vehicle.costsComplete = true;
+        sideEffects.costsOverridden = true;
+        sideEffects.missingCategories = financeCompleteness.missingCategories;
+        sideEffects.costWarning = `Finance completeness ${financeCompleteness.completeness}% (threshold ${FINANCE_COMPLETENESS_THRESHOLD}%) — override used. Missing: ${financeCompleteness.missingCategories.slice(0, 5).join(", ")}`;
+      } else {
+        vehicle.costsComplete = false;
+        sideEffects.costsPending = true;
+        sideEffects.missingCategories = financeCompleteness.missingCategories;
+        sideEffects.costWarning = `Finance Agent reports ${financeCompleteness.completeness}% cost completeness (need ${FINANCE_COMPLETENESS_THRESHOLD}%). Missing: ${financeCompleteness.missingCategories.slice(0, 5).join(", ")}. Use override to proceed.`;
+      }
     }
     sideEffects.readyForSale = vehicle.costsComplete;
 

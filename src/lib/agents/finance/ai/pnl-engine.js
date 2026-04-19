@@ -119,8 +119,10 @@ export function calculatePortfolioPnL(vehiclePnLs) {
   const totalFxImpact = vehiclePnLs.reduce((s, v) => s + (v.fx.fxImpactEur || 0), 0);
   const totalVatReclaimable = vehiclePnLs.reduce((s, v) => s + v.costs.reclaimableVat, 0);
 
-  const avgMarginPct = sold.length > 0
-    ? Number((sold.reduce((s, v) => s + v.margin.grossMarginPct, 0) / sold.length).toFixed(1))
+  // Spec §6.4.2 point 2: "weighted average margin" — revenue-weighted, not a
+  // simple arithmetic mean. Equivalent formulation: realizedMargin / totalRevenue.
+  const avgMarginPct = totalRevenue > 0
+    ? Number(((realizedMargin / totalRevenue) * 100).toFixed(1))
     : 0;
 
   const avgDaysToSell = sold.length > 0
@@ -129,6 +131,14 @@ export function calculatePortfolioPnL(vehiclePnLs) {
 
   const capitalTurnover = totalCapitalDeployed > 0
     ? Number(((totalRevenue / totalCapitalDeployed) * (365 / Math.max(avgDaysToSell, 30))).toFixed(1))
+    : 0;
+
+  // Real deployment % from actual available capital, not a hardcoded 62.
+  // Uses the same env knob (`AVAILABLE_CAPITAL_EUR`) as Orchestrator's
+  // portfolio-manager so the two agents agree on the denominator.
+  const totalAvailableCapital = parseInt(process.env.AVAILABLE_CAPITAL_EUR || "2000000", 10);
+  const deploymentPct = totalAvailableCapital > 0
+    ? Number(((totalCapitalDeployed / totalAvailableCapital) * 100).toFixed(1))
     : 0;
 
   return {
@@ -151,9 +161,10 @@ export function calculatePortfolioPnL(vehiclePnLs) {
 
     capitalDeployment: {
       deployed: totalCapitalDeployed,
-      maxAllowed: Math.round(totalCapitalDeployed / 0.8 * 1), // Estimate total capital
-      deploymentPct: 62, // Would be calculated from actual capital
-      withinLimit: true,
+      totalAvailable: totalAvailableCapital,
+      maxAllowed: Math.round(totalAvailableCapital * 0.8),
+      deploymentPct,
+      withinLimit: deploymentPct <= 80,
     },
 
     brandConcentration: calculateBrandConcentration(inPipeline),
