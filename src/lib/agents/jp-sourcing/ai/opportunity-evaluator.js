@@ -195,6 +195,7 @@ export function evaluateOpportunity(vehicle, tvr, fxRate) {
       conditionNotes: vehicle.condition_notes,
       auctionSheetNotes: vehicle.auction_sheet_notes,
       photoSummary: vehicle.photo_summary,
+      photoUrls: Array.isArray(vehicle.photo_urls) ? vehicle.photo_urls : [],
     },
     source: {
       auctionHouse: vehicle.auction_source,

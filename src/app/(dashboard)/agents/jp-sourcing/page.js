@@ -18,7 +18,19 @@ export default function JpSourcingPage() {
   const [status, setStatus] = useState(null);
   const [opportunities, setOpportunities] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
   const [approving, setApproving] = useState(null);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setLightbox(null);
+      else if (e.key === "ArrowLeft") setLightbox((lb) => lb && { ...lb, index: (lb.index - 1 + lb.urls.length) % lb.urls.length });
+      else if (e.key === "ArrowRight") setLightbox((lb) => lb && { ...lb, index: (lb.index + 1) % lb.urls.length });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
   const [approveResult, setApproveResult] = useState({});
   const [scanHistory, setScanHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -381,6 +393,59 @@ export default function JpSourcingPage() {
                   <div className="overflow-hidden">
                 {expandedId === opp.id && (
                   <div className="mt-3 pt-3 border-t border-outline-variant/10 space-y-4 animate-[fadeSlideIn_0.3s_ease-out]">
+                    {/* Photo Gallery */}
+                    {Array.isArray(opp.vehicle?.photoUrls) && opp.vehicle.photoUrls.length > 0 && (
+                      <div>
+                        <h5 className="text-[10px] uppercase text-on-surface-variant tracking-wider mb-2 font-bold flex items-center gap-2">
+                          <span className="material-symbols-outlined text-sm">photo_library</span>
+                          Vehicle Photos ({opp.vehicle.photoUrls.length})
+                          {opp.photoAnalysis && (
+                            <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-400/10 text-emerald-400 border border-emerald-400/20">
+                              <span className="material-symbols-outlined text-[10px]">auto_awesome</span>
+                              Vision-analyzed
+                            </span>
+                          )}
+                        </h5>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {opp.vehicle.photoUrls.map((url, i) => (
+                            <button
+                              key={`${opp.id}-photo-${i}`}
+                              type="button"
+                              onClick={() => setLightbox({ urls: opp.vehicle.photoUrls, index: i, title: `${opp.vehicle.make} ${opp.vehicle.model} ${opp.vehicle.year}` })}
+                              className="shrink-0 w-32 h-24 rounded-lg overflow-hidden bg-surface-container-high border border-outline-variant/15 hover:border-primary/40 transition-all cursor-pointer"
+                              aria-label={`Photo ${i + 1}`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={url} alt="" loading="lazy" className="w-full h-full object-cover hover:scale-105 transition-transform" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                            </button>
+                          ))}
+                        </div>
+                        {opp.photoAnalysis && (
+                          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                            <div className="bg-surface-container-high/30 rounded-lg p-2">
+                              <p className="text-[9px] uppercase text-on-surface-variant">Exterior</p>
+                              <p className="font-bold">{opp.photoAnalysis.exteriorScore ?? "—"}/10</p>
+                            </div>
+                            <div className="bg-surface-container-high/30 rounded-lg p-2">
+                              <p className="text-[9px] uppercase text-on-surface-variant">Interior</p>
+                              <p className="font-bold">{opp.photoAnalysis.interiorScore ?? "—"}/10</p>
+                            </div>
+                            <div className="bg-surface-container-high/30 rounded-lg p-2">
+                              <p className="text-[9px] uppercase text-on-surface-variant">Damage Flags</p>
+                              <p className="font-bold">{opp.photoAnalysis.visibleDamage?.length || 0}</p>
+                            </div>
+                            <div className="bg-surface-container-high/30 rounded-lg p-2">
+                              <p className="text-[9px] uppercase text-on-surface-variant">Modifications</p>
+                              <p className="font-bold">{opp.photoAnalysis.visibleModifications?.length || 0}</p>
+                            </div>
+                          </div>
+                        )}
+                        {opp.photoAnalysis?.photoAnalysisSummary && (
+                          <p className="mt-2 text-xs text-on-surface-variant italic">{opp.photoAnalysis.photoAnalysisSummary}</p>
+                        )}
+                      </div>
+                    )}
+
                     {/* Landed Cost Breakdown */}
                     <div>
                       <h5 className="text-[10px] uppercase text-on-surface-variant tracking-wider mb-2 font-bold">Landed Cost Breakdown</h5>
@@ -548,6 +613,101 @@ export default function JpSourcingPage() {
             </details>
           )}
 
+        </div>
+      )}
+
+      {/* Photo Lightbox */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="relative max-w-6xl w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-white/80 font-mono">{lightbox.title} — Photo {lightbox.index + 1}/{lightbox.urls.length}</p>
+              <button
+                type="button"
+                onClick={() => setLightbox(null)}
+                aria-label="Close"
+                className="cursor-pointer text-white/70 hover:text-white transition-colors w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="relative bg-black rounded-xl overflow-hidden flex items-center justify-center" style={{ height: "75vh", width: "100%" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                key={lightbox.urls[lightbox.index]}
+                src={lightbox.urls[lightbox.index]}
+                alt=""
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  el.style.display = "none";
+                  const sib = el.nextElementSibling;
+                  if (sib && sib.getAttribute("data-fallback") === "1") sib.style.display = "flex";
+                }}
+                onLoad={(e) => {
+                  const el = e.currentTarget;
+                  el.style.display = "block";
+                  const sib = el.nextElementSibling;
+                  if (sib && sib.getAttribute("data-fallback") === "1") sib.style.display = "none";
+                }}
+              />
+              <div
+                data-fallback="1"
+                style={{ display: "none" }}
+                className="absolute inset-0 items-center justify-center flex-col gap-3 text-white/60 text-sm"
+              >
+                <span className="material-symbols-outlined text-5xl">broken_image</span>
+                <span>Image could not be loaded</span>
+                <a
+                  href={lightbox.urls[lightbox.index]}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline text-white/80 text-xs break-all max-w-md text-center"
+                >
+                  {lightbox.urls[lightbox.index]}
+                </a>
+              </div>
+              {lightbox.urls.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setLightbox((lb) => lb && { ...lb, index: (lb.index - 1 + lb.urls.length) % lb.urls.length })}
+                    aria-label="Previous photo"
+                    className="cursor-pointer absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                  >
+                    <span className="material-symbols-outlined">chevron_left</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLightbox((lb) => lb && { ...lb, index: (lb.index + 1) % lb.urls.length })}
+                    aria-label="Next photo"
+                    className="cursor-pointer absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                  >
+                    <span className="material-symbols-outlined">chevron_right</span>
+                  </button>
+                </>
+              )}
+            </div>
+            <div className="flex gap-2 mt-3 overflow-x-auto justify-center">
+              {lightbox.urls.map((u, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setLightbox((lb) => lb && { ...lb, index: i })}
+                  aria-label={`Jump to photo ${i + 1}`}
+                  className={`shrink-0 w-16 h-12 rounded overflow-hidden border-2 transition-all cursor-pointer ${i === lightbox.index ? "border-primary" : "border-transparent opacity-60 hover:opacity-100"}`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={u} alt="" loading="lazy" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.opacity = "0.3"; }} />
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

@@ -15,6 +15,7 @@ import { getLatestTVRs } from "@/lib/agents/de-market/storage";
 import { scanAuctions } from "./auction-scanner";
 import { evaluateAllOpportunities } from "./opportunity-evaluator";
 import { analyzeAuctionSheets } from "./sheet-analyzer";
+import { analyzeAllListingPhotos } from "./listing-photos";
 import { deepAnalyzeAll } from "./deep-analyzer";
 import { saveOpportunities, updateAgentStatus, getAgentStatus, saveScanProgress, getScanProgress } from "../storage";
 
@@ -187,6 +188,39 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
     }
   }
 
+  // ─── Step 4b: Photo analysis for BUY/STRONG_BUY (Claude Vision on listing photos) ───
+  // Spec §6.2.3.2 mandates Vision on auction photos for paint / interior / wheels / modifications.
+  let photoAnalysisResult = { analyzed: 0 };
+  if (qualifyingCount > 0 && isAIAvailable()) {
+    if (await checkState() === "stopped") {
+      await updateAgentStatus({ status: "ONLINE" });
+      return { error: "Scan stopped by user" };
+    }
+
+    const eligibleCount = opportunities.filter(
+      (o) => (o.recommendation === "BUY" || o.recommendation === "STRONG_BUY") && Array.isArray(o.vehicle?.photoUrls) && o.vehicle.photoUrls.length > 0
+    ).length;
+
+    if (eligibleCount > 0) {
+      await writeProgress("photos", `Analyzing listing photos for ${eligibleCount} qualifying candidates via Claude Vision...`, {
+        vehiclesFound: vehicles.length,
+        results: { strongBuy: strongBuys.length, buy: buys.length, review: reviews.length, pass: passes.length },
+      });
+
+      await analyzeAllListingPhotos(opportunities, {
+        concurrency: 3,
+        onProgress: async (done, total, make, model) => {
+          await writeProgress("photos", `Vision pass ${done + 1}/${total}: ${make || ""} ${model || ""}`, {
+            vehiclesFound: vehicles.length,
+            results: { strongBuy: strongBuys.length, buy: buys.length, review: reviews.length, pass: passes.length },
+          });
+        },
+      });
+
+      photoAnalysisResult.analyzed = opportunities.filter((o) => o.photoAnalysis).length;
+    }
+  }
+
   // ─── Step 5: Deep analysis ───
   let deepAnalyses = [];
   if (deepAnalysis && qualifyingCount > 0 && isAIAvailable()) {
@@ -238,6 +272,7 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
       deepAnalyzed: deepAnalyses.length,
       sheetsAnalyzed: sheetAnalysisResult.analyzed,
       sheetsEnriched: sheetAnalysisResult.enriched,
+      listingPhotosAnalyzed: photoAnalysisResult.analyzed,
       fxRate: auctionResult.fxRate,
       fxLive: auctionResult.fxLive,
       scanNotes: auctionResult.scanSummary?.scan_notes || "",
@@ -273,7 +308,7 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
     duration: elapsed,
     fxRate: auctionResult.fxRate,
     fxLive: auctionResult.fxLive,
-    results: { strongBuy: finalStrongBuys, buy: finalBuys, review: finalReviews, pass: finalPasses, deepAnalyzed: deepAnalyses.length, sheetsEnriched: sheetAnalysisResult.enriched },
+    results: { strongBuy: finalStrongBuys, buy: finalBuys, review: finalReviews, pass: finalPasses, deepAnalyzed: deepAnalyses.length, sheetsEnriched: sheetAnalysisResult.enriched, listingPhotosAnalyzed: photoAnalysisResult.analyzed },
     topOpportunities: opportunities.filter((o) => o.recommendation !== "PASS").slice(0, 5).map((o) => ({
       id: o.id,
       vehicle: `${o.vehicle?.make} ${o.vehicle?.model} ${o.vehicle?.year}`,

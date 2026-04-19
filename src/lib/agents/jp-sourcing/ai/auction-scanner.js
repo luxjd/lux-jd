@@ -134,6 +134,7 @@ export async function scanAuctions(tvrs, { onProgress, checkState } = {}) {
         condition_notes: null,
         auction_sheet_notes: null,
         photo_summary: null,
+        photo_urls: Array.isArray(listing.photos) ? listing.photos.slice(0, 30) : [],
         listing_url: listing.url,
         listing_title: listing.title,
         fx_rate_used: fxData.rate,

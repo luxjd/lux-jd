@@ -245,6 +245,33 @@ async function pageFunction(context) {
           const linkEl = row.querySelector('a[href]');
           const url = linkEl ? linkEl.href : '';
 
+          // Extract vehicle photo URLs from this row.
+          // Aggregator exposes auction-lot thumbnails; block promos, badges, and UI chrome.
+          const photos = [];
+          const BAD = /(cpn|bnr|banner|campaign|promo|event|present|gift|amazon|oshirase|coupon|popup|modal|\\/pr\\/|topimg|kyanpe|logo|icon|sprite|flag|star|ruler|arrow|badge|spacer|blank|grade|dummy|noimage|[_\\-\\/]ad[_\\-\\/])/i;
+          const BAD_ALT = /(キャンペーン|プレゼント|当たる|ギフト|クーポン|amazon|広告|お知らせ)/i;
+          const imgEls = row.querySelectorAll('img');
+          for (const img of imgEls) {
+            if (photos.length >= 20) break;
+            const src = img.getAttribute('src') || img.getAttribute('data-src') || img.dataset?.original || '';
+            if (!src) continue;
+            const abs = src.startsWith('http') ? src : new URL(src, window.location.origin).toString();
+            const lower = abs.toLowerCase();
+            const alt = (img.getAttribute('alt') || '').toString();
+            if (BAD.test(lower)) continue;
+            if (BAD_ALT.test(alt)) continue;
+            if (!/\\.(jpe?g|png|webp)($|\\?|#)/.test(lower)) continue;
+            const w = img.naturalWidth || img.width || 0;
+            const h = img.naturalHeight || img.height || 0;
+            if ((w && w < 80) || (h && h < 60)) continue;
+            // Aspect-ratio gate: vehicle photos are 4:3 or 16:9-ish; reject extreme banner ratios.
+            if (w && h) {
+              const ar = w / h;
+              if (ar < 0.6 || ar > 2.5) continue;
+            }
+            if (!photos.includes(abs)) photos.push(abs);
+          }
+
           items.push({
             title,
             priceJpy: bestPrice,
@@ -260,6 +287,7 @@ async function pageFunction(context) {
             transmission,
             status,
             url,
+            photos,
           });
         } catch (e) {}
       }
@@ -315,6 +343,7 @@ async function pageFunction(context) {
         platform: "japan-auktion.de",
         url: item.url || `${BASE_URL}/set`,
         location: "Japan",
+        photos: Array.isArray(item.photos) ? item.photos.slice(0, 20) : [],
       });
     }
 
