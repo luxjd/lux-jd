@@ -85,7 +85,10 @@ function calculateLandedCost(askingPriceJpy, fxRate, estimatedValueEur, make, dr
   const freight = 2800;
   const insurance = Math.round(Math.max(purchaseEur, (estimatedValueEur || purchaseEur) * 0.7) * 0.02);
   const cifValue = purchaseEur + auctionFees + jpTransport + exportDocs + freight + insurance;
-  const customsDuty = Math.round(cifValue * 0.065);
+  // Spec §3.1 / §4.3: EU customs duty on passenger vehicle imports = 10% of CIF.
+  // Matches Logistics customs-engine.js to prevent duty drift between landed-cost
+  // estimate at bid time and actual customs declaration at port.
+  const customsDuty = Math.round(cifValue * 0.10);
   const importVat = Math.round((cifValue + customsDuty) * 0.19);
   const tuv = getTuvCost(make, driveSide);
   const portHandling = 600;

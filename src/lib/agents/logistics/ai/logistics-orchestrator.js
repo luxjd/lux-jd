@@ -14,10 +14,12 @@ import { validateTransition, calculateETAs, STAGES, isPhotoRequired, estimateTot
 import { createShipment, getShipmentProgress } from "./shipping-tracker";
 import { generateCustomsDeclaration, reviewCustomsDocuments } from "./customs-engine";
 import { generateTuvAssessment, recommendStation, scheduleTuvAppointment } from "./tuv-manager";
+import { bookInlandTransport, defaultWorkshopOrigin } from "./inland-transport";
 import {
   savePipelineVehicle, getVehicleById, addPipelineEvent,
   saveShipment, saveCustomsDeclaration, saveTuvAppointment,
   updateAgentStatus, getPipelineVehicles,
+  getPreShipInspection, getInlandTransports, addInlandTransport,
 } from "../storage";
 
 /**
@@ -63,8 +65,15 @@ export function addVehicleToPipeline(vehicleData) {
  * This is the core operation — includes validation, side effects, and event logging.
  */
 export async function advanceStage(vehicleId, targetStage, options = {}) {
-  const vehicle = getVehicleById(vehicleId);
+  // `getVehicleById` is async — without awaiting, the prerequisite checks below
+  // would see `undefined` for all state fields. Hydrate the vehicle with the
+  // keyValueStore-backed records (pre-ship inspection, inland transports) that
+  // aren't part of the Prisma Vehicle row.
+  const vehicle = await getVehicleById(vehicleId);
   if (!vehicle) return { error: `Vehicle ${vehicleId} not found` };
+
+  vehicle.preShipInspection = await getPreShipInspection(vehicleId);
+  vehicle.inlandTransports = await getInlandTransports(vehicleId);
 
   const currentStage = vehicle.currentStage;
 
@@ -85,12 +94,27 @@ export async function advanceStage(vehicleId, targetStage, options = {}) {
   // ─── Execute stage-specific side effects ───
   let sideEffects = {};
 
-  // AT_PORT_JP → IN_TRANSIT: Create shipment
+  // AT_PORT_JP → IN_TRANSIT: Create shipment and carry forward pre-ship inspection
   if (targetStage === "IN_TRANSIT" && !vehicle.shipment) {
     const shipment = createShipment(vehicle, options.shipping);
+    // Spec §6.5.2: the pre-loading inspection done in Japan is the authoritative
+    // condition record shipping insurance relies on. Hydrate the shipment's
+    // preShipInspection from the vehicle's submitted data so the shipment record
+    // carries the full condition evidence.
+    if (vehicle.preShipInspection?.completed) {
+      shipment.preShipInspection = {
+        completed: true,
+        odometerReading: vehicle.preShipInspection.odometerReading ?? vehicle.mileageKm ?? null,
+        conditionNotes: vehicle.preShipInspection.conditionNotes || null,
+        photos: Array.isArray(vehicle.preShipInspection.photos) ? vehicle.preShipInspection.photos : [],
+        inspectedAt: vehicle.preShipInspection.inspectedAt || new Date().toISOString(),
+        inspectedBy: vehicle.preShipInspection.inspectedBy || null,
+      };
+    }
     saveShipment(shipment);
     vehicle.shipment = shipment;
     sideEffects.shipmentCreated = shipment.shipmentId;
+    sideEffects.preShipInspection = shipment.preShipInspection?.completed ? "documented" : "missing";
   }
 
   // AT_PORT_DE: Prepare customs
@@ -111,6 +135,25 @@ export async function advanceStage(vehicleId, targetStage, options = {}) {
     }
   }
 
+  // CUSTOMS → WORKSHOP: Book enclosed inland transport, port → workshop.
+  // Spec §6.5.2: "Arrange enclosed vehicle transport for all movements within
+  // Germany. Never expose a €100,000+ vehicle to open transport or weather risk."
+  if (targetStage === "WORKSHOP") {
+    const existing = vehicle.inlandTransports || [];
+    const alreadyBooked = existing.some((t) => t.legType === "PORT_TO_WORKSHOP");
+    if (!alreadyBooked) {
+      const fromPort = defaultWorkshopOrigin(
+        vehicle.shipment?.route?.destination || vehicle.customsDeclaration?.portOfEntry
+      );
+      const toCity = options.workshopCity || vehicle.tuvAssessment?.recommended_station_city || "Bremen";
+      const transport = bookInlandTransport(vehicle, "PORT_TO_WORKSHOP", fromPort, toCity, options.inlandTransport);
+      await addInlandTransport(vehicleId, transport);
+      vehicle.inlandTransports = [...existing, transport];
+      sideEffects.inlandTransportBooked = transport.transportId;
+      sideEffects.inlandTransportLeg = `${fromPort} → ${toCity} (enclosed, ${transport.carrier.name})`;
+    }
+  }
+
   // WORKSHOP → TUV: Generate assessment and schedule
   if (targetStage === "TUV" && !vehicle.tuvAssessment) {
     const assessment = await generateTuvAssessment(vehicle);
@@ -123,6 +166,22 @@ export async function advanceStage(vehicleId, targetStage, options = {}) {
 
     sideEffects.tuvAssessment = assessment.complexity;
     sideEffects.tuvAppointment = appointment.appointmentId;
+  }
+
+  // TUV → READY_FOR_SALE: Book enclosed workshop → storage leg.
+  // Spec §6.5.2 final inland movement before the car is listed for sale.
+  if (targetStage === "READY_FOR_SALE") {
+    const existing = vehicle.inlandTransports || [];
+    const alreadyBooked = existing.some((t) => t.legType === "WORKSHOP_TO_STORAGE");
+    if (!alreadyBooked) {
+      const fromCity = vehicle.tuvAppointment?.station?.city || "Bremen";
+      const toCity = options.storageCity || "Bremen";
+      const transport = bookInlandTransport(vehicle, "WORKSHOP_TO_STORAGE", fromCity, toCity, options.inlandTransport);
+      await addInlandTransport(vehicleId, transport);
+      vehicle.inlandTransports = [...existing, transport];
+      sideEffects.storageTransportBooked = transport.transportId;
+      sideEffects.storageTransportLeg = `${fromCity} → ${toCity} (enclosed, ${transport.carrier.name})`;
+    }
   }
 
   // TUV → READY_FOR_SALE: Verify TUV passed + Finance costs confirmed

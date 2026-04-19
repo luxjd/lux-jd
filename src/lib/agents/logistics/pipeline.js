@@ -45,6 +45,18 @@ const PHOTO_REQUIRED_STAGES = ["PURCHASED", "AT_PORT_JP", "AT_PORT_DE", "TUV", "
 
 // Prerequisites for specific transitions
 const TRANSITION_PREREQUISITES = {
+  // Spec §6.5.2: "Coordinate pre-loading inspection in Japan to document vehicle
+  // condition before shipping." Block the port → transit transition until the
+  // inspection has been submitted (odometer, condition notes, photos).
+  IN_TRANSIT: {
+    check: (vehicle) => {
+      const issues = [];
+      if (!vehicle.preShipInspection?.completed) {
+        issues.push("Pre-loading inspection in Japan must be completed before vessel departure");
+      }
+      return issues;
+    },
+  },
   READY_FOR_SALE: {
     check: (vehicle) => {
       const issues = [];

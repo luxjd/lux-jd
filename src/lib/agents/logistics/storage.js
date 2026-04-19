@@ -141,6 +141,64 @@ export async function saveTuvAppointment(appointment) {
   return db.tuvAppointment.create({ data });
 }
 
+// ─── Pre-Ship Inspection (Spec §6.5.2 — Japan-side condition record) ───
+// Stored in keyValueStore per vehicle, keyed `pre-ship-inspection-${vehicleId}`.
+
+export async function getPreShipInspection(vehicleId) {
+  const db = await getDb();
+  if (!db || !vehicleId) return null;
+  const row = await db.keyValueStore.findUnique({
+    where: { key: `pre-ship-inspection-${vehicleId}` },
+  });
+  return row?.value || null;
+}
+
+export async function savePreShipInspection(vehicleId, inspection) {
+  const db = await getDb();
+  if (!db || !vehicleId) return inspection;
+  const key = `pre-ship-inspection-${vehicleId}`;
+  const value = {
+    ...inspection,
+    vehicleId,
+    completed: inspection.completed !== false,
+    inspectedAt: inspection.inspectedAt || new Date().toISOString(),
+    savedAt: new Date().toISOString(),
+  };
+  await db.keyValueStore.upsert({
+    where: { key },
+    update: { value },
+    create: { key, value },
+  });
+  return value;
+}
+
+// ─── Inland Transport (Spec §6.5.2 — enclosed DE movements) ───
+// Stored in keyValueStore per vehicle, keyed `inland-transports-${vehicleId}`.
+
+export async function getInlandTransports(vehicleId) {
+  const db = await getDb();
+  if (!db || !vehicleId) return [];
+  const row = await db.keyValueStore.findUnique({
+    where: { key: `inland-transports-${vehicleId}` },
+  });
+  return row?.value?.transports || [];
+}
+
+export async function addInlandTransport(vehicleId, transport) {
+  const db = await getDb();
+  if (!db || !vehicleId) return transport;
+  const key = `inland-transports-${vehicleId}`;
+  const existing = await db.keyValueStore.findUnique({ where: { key } });
+  const current = existing?.value || { transports: [] };
+  current.transports.push({ ...transport, vehicleId, savedAt: new Date().toISOString() });
+  await db.keyValueStore.upsert({
+    where: { key },
+    update: { value: current },
+    create: { key, value: current },
+  });
+  return transport;
+}
+
 // ─── Customs Declarations (stored in KeyValueStore) ───
 
 export async function getCustomsDeclarations() {
