@@ -28,8 +28,45 @@ const MIN_MARGIN_EUR = parseInt(process.env.MIN_MARGIN_EUR || "15000");
 const MIN_MARGIN_PCT = parseInt(process.env.MIN_MARGIN_PCT || "20");
 const MAX_BRAND_CONCENTRATION = parseInt(process.env.MAX_BRAND_CONCENTRATION_PCT || "30") / 100;
 const MAX_CAPITAL_DEPLOYMENT = parseInt(process.env.MAX_CAPITAL_DEPLOYMENT_PCT || "80") / 100;
-const HUMAN_REVIEW_THRESHOLD = 80000; // €80K landed cost → always human review
+// Spec §7.3: "any vehicle purchase above €80,000 (configurable threshold)".
+const HUMAN_REVIEW_THRESHOLD = parseInt(process.env.HUMAN_REVIEW_THRESHOLD_EUR || "80000", 10);
 const MAX_SINGLE_VEHICLE_PCT = 0.25; // 25% of total capital
+
+/**
+ * Detect "process deviations" per spec §7.3 — irregularities where the pipeline
+ * ran in a fallback / degraded mode instead of its established path. Each entry
+ * becomes a Step 10 compliance flag that forces human review.
+ *
+ * Preserves the explicit operator/upstream hooks (`processDeviation`,
+ * `overrideUsed`) and adds auto-detection for signals that aren't already
+ * captured by risk scoring.
+ */
+function detectProcessDeviations(opportunity) {
+  const deviations = [];
+
+  if (opportunity.processDeviation) {
+    deviations.push(
+      typeof opportunity.processDeviation === "string"
+        ? opportunity.processDeviation
+        : "Upstream process deviation flagged"
+    );
+  }
+  if (opportunity.overrideUsed) {
+    deviations.push("Upstream override was used in the evaluation chain");
+  }
+
+  // Drive side inferred from brand default rather than extracted from the
+  // auction listing (auction-scanner.js `resolveDriveSide`). Not captured
+  // anywhere else in the decision engine — flag for human verification.
+  if (opportunity.vehicle?.driveSideAssumed) {
+    const side = opportunity.vehicle.driveSide || "UNKNOWN";
+    deviations.push(
+      `Drive side inferred as ${side} from brand default — not verified on the auction listing`
+    );
+  }
+
+  return deviations;
+}
 
 /**
  * Execute the full 7-step decision evaluation.
@@ -267,12 +304,12 @@ export function evaluateOpportunity(opportunity, portfolio) {
 
   // ─── STEP 10: COMPLIANCE FLAGS (complaints, legal, process deviations) ───
   const hasLegalFlag = !!(opportunity.vehicle?.legalIssues || opportunity.vehicle?.complaints);
-  const hasProcessDeviation = !!(opportunity.processDeviation || opportunity.overrideUsed);
   const hasAccidentHistory = !!(opportunity.vehicle?.accidentHistory);
+  const processDeviations = detectProcessDeviations(opportunity);
   const complianceIssues = [];
   if (hasLegalFlag) complianceIssues.push("Legal/complaint flag on vehicle");
-  if (hasProcessDeviation) complianceIssues.push("Process deviation or override detected");
   if (hasAccidentHistory) complianceIssues.push("Accident history reported");
+  for (const d of processDeviations) complianceIssues.push(d);
   const step10Pass = complianceIssues.length === 0;
   steps.push({
     step: 10,
