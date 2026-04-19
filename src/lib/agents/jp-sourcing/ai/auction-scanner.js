@@ -38,6 +38,33 @@ function deduplicate(listings) {
   });
 }
 
+// Spec §4.2: EU luxury cars sold in Japan are commonly delivered LHD (Japanese buyers
+// prefer LHD for authenticity). BMW/Jaguar/Land Rover Japan-market stock is RHD.
+// Use the listing's explicit drive-side when the scraper extracts it; otherwise
+// default by brand and flag the assumption for operator review.
+const LHD_DEFAULT_BRANDS = [
+  "ferrari",
+  "porsche",
+  "lamborghini",
+  "aston martin",
+  "bentley",
+  "mercedes-amg",
+  "mercedes-benz",
+  "maserati",
+];
+
+function resolveDriveSide(listing, make) {
+  const explicit = listing?.driveSide || listing?.drive_side;
+  if (explicit === "LHD" || explicit === "RHD") {
+    return { side: explicit, assumed: false };
+  }
+  const m = (make || "").toLowerCase();
+  if (LHD_DEFAULT_BRANDS.some((b) => m.includes(b))) {
+    return { side: "LHD", assumed: true };
+  }
+  return { side: "RHD", assumed: true };
+}
+
 /**
  * Scan Japanese platforms for vehicles matching DE Market TVRs.
  * @param {Array} tvrs — Target Vehicle Reports
@@ -107,16 +134,19 @@ export async function scanAuctions(tvrs, { onProgress, checkState } = {}) {
     for (const listing of combined) {
       // Use sold price when available (japan-auktion.de provides actual hammer prices)
       const priceJpy = listing.soldPriceJpy || listing.priceJpy;
+      const ds = resolveDriveSide(listing, make);
 
       allVehicles.push({
         id: `opp-${Date.now()}-${allVehicles.length}`,
+        tvr_model_id: tvr.modelId || null,
         auction_source: listing.platform,
         lot_number: listing.lotNumber || null,
         make,
         model,
         year: listing.year || yearRange[0],
         mileage_km: listing.mileage || 0,
-        drive_side: "RHD",
+        drive_side: ds.side,
+        drive_side_assumed: ds.assumed,
         auction_grade: listing.auctionGrade || null,
         exterior_color: translateColor(listing.color) || null,
         interior_color: null,

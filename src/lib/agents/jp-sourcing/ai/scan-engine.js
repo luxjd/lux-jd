@@ -157,14 +157,10 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
           }
 
           // Re-run evaluation with enriched data
-          const tvr = tvrs.find((t) => {
-            const tvrMake = t.vehicleSpec?.make?.toLowerCase();
-            const vMake = opp.vehicle?.make?.toLowerCase();
-            return vMake?.includes(tvrMake) || tvrMake?.includes(vMake);
-          });
+          const { evaluateOpportunity, findMatchingTvr } = await import("./opportunity-evaluator");
+          const tvr = vehicle ? findMatchingTvr(vehicle, tvrs) : null;
 
           if (tvr && vehicle) {
-            const { evaluateOpportunity } = await import("./opportunity-evaluator");
             const reEval = evaluateOpportunity(vehicle, tvr, auctionResult.fxRate);
             // Preserve sheet analysis and merge re-evaluated fields
             Object.assign(opp, reEval, { sheetAnalysis: opp.sheetAnalysis });

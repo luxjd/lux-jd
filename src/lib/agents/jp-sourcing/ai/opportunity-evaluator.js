@@ -18,6 +18,53 @@ import { fetchFxRate } from "@/lib/agents/valuation/fx-fetcher";
 const MIN_MARGIN_EUR = parseInt(process.env.MIN_MARGIN_EUR || "15000");
 const MIN_MARGIN_PCT = parseInt(process.env.MIN_MARGIN_PCT || "20");
 
+// ─── TVR matching ───
+
+function normalizeMake(s) {
+  return (s || "")
+    .toLowerCase()
+    .replace(/mercedes[-\s]?(?:amg|benz)/g, "mercedes")
+    .replace(/bmw[-\s]?m\b/g, "bmw")
+    .replace(/land\s*rover|range\s*rover/g, "landrover")
+    .replace(/[-\s]+/g, "");
+}
+
+function normalizeModel(s) {
+  return (s || "")
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "")
+    .replace(/berlinetta|coupe|convertible|cabriolet|spider|spyder|roadster/g, "")
+    .replace(/[\s\-().]+/g, "");
+}
+
+/**
+ * Find the Target Vehicle Report for a given auction vehicle.
+ * Primary path: exact link via `tvr_model_id` stamped by the scanner.
+ * Fallback: normalized AND-of-make-and-model fuzzy match (both sides must match).
+ */
+export function findMatchingTvr(vehicle, tvrs) {
+  if (!vehicle || !Array.isArray(tvrs) || tvrs.length === 0) return null;
+
+  const tvrId = vehicle.tvr_model_id || vehicle.tvrModelId;
+  if (tvrId) {
+    const byId = tvrs.find((t) => t.modelId === tvrId);
+    if (byId) return byId;
+  }
+
+  const vMake = normalizeMake(vehicle.make);
+  const vModel = normalizeModel(vehicle.model);
+  if (!vMake || !vModel) return null;
+
+  return tvrs.find((t) => {
+    const tvrMake = normalizeMake(t.vehicleSpec?.make);
+    const tvrModel = normalizeModel(t.vehicleSpec?.model);
+    if (!tvrMake || !tvrModel) return false;
+    const makeMatches = vMake.includes(tvrMake) || tvrMake.includes(vMake);
+    const modelMatches = vModel.includes(tvrModel) || tvrModel.includes(vModel);
+    return makeMatches && modelMatches;
+  }) || null;
+}
+
 // ─── Landed cost calculation (reused from Valuation Engine) ───
 
 function getTuvCost(make, driveSide) {
@@ -178,12 +225,14 @@ export function evaluateOpportunity(vehicle, tvr, fxRate) {
 
   return {
     id: vehicle.id,
+    tvrModelId: vehicle.tvr_model_id || null,
     vehicle: {
       make: vehicle.make,
       model: vehicle.model,
       year: vehicle.year,
       mileageKm: vehicle.mileage_km,
       driveSide: vehicle.drive_side,
+      driveSideAssumed: Boolean(vehicle.drive_side_assumed),
       auctionGrade: vehicle.auction_grade,
       exteriorColor: vehicle.exterior_color,
       interiorColor: vehicle.interior_color,
@@ -244,15 +293,7 @@ export function evaluateAllOpportunities(vehicles, tvrs, fxRate) {
   const results = [];
 
   for (const vehicle of vehicles) {
-    // Find matching TVR
-    const tvr = tvrs.find((t) => {
-      const tvrMake = t.vehicleSpec?.make?.toLowerCase();
-      const tvrModel = t.vehicleSpec?.model?.toLowerCase();
-      const vMake = vehicle.make?.toLowerCase();
-      const vModel = vehicle.model?.toLowerCase();
-      return vMake?.includes(tvrMake) || tvrMake?.includes(vMake) ||
-        (vModel?.includes(tvrModel) || tvrModel?.includes(vModel));
-    });
+    const tvr = findMatchingTvr(vehicle, tvrs);
 
     if (!tvr) {
       // No matching TVR — skip or evaluate with defaults
