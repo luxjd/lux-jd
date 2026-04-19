@@ -11,8 +11,10 @@ import { getAgentStatus as getListingStatus } from "@/lib/agents/listing/storage
 import { getAgentStatus as getLogisticsStatus } from "@/lib/agents/logistics/storage";
 import { getAgentStatus as getFinanceStatus } from "@/lib/agents/finance/storage";
 import { getAgentStatus as getConciergeStatus } from "@/lib/agents/concierge/storage";
+import { getAgentStatus as getOrchestratorStatus } from "../storage";
 
 const AGENTS = [
+  { id: "orchestrator", name: "Orchestrator", icon: "account_tree", getStatus: getOrchestratorStatus, critical: true },
   { id: "de-market", name: "DE Market Research Agent", icon: "query_stats", getStatus: getDeMarketStatus, critical: true },
   { id: "jp-sourcing", name: "JP Sourcing Agent", icon: "travel_explore", getStatus: getJpSourcingStatus, critical: true },
   { id: "listing", name: "Listing Agent", icon: "edit_note", getStatus: getListingStatus, critical: false },

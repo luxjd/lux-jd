@@ -123,26 +123,33 @@ export function evaluateOpportunity(opportunity, portfolio) {
     : 0;
   const brandFit = newBrandPct <= MAX_BRAND_CONCENTRATION;
 
-  const priceSegment = landedCost > 200000 ? "ULTRA_PREMIUM" : landedCost > 100000 ? "PREMIUM" : "STANDARD";
+  // Spec §7.1 segment bands: €50-80k / €80-120k / €120k+
+  const priceSegment = landedCost > 120000 ? "ULTRA_PREMIUM" : landedCost > 80000 ? "PREMIUM" : "STANDARD";
   const segmentCount = portfolio.segmentCounts?.[priceSegment] || 0;
   const totalVehicles = portfolio.totalVehicles || 0;
   const segmentFit = totalVehicles === 0 || (segmentCount / (totalVehicles + 1)) <= 0.5;
 
-  const step4Pass = brandFit && segmentFit;
+  // Spec §7.2 portfolio fit includes *model overlap* — flag if ≥2 of same make+model already in pipeline.
+  const modelKey = `${make}|${opportunity.vehicle?.model || ""}`;
+  const modelCount = portfolio.modelCounts?.[modelKey] || 0;
+  const modelOverlap = modelCount >= 2;
+
+  const step4Pass = brandFit && segmentFit && !modelOverlap;
   steps.push({
     step: 4,
     name: "PORTFOLIO FIT",
     icon: "pie_chart",
-    check: `Brand concentration <= ${MAX_BRAND_CONCENTRATION * 100}%, segment diversification <= 50%`,
-    actual: `${make}: ${(newBrandPct * 100).toFixed(1)}% (was ${(currentBrandPct * 100).toFixed(1)}%) | Segment ${priceSegment}: ${segmentCount}/${totalVehicles + 1}`,
+    check: `Brand <= ${MAX_BRAND_CONCENTRATION * 100}%, segment diversification <= 50%, model overlap <= 1`,
+    actual: `${make}: ${(newBrandPct * 100).toFixed(1)}% (was ${(currentBrandPct * 100).toFixed(1)}%) | Segment ${priceSegment}: ${segmentCount}/${totalVehicles + 1}${modelCount > 0 ? ` | ${modelCount}× same model in pipeline` : ""}`,
     result: step4Pass ? "PASS" : brandFit ? "FLAG" : "FAIL",
     critical: !brandFit,
     reasoning: step4Pass
-      ? `Adding this ${make} keeps brand concentration at ${(newBrandPct * 100).toFixed(1)}% (within ${MAX_BRAND_CONCENTRATION * 100}% limit). Segment ${priceSegment} is balanced.`
-      : `${!brandFit ? `${make} concentration would reach ${(newBrandPct * 100).toFixed(1)}% — exceeds ${MAX_BRAND_CONCENTRATION * 100}% limit. BLOCKED per portfolio rules.` : ""} ${!segmentFit ? `${priceSegment} segment already at ${segmentCount}/${totalVehicles} — overweight.` : ""}`,
+      ? `Adding this ${make} keeps brand concentration at ${(newBrandPct * 100).toFixed(1)}% (within ${MAX_BRAND_CONCENTRATION * 100}% limit). Segment ${priceSegment} is balanced. No model overlap.`
+      : `${!brandFit ? `${make} concentration would reach ${(newBrandPct * 100).toFixed(1)}% — exceeds ${MAX_BRAND_CONCENTRATION * 100}% limit. BLOCKED per portfolio rules. ` : ""}${!segmentFit ? `${priceSegment} segment already at ${segmentCount}/${totalVehicles} — overweight. ` : ""}${modelOverlap ? `${modelCount}× ${opportunity.vehicle?.model} already in pipeline — concentration risk.` : ""}`,
   });
   if (!brandFit) { hasReject = true; flagReasons.push(`${make} concentration ${(newBrandPct * 100).toFixed(1)}% exceeds ${MAX_BRAND_CONCENTRATION * 100}% limit`); }
   else if (!segmentFit) { hasFlag = true; flagReasons.push("Price segment overweight"); }
+  else if (modelOverlap) { hasFlag = true; flagReasons.push(`${modelCount}× ${opportunity.vehicle?.model} already in pipeline`); }
 
   // ─── STEP 5: CAPITAL CHECK ───
   const newDeployment = (portfolio.capitalDeployed || 0) + cashOutlay;
@@ -166,8 +173,8 @@ export function evaluateOpportunity(opportunity, portfolio) {
   // ─── STEP 6: TIMING CHECK ───
   const isConvertible = /spider|cabrio|convert|roadster|spyder/i.test(opportunity.vehicle?.model || "");
   const isGT = /gt|gran|coupe|berlinetta/i.test(opportunity.vehicle?.model || "");
-  const arrivalMonth = month + 3; // ~3 months to arrive
-  const arrivalSeason = arrivalMonth <= 3 || arrivalMonth >= 11 ? "WINTER" : arrivalMonth <= 5 ? "SPRING" : arrivalMonth <= 8 ? "SUMMER" : "AUTUMN";
+  const arrivalMonth = ((month - 1 + 3) % 12) + 1; // 1-12, wraps across year boundary
+  const arrivalSeason = arrivalMonth <= 2 || arrivalMonth === 12 ? "WINTER" : arrivalMonth <= 5 ? "SPRING" : arrivalMonth <= 8 ? "SUMMER" : "AUTUMN";
 
   let timingScore = "FAVORABLE";
   let timingReason = "Good timing for this vehicle type.";
@@ -215,24 +222,29 @@ export function evaluateOpportunity(opportunity, portfolio) {
   if (step7NeedsHuman) { hasFlag = true; flagReasons.push("Above value threshold — mandatory human approval"); }
 
   // ─── STEP 8: PRICING DEVIATION CHECK ───
+  // Spec §7.3: flag "pricing decisions that deviate more than 10% from the automated recommendation".
+  // At purchase-decision time there's no listing price yet — instead we compute the IMPLIED required
+  // listing price = landedCost + min margin, and measure deviation vs. the DE market median.
+  // If implied > median + 10%, we can't price at market without eroding min margin → human review.
   const deMarketMedian = opportunity.pricing?.deMarketMedian || 0;
-  const estimatedSalePrice = opportunity.pricing?.estimatedSalePrice || opportunity.margin?.estimatedSalePrice || deMarketMedian;
-  const listingPrice = opportunity.listingPrice || estimatedSalePrice;
-  const pricingDeviation = deMarketMedian > 0 ? Math.abs(listingPrice - deMarketMedian) / deMarketMedian * 100 : 0;
+  const impliedListPrice = landedCost + MIN_MARGIN_EUR;
+  const pricingDeviation = deMarketMedian > 0 ? ((impliedListPrice - deMarketMedian) / deMarketMedian) * 100 : 0;
   const step8Pass = pricingDeviation <= 10;
   steps.push({
     step: 8,
     name: "PRICING DEVIATION",
     icon: "price_change",
-    check: "Listing price within 10% of market median",
-    actual: `${pricingDeviation.toFixed(1)}% deviation (List: ${formatEur(listingPrice)} vs Median: ${formatEur(deMarketMedian)})`,
+    check: "Implied list price (landed + min margin) within 10% of market median",
+    actual: `${pricingDeviation.toFixed(1)}% deviation (Implied: ${formatEur(impliedListPrice)} vs Median: ${formatEur(deMarketMedian)})`,
     result: step8Pass ? "PASS" : "FLAG",
     critical: false,
     reasoning: step8Pass
-      ? `Pricing aligned with market — ${pricingDeviation.toFixed(1)}% deviation is within 10% tolerance.`
-      : `Pricing deviates ${pricingDeviation.toFixed(1)}% from market median. ${listingPrice > deMarketMedian ? "Overpriced — may sit too long." : "Underpriced — leaving margin on table."} Requires human pricing review.`,
+      ? `Implied list price ${formatEur(impliedListPrice)} is within 10% of market median ${formatEur(deMarketMedian)} — pricing viable.`
+      : pricingDeviation > 10
+      ? `Implied list price ${formatEur(impliedListPrice)} is ${pricingDeviation.toFixed(1)}% above median — cannot hit min margin at market price. Requires human pricing review.`
+      : `Implied list price ${pricingDeviation.toFixed(1)}% below median — unusual; verify landed cost is accurate.`,
   });
-  if (!step8Pass) { hasFlag = true; flagReasons.push(`Pricing ${pricingDeviation.toFixed(1)}% off market median`); }
+  if (!step8Pass) { hasFlag = true; flagReasons.push(`Implied pricing ${pricingDeviation.toFixed(1)}% off market median`); }
 
   // ─── STEP 9: OFFER PRICE CHECK (Human-in-the-loop: <92% of asking) ───
   const askingPriceJpy = opportunity.pricing?.askingPriceJpy || 0;

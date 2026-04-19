@@ -49,6 +49,27 @@ export async function saveDecision(decision) {
   });
 }
 
+/**
+ * Return the most recent decision for this opportunity, or null.
+ * Used by evaluate/override routes to enforce idempotency (no double-processing).
+ */
+export async function getLastDecisionForOpportunity(opportunityId) {
+  if (!opportunityId) return null;
+  const db = await getDb();
+  if (!db) return null;
+  return db.orchestratorDecision.findFirst({
+    where: { opportunityId },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+const TERMINAL_DECISIONS = new Set(["AUTO_APPROVE", "HUMAN_APPROVED", "HUMAN_REJECTED", "REJECT"]);
+
+/** A decision is "terminal" once the opp has been approved, rejected, or human-resolved. */
+export function isTerminalDecision(decision) {
+  return TERMINAL_DECISIONS.has(decision);
+}
+
 // ─── Agent Status ───
 
 export async function getAgentStatus() {

@@ -7,7 +7,7 @@
  * Body: { opportunityId, opportunity, action: "APPROVE" | "REJECT", reason?: string }
  */
 
-import { saveDecision, updateAgentStatus } from "@/lib/agents/orchestrator/storage";
+import { saveDecision, updateAgentStatus, getLastDecisionForOpportunity, isTerminalDecision } from "@/lib/agents/orchestrator/storage";
 import { savePipelineVehicle, addPipelineEvent } from "@/lib/agents/logistics/storage";
 import { recordLandedCosts } from "@/lib/agents/finance/ai/finance-orchestrator";
 import { agentGuard } from "@/lib/settings";
@@ -23,6 +23,20 @@ export async function POST(request) {
 
   if (!action || !["APPROVE", "REJECT"].includes(action)) {
     return Response.json({ error: "action must be APPROVE or REJECT" }, { status: 400 });
+  }
+
+  // Override is only valid when the latest decision for this opp is HUMAN_REVIEW.
+  // Prevents re-approving an already-terminated decision (auto-approve, human-approved/rejected, reject).
+  const oppIdForCheck = opportunityId || opportunity?.id;
+  if (oppIdForCheck) {
+    const existing = await getLastDecisionForOpportunity(oppIdForCheck);
+    if (existing && isTerminalDecision(existing.decision)) {
+      return Response.json({
+        error: `Opportunity already in terminal state: ${existing.decision}`,
+        previousDecision: existing.decision,
+        decidedAt: existing.createdAt,
+      }, { status: 409 });
+    }
   }
 
   try {

@@ -1,7 +1,7 @@
 import { evaluateOpportunity } from "@/lib/agents/orchestrator/ai/decision-engine";
 import { loadPortfolioState } from "@/lib/agents/orchestrator/ai/portfolio-manager";
 import { generateDecisionBrief } from "@/lib/agents/orchestrator/ai/brief-generator";
-import { saveDecision, updateAgentStatus } from "@/lib/agents/orchestrator/storage";
+import { saveDecision, updateAgentStatus, getLastDecisionForOpportunity, isTerminalDecision } from "@/lib/agents/orchestrator/storage";
 import { savePipelineVehicle, addPipelineEvent } from "@/lib/agents/logistics/storage";
 import { recordLandedCosts } from "@/lib/agents/finance/ai/finance-orchestrator";
 import { formatEur, formatJpy } from "@/lib/format";
@@ -15,6 +15,21 @@ export async function POST(request) {
 
   const body = await request.json();
   if (!body.opportunity) return Response.json({ error: "Missing opportunity data" }, { status: 400 });
+
+  // Idempotency: if this opportunity already has a decision, don't re-process.
+  // Callers can pass { force: true } to override (e.g. after data refresh).
+  if (body.opportunity?.id && !body.force) {
+    const existing = await getLastDecisionForOpportunity(body.opportunity.id);
+    if (existing && isTerminalDecision(existing.decision)) {
+      return Response.json({
+        alreadyProcessed: true,
+        previousDecision: existing.decision,
+        previousDecisionReason: existing.decisionReason,
+        decidedAt: existing.createdAt,
+        vehicleName: existing.vehicleName,
+      }, { status: 200 });
+    }
+  }
 
   await updateAgentStatus({ status: "EVALUATING" });
 

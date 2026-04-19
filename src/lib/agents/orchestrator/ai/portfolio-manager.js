@@ -19,7 +19,9 @@ export async function loadPortfolioState() {
   // Calculate capital deployed per vehicle
   let totalCapitalDeployed = 0;
   const brandCapital = {};
+  // Spec §7.1 segment bands: €50-80k / €80-120k / €120k+
   const segmentCounts = { STANDARD: 0, PREMIUM: 0, ULTRA_PREMIUM: 0 };
+  const modelCounts = {};
 
   for (const v of vehicles) {
     const vTxns = allTxns.filter((t) => t.vehicleId === v.id && t.category !== "SALE_PROCEEDS");
@@ -30,14 +32,17 @@ export async function loadPortfolioState() {
     const make = v.make || "Unknown";
     brandCapital[make] = (brandCapital[make] || 0) + vehicleCapital;
 
+    const modelKey = `${make}|${v.model || ""}`;
+    modelCounts[modelKey] = (modelCounts[modelKey] || 0) + 1;
+
     const cost = vehicleCapital;
-    if (cost > 200000) segmentCounts.ULTRA_PREMIUM++;
-    else if (cost > 100000) segmentCounts.PREMIUM++;
+    if (cost > 120000) segmentCounts.ULTRA_PREMIUM++;
+    else if (cost > 80000) segmentCounts.PREMIUM++;
     else segmentCounts.STANDARD++;
   }
 
-  // Estimate total available capital (in production: from Finance Agent)
-  const totalAvailableCapital = 2000000; // Default €2M — configurable
+  // Total available capital — env-driven until Finance exposes a real treasury endpoint.
+  const totalAvailableCapital = parseInt(process.env.AVAILABLE_CAPITAL_EUR || "2000000", 10);
 
   // Brand concentration percentages
   const brandConcentration = {};
@@ -65,6 +70,7 @@ export async function loadPortfolioState() {
     brandConcentration,
 
     segmentCounts,
+    modelCounts,
     totalCapital: totalCapitalDeployed,
 
     healthScore,
