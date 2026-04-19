@@ -108,6 +108,63 @@ export async function addEscalation(esc) {
   }
 }
 
+// ─── SLA Metrics (Spec §6.6.2 point 1 / KPI §11.2 — <10 min response) ───
+// Stored in keyValueStore per lead + rollup counter, same pattern as
+// Logistics' pre-ship-inspection / inland-transports.
+
+export async function recordSlaMetric(leadId, metric) {
+  const db = await getDb();
+  if (!db || !leadId) return metric;
+
+  // Per-lead record for audit trail
+  const leadKey = `concierge-sla-${leadId}`;
+  const value = { ...metric, leadId, recordedAt: new Date().toISOString() };
+  await db.keyValueStore.upsert({
+    where: { key: leadKey },
+    update: { value },
+    create: { key: leadKey, value },
+  });
+
+  // Rolling counter for KPI reporting (14-day window)
+  const rollupKey = "concierge-sla-rollup";
+  const existing = await db.keyValueStore.findUnique({ where: { key: rollupKey } });
+  const rollup = existing?.value || { samples: [] };
+  rollup.samples.push({
+    leadId,
+    respondedAt: metric.respondedAt,
+    responseDelayMs: metric.responseDelayMs,
+    slaBreached: metric.slaBreached,
+    path: metric.path,
+  });
+  // Keep last 14 days
+  const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  rollup.samples = rollup.samples.filter((s) => new Date(s.respondedAt).getTime() > cutoff);
+  rollup.totalSamples = rollup.samples.length;
+  rollup.breachCount = rollup.samples.filter((s) => s.slaBreached).length;
+  rollup.breachRatePct = rollup.totalSamples > 0
+    ? Number(((rollup.breachCount / rollup.totalSamples) * 100).toFixed(1))
+    : 0;
+  rollup.avgResponseDelayMs = rollup.totalSamples > 0
+    ? Math.round(rollup.samples.reduce((s, x) => s + x.responseDelayMs, 0) / rollup.totalSamples)
+    : 0;
+  rollup.updatedAt = new Date().toISOString();
+
+  await db.keyValueStore.upsert({
+    where: { key: rollupKey },
+    update: { value: rollup },
+    create: { key: rollupKey, value: rollup },
+  });
+
+  return value;
+}
+
+export async function getSlaRollup() {
+  const db = await getDb();
+  if (!db) return null;
+  const row = await db.keyValueStore.findUnique({ where: { key: "concierge-sla-rollup" } });
+  return row?.value || { samples: [], totalSamples: 0, breachCount: 0, breachRatePct: 0, avgResponseDelayMs: 0 };
+}
+
 // ─── Agent Status ───
 
 export async function getAgentStatus() {

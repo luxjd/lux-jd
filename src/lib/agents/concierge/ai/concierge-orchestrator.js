@@ -15,8 +15,23 @@ import { scoreAndClassify } from "./lead-scorer";
 import { generateResponse } from "./auto-responder";
 import { evaluateOffer, generateNegotiationResponse } from "./negotiation-engine";
 import { checkEscalation } from "./escalation-handler";
-import { saveLead, addMessage, addEscalation, updateAgentStatus, getAllLeads } from "../storage";
-import { sendResponseEmail, isEmailConfigured, getVehiclePhotos } from "../email-service";
+import { saveLead, addMessage, addEscalation, updateAgentStatus, getAllLeads, recordSlaMetric } from "../storage";
+import { sendResponseEmail, getVehiclePhotos } from "../email-service";
+
+const SLA_TARGET_MS = 10 * 60 * 1000; // Spec §6.6.2 point 1: "Within 10 minutes"
+
+function resolveFloorPrice(vehicle, askingPrice) {
+  // Spec §6.6.2 point 4: "minimum price floor set by the Orchestrator".
+  // Read in priority order from the listing/vehicle data, fall back to 85%
+  // of asking only if no authoritative floor is plumbed through.
+  if (vehicle?.pricing?.floor_price_eur) return vehicle.pricing.floor_price_eur;
+  if (vehicle?.floorPriceEur) return vehicle.floorPriceEur;
+  if (vehicle?.landedCostEur != null && vehicle?.minMarginEur != null) {
+    return vehicle.landedCostEur + vehicle.minMarginEur;
+  }
+  if (vehicle?.pricing?.wholesale_price_eur) return vehicle.pricing.wholesale_price_eur;
+  return Math.round(askingPrice * 0.85);
+}
 
 /**
  * Handle an incoming customer inquiry — the main entry point.
@@ -39,9 +54,14 @@ export async function handleInquiry({
   vehicle,
   source = "platform",
   offerPrice = null,
+  inquiryReceivedAt = null,
 }) {
   const startTime = Date.now();
-  updateAgentStatus({ status: "PROCESSING" });
+  // SLA clock starts when the inquiry was actually received, not when we
+  // started processing. Caller should pass `inquiryReceivedAt` from the
+  // platform webhook / email poll; otherwise assume "just now".
+  const receivedAtMs = inquiryReceivedAt ? new Date(inquiryReceivedAt).getTime() : startTime;
+  await updateAgentStatus({ status: "PROCESSING" });
 
   const askingPrice = vehicle.listingPrice || vehicle.currentPrice || vehicle.estimatedSaleEur;
   const vehicleName = `${vehicle.make} ${vehicle.model} ${vehicle.year}`;
@@ -52,7 +72,10 @@ export async function handleInquiry({
   if (escalation.shouldEscalate && escalation.highestPriority === "CRITICAL") {
     // Critical escalation — do NOT auto-respond, go straight to human
     const leadId = `lead-${Date.now()}`;
-    const lead = saveLead({
+    const responseDelayMs = Date.now() - receivedAtMs;
+    const slaBreached = responseDelayMs > SLA_TARGET_MS;
+
+    const lead = await saveLead({
       id: leadId,
       name: customerName,
       email: customerEmail,
@@ -68,10 +91,21 @@ export async function handleInquiry({
       createdAt: new Date().toISOString(),
     });
 
-    addMessage(leadId, { role: "customer", text: inquiry, source });
-    addEscalation({ leadId, customerName, vehicle: vehicleName, triggers: escalation.triggers });
+    await addMessage(leadId, { role: "customer", text: inquiry, source });
+    await addEscalation({ leadId, customerName, vehicle: vehicleName, triggers: escalation.triggers });
+    await recordSlaMetric(leadId, {
+      inquiryReceivedAt: new Date(receivedAtMs).toISOString(),
+      respondedAt: new Date().toISOString(),
+      responseDelayMs,
+      slaTargetMs: SLA_TARGET_MS,
+      slaBreached,
+      path: "critical_escalation",
+    });
+    if (slaBreached) {
+      console.warn(`Concierge SLA breach on ${leadId}: ${Math.round(responseDelayMs / 60000)} min (target 10 min)`);
+    }
 
-    updateAgentStatus({ status: "ONLINE", lastAction: `ESCALATED: ${vehicleName} — ${escalation.triggers[0]?.trigger}` });
+    await updateAgentStatus({ status: "ONLINE", lastAction: `ESCALATED: ${vehicleName} — ${escalation.triggers[0]?.trigger}` });
 
     return {
       leadId,
@@ -79,6 +113,7 @@ export async function handleInquiry({
       escalation,
       response: null,
       message: "Critical escalation — routed to human operator immediately. No auto-response sent.",
+      sla: { responseDelayMs, slaBreached, targetMs: SLA_TARGET_MS },
       duration: Date.now() - startTime,
     };
   }
@@ -91,8 +126,9 @@ export async function handleInquiry({
   let negotiation = null;
 
   if (offerPrice) {
-    // Handle as negotiation
-    const evaluation = evaluateOffer(offerPrice, askingPrice);
+    // Spec §6.6.2 point 4: floor price set by the Orchestrator, not the concierge.
+    const floor = resolveFloorPrice(vehicle, askingPrice);
+    const evaluation = evaluateOffer(offerPrice, askingPrice, floor);
     negotiation = evaluation;
 
     if (evaluation.action === "ESCALATE") {
@@ -115,7 +151,7 @@ export async function handleInquiry({
 
   // ─── Step 4: Create/update lead ───
   const leadId = `lead-${Date.now()}`;
-  const lead = saveLead({
+  const lead = await saveLead({
     id: leadId,
     name: customerName,
     email: customerEmail,
@@ -127,22 +163,38 @@ export async function handleInquiry({
     score: classification.score,
     buyerType: classification.buyerType,
     language: classification.language,
+    inquiryText: inquiry,
+    responseText: response.response_text || null,
     escalated: escalation.shouldEscalate,
     escalationReason: escalation.shouldEscalate ? escalation.triggers.map((t) => t.reason).join("; ") : null,
     suggestedAction: response.suggested_next_action,
     offerPrice: offerPrice || null,
-    negotiation: negotiation || null,
     createdAt: new Date().toISOString(),
   });
 
   // ─── Step 5: Log conversation ───
-  addMessage(leadId, { role: "customer", text: inquiry, source });
+  await addMessage(leadId, { role: "customer", text: inquiry, source });
   if (response.response_text) {
-    addMessage(leadId, { role: "concierge", text: response.response_text, aiPowered: response.aiPowered });
+    await addMessage(leadId, { role: "concierge", text: response.response_text, aiPowered: response.aiPowered });
   }
 
   if (escalation.shouldEscalate) {
-    addEscalation({ leadId, customerName, vehicle: vehicleName, triggers: escalation.triggers });
+    await addEscalation({ leadId, customerName, vehicle: vehicleName, triggers: escalation.triggers });
+  }
+
+  // ─── Step 5b: SLA tracking (spec §6.6.2 point 1, KPI §11.2 <10min) ───
+  const responseDelayMs = Date.now() - receivedAtMs;
+  const slaBreached = responseDelayMs > SLA_TARGET_MS;
+  await recordSlaMetric(leadId, {
+    inquiryReceivedAt: new Date(receivedAtMs).toISOString(),
+    respondedAt: new Date().toISOString(),
+    responseDelayMs,
+    slaTargetMs: SLA_TARGET_MS,
+    slaBreached,
+    path: offerPrice ? "negotiation" : "standard",
+  });
+  if (slaBreached) {
+    console.warn(`Concierge SLA breach on ${leadId}: ${Math.round(responseDelayMs / 60000)} min (target 10 min)`);
   }
 
   // ─── Step 6: Send email with response + photos ───
@@ -165,15 +217,22 @@ export async function handleInquiry({
   }
 
   // ─── Update agent status ───
-  const allLeads = getAllLeads();
-  updateAgentStatus({
+  const allLeads = await getAllLeads();
+  const prevStatus = await (async () => {
+    try {
+      const { getAgentStatus } = await import("../storage");
+      return (await getAgentStatus()) || {};
+    } catch { return {}; }
+  })();
+  await updateAgentStatus({
     status: "ONLINE",
     lastAction: `Responded to ${customerName} about ${vehicleName}`,
     lastActionTimestamp: new Date().toISOString(),
     totalLeads: allLeads.leads?.length || 0,
     openLeads: allLeads.leads?.filter((l) => !["CONVERTED", "LOST"].includes(l.status)).length || 0,
     escalatedCount: allLeads.leads?.filter((l) => l.escalated).length || 0,
-    avgResponseTime: Date.now() - startTime,
+    slaBreachesTotal: (prevStatus.slaBreachesTotal || 0) + (slaBreached ? 1 : 0),
+    lastResponseDelayMs: responseDelayMs,
   });
 
   // ─── Get vehicle photos for inline display ───
@@ -196,6 +255,7 @@ export async function handleInquiry({
     escalation,
     email: emailResult,
     photos,
+    sla: { responseDelayMs, slaBreached, targetMs: SLA_TARGET_MS },
     duration: Date.now() - startTime,
     aiPowered: response.aiPowered !== false,
   };

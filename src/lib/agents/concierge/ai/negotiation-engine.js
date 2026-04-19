@@ -14,42 +14,53 @@ import { formatEur, formatNumber } from "@/lib/format";
 
 /**
  * Evaluate an offer against the listing price.
+ *
+ * Spec §6.6.2 point 4: offers are evaluated "against the minimum price floor
+ * set by the Orchestrator". The floor is a hard constraint — an offer below
+ * the floor cannot be auto-accepted or auto-countered, regardless of the
+ * discount-from-asking %.
  */
 export function evaluateOffer(offerPrice, askingPrice, floorPrice = null) {
   const discountPct = ((askingPrice - offerPrice) / askingPrice) * 100;
-  const floor = floorPrice || askingPrice * 0.85;
+  const floor = floorPrice || Math.round(askingPrice * 0.85);
+  const belowFloor = offerPrice < floor;
 
   let action, authority, counterOffer, reasoning;
 
-  if (discountPct <= 0) {
-    // Full price or above
+  // Hard-floor override: any offer under the Orchestrator floor must escalate.
+  // The concierge has no authority to accept or counter below floor — even a
+  // nominal 2% discount would be blocked if the floor says so.
+  if (belowFloor) {
+    action = "ESCALATE";
+    authority = "HUMAN_REQUIRED";
+    // Counter no lower than the floor. Still try to close near asking when the
+    // offer is only modestly below floor.
+    counterOffer = Math.max(floor, Math.round(askingPrice * 0.92));
+    reasoning = `Offer ${formatEur(offerPrice)} is below the Orchestrator-set floor of ${formatEur(floor)}. Escalating — concierge has no authority to accept below floor. Suggested counter: ${formatEur(counterOffer)}.`;
+  } else if (discountPct <= 0) {
     action = "ACCEPT";
     authority = "AUTO";
     reasoning = "Offer at or above asking price — accept immediately.";
   } else if (discountPct <= 5) {
-    // Within -5%: accept
     action = "ACCEPT";
     authority = "AUTO";
-    reasoning = `Offer at -${discountPct.toFixed(1)}% — within auto-accept authority.`;
+    reasoning = `Offer at -${discountPct.toFixed(1)}% — within auto-accept authority and above floor.`;
   } else if (discountPct <= 8) {
-    // -5% to -8%: counter at -5%
     action = "COUNTER";
     authority = "AUTO";
-    counterOffer = Math.round(askingPrice * 0.95);
-    reasoning = `Offer at -${discountPct.toFixed(1)}% — countering at -5% (${formatEur(counterOffer)}).`;
+    // Counter at -5%, clamped to floor so we never counter below it.
+    counterOffer = Math.max(Math.round(askingPrice * 0.95), floor);
+    reasoning = `Offer at -${discountPct.toFixed(1)}% — countering at ${formatEur(counterOffer)}${counterOffer === floor ? " (floor-clamped)" : " (-5%)"}.`;
   } else if (discountPct <= 10) {
-    // -8% to -10%: escalate
     action = "ESCALATE";
     authority = "HUMAN_REQUIRED";
-    counterOffer = Math.round(askingPrice * 0.92);
-    reasoning = `Offer at -${discountPct.toFixed(1)}% — exceeds auto-authority. Escalating to human. Suggested counter: ${formatEur(counterOffer)} (-8%).`;
+    counterOffer = Math.max(Math.round(askingPrice * 0.92), floor);
+    reasoning = `Offer at -${discountPct.toFixed(1)}% — exceeds auto-authority. Escalating to human. Suggested counter: ${formatEur(counterOffer)} (-8% or floor).`;
   } else if (discountPct <= 15) {
-    // -10% to -15%: decline
     action = "DECLINE";
     authority = "AUTO";
     reasoning = `Offer at -${discountPct.toFixed(1)}% — below acceptable range. Politely declining.`;
   } else {
-    // Below -15%: wholesale flag
     action = "WHOLESALE_FLAG";
     authority = "ORCHESTRATOR";
     reasoning = `Offer at -${discountPct.toFixed(1)}% — potential wholesale buyer. Routing to Orchestrator.`;
@@ -63,8 +74,9 @@ export function evaluateOffer(offerPrice, askingPrice, floorPrice = null) {
     authority,
     counterOffer: counterOffer || null,
     reasoning,
-    belowFloor: offerPrice < floor,
+    belowFloor,
     floorPrice: floor,
+    floorSource: floorPrice ? "orchestrator" : "fallback_85pct",
   };
 }
 

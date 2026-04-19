@@ -1,7 +1,5 @@
 import { handleInquiry } from "@/lib/agents/concierge/ai/concierge-orchestrator";
 import { agentGuard } from "@/lib/settings";
-import { db } from "@/lib/db-storage";
-import { after } from "next/server";
 
 export async function POST(request) {
   const blocked = await agentGuard("concierge");
@@ -14,6 +12,10 @@ export async function POST(request) {
   }
 
   try {
+    // `handleInquiry` persists the lead + messages + SLA record through the
+    // concierge storage helpers (Prisma upserts + keyValueStore). The route
+    // used to wrap a second `db.leads.create(...)` in `after()`, which wrote a
+    // duplicate row with a different ID and cloned every message.
     const result = await handleInquiry({
       inquiry: body.inquiry,
       customerName: body.customerName || "Unknown",
@@ -22,34 +24,10 @@ export async function POST(request) {
       vehicle: body.vehicle,
       source: body.source || "platform",
       offerPrice: body.offerPrice || null,
-    });
-
-    // Save lead + messages to PostgreSQL in background
-    after(async () => {
-      try {
-        const dbLead = await db.leads.create({
-          name: body.customerName || "Unknown",
-          email: body.customerEmail || "",
-          phone: body.customerPhone || null,
-          source: body.source || "platform",
-          status: result.lead?.status || "NEW",
-          buyerType: result.classification?.buyerType || "UNKNOWN",
-          score: result.classification?.score || 0,
-          language: result.classification?.language || "DE",
-          inquiryText: body.inquiry,
-          responseText: result.response?.response_text || null,
-          offerPrice: body.offerPrice || null,
-          escalated: result.escalation?.shouldEscalate || false,
-          escalationReason: result.escalation?.triggers?.map((t) => t.reason).join("; ") || null,
-          suggestedAction: result.response?.suggested_next_action || null,
-        });
-        if (dbLead) {
-          await db.messages.create({ leadId: dbLead.id, role: "customer", text: body.inquiry, source: body.source || "platform" });
-          if (result.response?.response_text) {
-            await db.messages.create({ leadId: dbLead.id, role: "concierge", text: result.response.response_text, aiPowered: true });
-          }
-        }
-      } catch (e) { console.warn("DB save lead failed:", e.message); }
+      // Spec §6.6.2 point 1: "Within 10 minutes of receiving an inquiry".
+      // Callers (platform webhooks, email poller) should pass the actual
+      // receipt time so the SLA clock measures end-to-end delay.
+      inquiryReceivedAt: body.inquiryReceivedAt || body.receivedAt || null,
     });
 
     return Response.json(result);
