@@ -106,7 +106,11 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
   // ─── Step 3: Evaluate ───
   await writeProgress("evaluating", `Evaluating ${vehicles.length} candidates against DE market data...`, { vehiclesFound: vehicles.length });
 
-  const opportunities = evaluateAllOpportunities(vehicles, tvrs, auctionResult.fxRate);
+  // Pass the full fxData object so scoreRisk can compute currency_risk from
+  // the 90-day moving-average deviation (docx §6.2.4). Falls back to the
+  // rate number for older callers.
+  const fxForEval = auctionResult.fxData || auctionResult.fxRate;
+  const opportunities = evaluateAllOpportunities(vehicles, tvrs, fxForEval);
 
   const strongBuys = opportunities.filter((o) => o.recommendation === "STRONG_BUY");
   const buys = opportunities.filter((o) => o.recommendation === "BUY");
@@ -142,46 +146,8 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
       checkState,
     });
 
-    // Re-evaluate opportunities that got enriched with sheet data
-    // (service history + accident info may change risk scores and recommendations)
-    if (sheetAnalysisResult.enriched > 0) {
-      for (const opp of opportunities) {
-        if (opp.sheetAnalysis) {
-          // Find the original vehicle in the list
-          const vehicle = vehicles.find((v) => v.id === opp.id);
-          if (vehicle) {
-            // Update vehicle with sheet data
-            if (opp.vehicle.serviceHistory) vehicle.service_history = opp.vehicle.serviceHistory;
-            if (opp.vehicle.accidentHistory) vehicle.accident_history = true;
-            if (opp.vehicle.auctionGrade) vehicle.auction_grade = opp.vehicle.auctionGrade;
-          }
-
-          // Re-run evaluation with enriched data
-          const { evaluateOpportunity, findMatchingTvr } = await import("./opportunity-evaluator");
-          const tvr = vehicle ? findMatchingTvr(vehicle, tvrs) : null;
-
-          if (tvr && vehicle) {
-            const reEval = evaluateOpportunity(vehicle, tvr, auctionResult.fxRate);
-            // Preserve sheet analysis and merge re-evaluated fields
-            Object.assign(opp, reEval, { sheetAnalysis: opp.sheetAnalysis });
-          }
-        }
-      }
-
-      // Re-sort after re-evaluation
-      opportunities.sort((a, b) => (b.margin?.riskAdjustedMargin || -99999) - (a.margin?.riskAdjustedMargin || -99999));
-
-      // Recount
-      const newStrongBuys = opportunities.filter((o) => o.recommendation === "STRONG_BUY").length;
-      const newBuys = opportunities.filter((o) => o.recommendation === "BUY").length;
-      const newReviews = opportunities.filter((o) => o.recommendation === "REVIEW").length;
-      const newPasses = opportunities.filter((o) => o.recommendation === "PASS").length;
-
-      await writeProgress("sheets", `Sheet analysis done. ${sheetAnalysisResult.enriched} enriched. Updated: ${newStrongBuys} SB, ${newBuys} B, ${newReviews} R, ${newPasses} P`, {
-        vehiclesFound: vehicles.length,
-        results: { strongBuy: newStrongBuys, buy: newBuys, review: newReviews, pass: newPasses },
-      });
-    }
+    // Sheet-enrichment re-eval is now deferred until after Step 4b so mods
+    // detected by photo analysis also feed into the TUV risk.
   }
 
   // ─── Step 4b: Photo analysis for BUY/STRONG_BUY (Claude Vision on listing photos) ───
@@ -215,6 +181,64 @@ export async function runFullScan({ deepAnalysis = true } = {}) {
 
       photoAnalysisResult.analyzed = opportunities.filter((o) => o.photoAnalysis).length;
     }
+  }
+
+  // ─── Step 4c: Consolidated re-evaluation after sheet + photo enrichment ───
+  // Runs ONCE after both enrichment passes so each re-eval sees the complete
+  // set of derived signals: service_history / accident / grade (from sheets),
+  // modifications / visible_damage / tuv_risk_flags / respray (from photos +
+  // sheets). This is where spec §6.2.3 feedback loop closes — the enriched
+  // vehicle data flows back into scoreRisk's TUV/condition dimensions.
+  const enrichedOpps = opportunities.filter((o) => o.sheetAnalysis || o.photoAnalysis);
+  if (enrichedOpps.length > 0) {
+    const { evaluateOpportunity, findMatchingTvr } = await import("./opportunity-evaluator");
+
+    for (const opp of enrichedOpps) {
+      const vehicle = vehicles.find((v) => v.id === opp.id);
+      if (!vehicle) continue;
+
+      // Propagate sheet-derived fields
+      if (opp.vehicle?.serviceHistory) vehicle.service_history = opp.vehicle.serviceHistory;
+      if (opp.vehicle?.accidentHistory) vehicle.accident_history = true;
+      if (opp.vehicle?.auctionGrade) vehicle.auction_grade = opp.vehicle.auctionGrade;
+
+      // Propagate photo-derived fields (new — feeds docx §6.2.4 TUV risk)
+      if (Array.isArray(opp.vehicle?.modifications)) {
+        vehicle.modifications = opp.vehicle.modifications;
+      }
+      if (Array.isArray(opp.vehicle?.visibleDamage)) {
+        vehicle.visible_damage = opp.vehicle.visibleDamage;
+      }
+      if (Array.isArray(opp.vehicle?.tuvRiskFlags)) {
+        vehicle.tuv_risk_flags = opp.vehicle.tuvRiskFlags;
+      }
+      if (opp.photoAnalysis?.resprayDetected) {
+        vehicle.respray_detected = true;
+      }
+
+      const tvr = findMatchingTvr(vehicle, tvrs);
+      if (!tvr) continue;
+
+      const reEval = evaluateOpportunity(vehicle, tvr, fxForEval);
+      // Preserve enrichment attachments so downstream steps keep access to them
+      Object.assign(opp, reEval, {
+        sheetAnalysis: opp.sheetAnalysis,
+        photoAnalysis: opp.photoAnalysis,
+      });
+    }
+
+    // Re-sort after re-evaluation
+    opportunities.sort((a, b) => (b.margin?.riskAdjustedMargin || -99999) - (a.margin?.riskAdjustedMargin || -99999));
+
+    const newStrongBuys = opportunities.filter((o) => o.recommendation === "STRONG_BUY").length;
+    const newBuys = opportunities.filter((o) => o.recommendation === "BUY").length;
+    const newReviews = opportunities.filter((o) => o.recommendation === "REVIEW").length;
+    const newPasses = opportunities.filter((o) => o.recommendation === "PASS").length;
+
+    await writeProgress("enrichment_reeval", `Re-evaluated ${enrichedOpps.length} enriched opportunities. Updated: ${newStrongBuys} SB, ${newBuys} B, ${newReviews} R, ${newPasses} P`, {
+      vehiclesFound: vehicles.length,
+      results: { strongBuy: newStrongBuys, buy: newBuys, review: newReviews, pass: newPasses },
+    });
   }
 
   // ─── Step 5: Deep analysis ───

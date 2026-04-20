@@ -12,6 +12,11 @@ import { scrapeGooNet } from "../scrapers/goo-net";
 import { scrapeCarsensor } from "../scrapers/carsensor";
 import { scrapeJapanAuktion } from "../scrapers/japan-auktion";
 
+// Docx §6.2.3: "auction grade (minimum 4.0 for luxury — higher threshold than standard vehicles)".
+// Listings with an explicit grade below this are filtered at discovery. Listings with
+// an unknown (null) grade are still admitted — the downstream risk model will penalize them.
+const MIN_AUCTION_GRADE = parseFloat(process.env.MIN_AUCTION_GRADE || "4.0");
+
 const COLOR_MAP = {
   "ブラック": "Black", "ホワイト": "White", "シルバー": "Silver",
   "レッド": "Red", "ブルー": "Blue", "グレー": "Grey",
@@ -86,6 +91,7 @@ export async function scanAuctions(tvrs, { onProgress, checkState } = {}) {
   let totalGooNet = 0;
   let totalCarsensor = 0;
   let totalJapanAuktion = 0;
+  let filteredByGrade = 0;
   const completedModels = [];
 
   for (let idx = 0; idx < tvrs.length; idx++) {
@@ -132,6 +138,14 @@ export async function scanAuctions(tvrs, { onProgress, checkState } = {}) {
     console.log(`JP Sourcing [${make} ${model}]: goo-net=${gooListings.length}, carsensor=${carsensorListings.length}, japan-auktion=${japanAuktionListings.length}, deduped=${combined.length}`);
 
     for (const listing of combined) {
+      // Docx §6.2.3 grade filter — drop listings with explicit grade below threshold.
+      // Listings without a grade (carsensor / goo-net / RHD brokers often omit it) pass through
+      // and get penalized later by scoreRisk.
+      if (listing.auctionGrade != null && listing.auctionGrade < MIN_AUCTION_GRADE) {
+        filteredByGrade++;
+        continue;
+      }
+
       // Use sold price when available (japan-auktion.de provides actual hammer prices)
       const priceJpy = listing.soldPriceJpy || listing.priceJpy;
       const ds = resolveDriveSide(listing, make);
@@ -187,12 +201,16 @@ export async function scanAuctions(tvrs, { onProgress, checkState } = {}) {
       auction_houses_checked: 3,
       vehicles_with_grades: allVehicles.filter((v) => v.auction_grade != null).length,
       vehicles_with_sold_prices: allVehicles.filter((v) => v.sold_price_jpy != null).length,
-      scan_notes: `Scraped ${totalGooNet} from goo-net.com, ${totalCarsensor} from carsensor.net, and ${totalJapanAuktion} from japan-auktion.de (auction aggregator). ${allVehicles.length} vehicles matched.`,
+      vehiclesFilteredByGrade: filteredByGrade,
+      minAuctionGrade: MIN_AUCTION_GRADE,
+      scan_notes: `Scraped ${totalGooNet} from goo-net.com, ${totalCarsensor} from carsensor.net, and ${totalJapanAuktion} from japan-auktion.de (auction aggregator). ${allVehicles.length} vehicles matched${filteredByGrade > 0 ? ` (${filteredByGrade} filtered out: auction grade < ${MIN_AUCTION_GRADE})` : ""}.`,
       sources: { "goo-net.com": totalGooNet, "carsensor.net": totalCarsensor, "japan-auktion.de": totalJapanAuktion },
     },
     completedModels,
     fxRate: fxData.rate,
     fxLive: fxData.live,
+    // Full FX object — includes 90-day moving-average deviation used by scoreRisk for currency_risk.
+    fxData,
     scannedAt: new Date().toISOString(),
   };
 }
