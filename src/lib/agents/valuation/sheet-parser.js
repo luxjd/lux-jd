@@ -20,6 +20,98 @@ import { callClaudeVision } from "@/lib/claude";
 import { validateSheetOutput, validateExtractionOutput } from "./validation";
 
 // ══════════════════════════════════════════════════════════════
+// ESTIMATION PROVENANCE LABELS
+// ══════════════════════════════════════════════════════════════
+//
+// For every field we return, mark whether it was:
+//   EXTRACTED — literally printed on the sheet (grade number, digit
+//               mileage, VIN stamp, color code, era-year, etc.)
+//   ESTIMATED — AI-inferred from indirect evidence (damage severity
+//               from code density, structural concern flag, respray
+//               detection from paint notes, etc.)
+//   TRANSLATED — Japanese text rendered into English by the LLM
+//                (mechanical notes, modification notes, damage-code
+//                meanings from the reference dictionary)
+//   COMPUTED  — deterministic math over other fields (overall score
+//               averages, TÜV-relevant damage counts)
+//
+// Downstream consumers (UI, report PDF) read `_estimation_labels`
+// to render "(Estimated)" or similar annotations next to values.
+
+const LABEL_ESTIMATED = "Estimated";
+const LABEL_TRANSLATED = "Translated";
+const LABEL_COMPUTED = "Computed";
+
+// Fields that are ALWAYS AI-inferred, not literal on any sheet.
+const ALWAYS_ESTIMATED_FIELDS = [
+  "overall_assessment",
+  "accident_contradiction",
+  "service_history_indicator",
+  "interior_originality",
+  "_damage_severity_score",
+  "_damage_distribution",
+  "_structural_concern",
+  "_structural_reasoning",
+  "_respray_detected",
+  "_respray_panels",
+  "_repair_cost_category",
+  "_anomalies",
+];
+
+// Fields that are AI-translated from Japanese text.
+const ALWAYS_TRANSLATED_FIELDS = [
+  "mechanical_notes",
+  "modification_notes",
+  "equipment_translated",
+  "caution_notes",
+  "inspector_notes",
+];
+
+// Fields computed deterministically from extracted data.
+const COMPUTED_FIELDS = ["_tuv_relevant_damage", "_passes_completed"];
+
+/**
+ * Build the per-field provenance map. Returns { fieldName: "Estimated" | "Translated" | "Computed" }.
+ * Extracted fields are intentionally absent — absence means "this came directly from the sheet".
+ */
+function buildEstimationLabels(merged, fieldConfidence) {
+  const labels = {};
+
+  for (const f of ALWAYS_ESTIMATED_FIELDS) {
+    if (merged[f] !== undefined && merged[f] !== null) labels[f] = LABEL_ESTIMATED;
+  }
+  for (const f of ALWAYS_TRANSLATED_FIELDS) {
+    if (Array.isArray(merged[f]) && merged[f].length > 0) labels[f] = LABEL_TRANSLATED;
+  }
+  for (const f of COMPUTED_FIELDS) {
+    if (merged[f] !== undefined) labels[f] = LABEL_COMPUTED;
+  }
+
+  // Low-confidence extracted fields — these came from the sheet but the
+  // read was uncertain. Mark as Estimated so the operator verifies.
+  const conf = fieldConfidence || {};
+  for (const [field, c] of Object.entries(conf)) {
+    if (typeof c === "number" && c < 0.75 && !labels[field]) {
+      labels[field] = LABEL_ESTIMATED;
+    }
+  }
+
+  // Per-damage-code sub-fields: `code` and `location` are extracted;
+  // `meaning` is from the dictionary (Translated), `severity` /
+  // `structural` / `tuvRelevant` are classifier outputs (Estimated).
+  labels._damage_codes_item = {
+    code: null, // extracted
+    location: null, // extracted
+    meaning: LABEL_TRANSLATED,
+    severity: LABEL_ESTIMATED,
+    structural: LABEL_ESTIMATED,
+    tuvRelevant: LABEL_ESTIMATED,
+  };
+
+  return labels;
+}
+
+// ══════════════════════════════════════════════════════════════
 // REFERENCE DATABASES
 // ══════════════════════════════════════════════════════════════
 
@@ -919,6 +1011,10 @@ export async function parseAuctionSheet(image, opts = {}) {
   merged._field_confidence = fieldConfidence;
   merged._extraction_mode = "full";
   merged._passes_completed = 1 + (skipVerification ? 0 : 1) + (skipDamageDeep ? 0 : 1);
+
+  // Per-field provenance labels — downstream UI renders "(Estimated)"
+  // next to any field listed here. Absent = directly extracted.
+  merged._estimation_labels = buildEstimationLabels(merged, fieldConfidence);
 
   // Normalize backward-compatible fields
   merged.accident_indicator = merged.accident_history;

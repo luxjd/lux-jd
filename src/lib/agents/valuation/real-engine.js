@@ -31,6 +31,54 @@ import { getSettings } from "@/lib/settings";
 const OPEX_PER_VEHICLE = 500;
 
 // ══════════════════════════════════════════
+// MSRP DEPRECIATION SANITY CHECK
+// ══════════════════════════════════════════
+// When the market estimator returns a number that's implausibly low relative
+// to MSRP + vehicle age + brand tier, the estimate is probably contaminated
+// (web-search fallback grabbed wrong-variant snippets, base-trim aggregator
+// page used as anchor, etc.). Flag so downstream forces REVIEW.
+
+function plausibleMarketFloor(msrpEur, vehicleYear, make) {
+  if (!msrpEur || msrpEur <= 0 || !vehicleYear) return null;
+  const ageYears = Math.max(0, new Date().getFullYear() - vehicleYear);
+  const makeLc = String(make || "").toLowerCase();
+
+  // Brand-tier retention curves (minimum residual % of MSRP by age)
+  const isExotic = /ferrari|lamborghini|mclaren|bugatti|bentley|rolls/i.test(makeLc);
+  const isPerformance = /amg|bmw\s*m|rs\b|porsche|aston|maserati/i.test(makeLc);
+
+  let retentionFloor;
+  if (isExotic) {
+    retentionFloor = ageYears <= 3 ? 0.75 : ageYears <= 7 ? 0.60 : 0.45;
+  } else if (isPerformance) {
+    retentionFloor = ageYears <= 3 ? 0.55 : ageYears <= 7 ? 0.38 : 0.22;
+  } else {
+    retentionFloor = ageYears <= 3 ? 0.50 : ageYears <= 7 ? 0.32 : 0.18;
+  }
+
+  return Math.round(msrpEur * retentionFloor);
+}
+
+function checkMarketPriceSanity(estimatedSalePrice, enrichment, year, make) {
+  const msrp = enrichment?.original_msrp_eur;
+  if (!msrp || !estimatedSalePrice) {
+    return { passed: true, reason: null, floor: null };
+  }
+  const floor = plausibleMarketFloor(msrp, year, make);
+  if (!floor) return { passed: true, reason: null, floor: null };
+
+  if (estimatedSalePrice < floor) {
+    return {
+      passed: false,
+      floor,
+      msrp,
+      reason: `Estimated sale price €${estimatedSalePrice.toLocaleString()} is below plausible floor €${floor.toLocaleString()} (${Math.round((estimatedSalePrice / msrp) * 100)}% of €${msrp.toLocaleString()} MSRP for a ${new Date().getFullYear() - year}-year-old ${make}). Likely contaminated by wrong-variant comparables.`,
+    };
+  }
+  return { passed: true, floor, msrp, reason: null };
+}
+
+// ══════════════════════════════════════════
 // TUV COST ESTIMATION
 // ══════════════════════════════════════════
 
@@ -233,6 +281,24 @@ function mergeConditionData(photoResult, sheetResult, auctionGrade) {
     conditionConf = 0.30;
   }
 
+  // Merge the per-module estimation labels from sheet + photo sources,
+  // and add labels for fields this merge computes (blended scores, grade
+  // averages, TÜV-risk flags derived from multiple signals).
+  const sheetLabels = sheetResult?._estimation_labels || {};
+  const photoLabels = photoResult?._estimation_labels || {};
+  const mergedLabels = {
+    ...sheetLabels,
+    ...photoLabels,
+    // Fields computed by this merge function itself — all estimates.
+    exteriorScore: "Estimated",
+    interiorScore: "Estimated",
+    conditionConfidence: "Estimated",
+    tuvRiskFlags: "Estimated",
+    visibleDamage: "Estimated",
+    modifications: "Estimated",
+    mechanicalNotes: sheetLabels.mechanical_notes || "Translated",
+  };
+
   return {
     exteriorScore: Number(exteriorScore.toFixed(1)),
     interiorScore: Number(interiorScore.toFixed(1)),
@@ -241,6 +307,7 @@ function mergeConditionData(photoResult, sheetResult, auctionGrade) {
     visibleDamage,
     tuvRiskFlags,
     conditionConfidence: Number(conditionConf.toFixed(2)),
+    _estimation_labels: mergedLabels,
     exteriorNotes: photoResult?.exterior_notes || (auctionGrade >= 4.5 ? ["Paint in excellent condition based on grade"] : ["Exterior assessment based on grade only"]),
     interiorNotes: photoResult?.interior_notes || ["Interior assessment based on grade only"],
     interiorOriginality: photoResult?.interior_originality || "UNKNOWN",
@@ -496,7 +563,69 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       minMarginEur: MIN_MARGIN_EUR,
       minMarginPct: MIN_MARGIN_PCT,
       maxPurchaseEur: settings.maxPurchaseEur,
+      // Data-quality flags (for the AI's context; deterministic override below)
+      webSearchFallback: !!marketResult?.web_search_fallback,
+      webSearchFilterStats: marketResult?.web_search_filter_stats || null,
     });
+  }
+
+  // ─── Step 11b: Data-quality guardrails (force REVIEW on bad inputs) ───
+  // Five triggers that downgrade any BUY verdict to REVIEW:
+  //   1. Scrapers were blocked → web-search fallback fired
+  //   2. MSRP sanity floor breached (estimate implausibly low for age/brand)
+  //   3. Accepted comparables span multiple sub-variants (high CV)
+  //   4. User's model input was generic (no variant code)
+  //   5. Confidence extremely low after all caps
+  // Any one of these fires → verdict forced to REVIEW so a human verifies
+  // the comparables before committing capital.
+  const webSearchFallback = !!marketResult?.web_search_fallback;
+  const disparateVariants = !!marketResult?.disparate_variants_detected;
+  const genericModel = !!marketResult?.generic_model_input;
+  const msrpSanity = checkMarketPriceSanity(
+    estimatedSalePrice,
+    enrichment,
+    validatedInput.year,
+    validatedInput.make
+  );
+  const dataQualityWarnings = [];
+  if (webSearchFallback) {
+    dataQualityWarnings.push(
+      `Direct scrapers (mobile.de, AutoScout24) were blocked. Market estimate is based on Google snippet parsing — fewer details available and wrong-variant risk. Confidence capped at ${Math.round((marketResult?.confidence || 0.55) * 100)}%.`
+    );
+  }
+  if (disparateVariants && marketResult?.price_variance_warning) {
+    dataQualityWarnings.push(marketResult.price_variance_warning);
+  }
+  if (genericModel && marketResult?.generic_model_warning) {
+    dataQualityWarnings.push(marketResult.generic_model_warning);
+  }
+  if (!msrpSanity.passed) {
+    dataQualityWarnings.push(msrpSanity.reason);
+  }
+
+  const forceReview = webSearchFallback || !msrpSanity.passed || disparateVariants || genericModel;
+  if (forceReview && riskRecommendation) {
+    const originalVerdict = riskRecommendation.verdict;
+    if (originalVerdict === "BUY") {
+      riskRecommendation.verdict = "REVIEW";
+      const triggers = [];
+      if (webSearchFallback) triggers.push("web-search fallback active");
+      if (disparateVariants) triggers.push("comparables span disparate sub-variants");
+      if (genericModel) triggers.push("model input is generic (no variant code)");
+      if (!msrpSanity.passed) triggers.push("MSRP sanity floor breached");
+      const reason = `Data quality issues: ${triggers.join(" + ")}. Market comparables need human verification before BUY.`;
+      riskRecommendation.verdict_reasoning = `${reason} ${riskRecommendation.verdict_reasoning || ""}`.trim();
+      riskRecommendation.key_concerns = [
+        `Data quality override: verdict downgraded from ${originalVerdict} to REVIEW`,
+        ...dataQualityWarnings,
+        ...(riskRecommendation.key_concerns || []),
+      ].slice(0, 6);
+      riskRecommendation.action_items = [
+        "Verify comparables on mobile.de / AutoScout24 directly (scrapers were blocked)",
+        msrpSanity.floor ? `Confirm the DE market value is at least €${msrpSanity.floor.toLocaleString()} (MSRP-derived floor) — currently estimated at €${estimatedSalePrice.toLocaleString()}` : null,
+        ...(riskRecommendation.action_items || []),
+      ].filter(Boolean).slice(0, 6);
+    }
   }
 
   // ─── Step 12: Assemble report ───
@@ -510,6 +639,23 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
     pricingGuidanceMode,
     suggestedMaxBidJpy: pricingGuidanceMode ? (guidanceMaxBid || deterministicMaxBid) : null,
     askingPriceJpyProvided: validatedInput.askingPriceJpy,
+
+    // Top-level data-quality banner so the UI can flag the whole report
+    // when scrapers failed or the price anchor is suspicious. The UI should
+    // render a clear warning + refuse to auto-send-to-pipeline when this
+    // is non-empty.
+    dataQuality: {
+      webSearchFallback,
+      msrpSanityPassed: msrpSanity.passed,
+      msrpFloorEur: msrpSanity.floor,
+      disparateVariants,
+      genericModel,
+      priceSpreadPct: marketResult?.price_statistics?.coefficientOfVariation != null
+        ? Math.round(marketResult.price_statistics.coefficientOfVariation * 100)
+        : null,
+      warnings: dataQualityWarnings,
+      verdictForced: forceReview,
+    },
 
     vehicleSummary: {
       make: validatedInput.make,
@@ -537,6 +683,17 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
     conditionAssessment: {
       overallGrade: conditionGrade,
       overallGradeNumeric: Number(avgCondScore.toFixed(1)),
+      _estimation_labels: {
+        ...(condition._estimation_labels || {}),
+        // These top-level aggregates are computed from photo + sheet; not
+        // literal values on the sheet.
+        overallGrade: "Estimated",
+        overallGradeNumeric: "Estimated",
+        exteriorScore: "Estimated",
+        interiorScore: "Estimated",
+        photoAnalysisSummary: "Estimated",
+        conditionConfidence: "Estimated",
+      },
       exteriorScore: condition.exteriorScore,
       exteriorNotes: condition.exteriorNotes,
       interiorScore: condition.interiorScore,
@@ -574,6 +731,16 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       priceStatistics: marketResult?.price_statistics || { median: estimatedSalePrice, mean: estimatedSalePrice, p25, p75, min: p25, max: p75 },
       estimatedSalePrice,
       priceAdjustments: marketResult?.price_adjustments || [],
+      _estimation_labels: {
+        // priceStatistics comes from real scraped comparables — extracted.
+        // Everything else is AI-derived from that raw data.
+        estimatedSalePrice: "Estimated",
+        priceAdjustments: "Estimated",
+        marketLiquidity: "Estimated",
+        trendDirection: "Estimated",
+        avgDaysOnMarket: "Estimated",
+        outliersRemoved: "Computed",
+      },
       searchCriteria: {
         make: validatedInput.make,
         model: validatedInput.model,
@@ -588,6 +755,10 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       trendDirection: marketResult?.trend_direction || "STABLE",
       dataFreshness: new Date().toISOString(),
       dataSource: marketResult?.data_source || "mobile.de + autoscout24 + Claude AI",
+      webSearchFallback,
+      webSearchFilterStats: marketResult?.web_search_filter_stats || null,
+      msrpSanityCheck: msrpSanity,
+      dataQualityWarnings,
       searchUrls: marketResult?.search_urls || {
         mobile_de: buildMobileDeSearchUrl({
           make: validatedInput.make,
@@ -623,6 +794,28 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       annualizedRoi,
       marginConfidence: confidence,
       deterministicMaxBidJpy: deterministicMaxBid,
+      _estimation_labels: {
+        // Margin fields are all Computed (deterministic math) but the
+        // INPUT `estimatedSalePrice` is Estimated — so downstream margin
+        // numbers inherit that uncertainty. Labelled "Estimated" because
+        // the operator should treat them as such.
+        estimatedSalePrice: "Estimated",
+        grossMarginEur: "Estimated",
+        grossMarginPct: "Estimated",
+        marginAfterOpex: "Estimated",
+        pessimisticMargin: "Estimated",
+        baseMargin: "Estimated",
+        optimisticMargin: "Estimated",
+        returnOnCapital: "Estimated",
+        estimatedHoldDays: "Estimated",
+        annualizedRoi: "Estimated",
+        marginConfidence: "Computed",
+        // `totalLandedCost` and `capitalRequired` are deterministic arithmetic
+        // over known inputs (purchase price, tax rates) — treat as Computed.
+        totalLandedCost: "Computed",
+        capitalRequired: "Computed",
+        deterministicMaxBidJpy: "Computed",
+      },
       confidenceBreakdown: {
         marketDataConfidence: Number(marketDataConf.toFixed(2)),
         conditionConfidence: Number(conditionConf.toFixed(2)),

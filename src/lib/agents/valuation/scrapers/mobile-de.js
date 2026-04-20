@@ -101,69 +101,99 @@ async function tryGenericScraper(targetUrl) {
 // ══════════════════════════════════════════
 
 async function tryGoogleSerp(make, searchModel, yearFrom, yearTo) {
-  try {
-    const query = `site:mobile.de "${make}" "${searchModel}" ${yearFrom}-${yearTo}`;
-    console.log(`mobile.de: trying Google SERP — query: "${query}"`);
+  // Run multiple query variants in sequence — the strict quoted-phrase
+  // version often returns zero results on Google because snippet text uses
+  // different wording than the query. Broader queries fill in when that
+  // fails.
+  const queries = [
+    `site:mobile.de "${make}" "${searchModel}" ${yearFrom}-${yearTo}`,
+    `site:mobile.de ${make} ${searchModel} ${yearFrom}-${yearTo} preis €`,
+    `site:mobile.de ${make} ${searchModel} gebraucht kaufen`,
+  ];
 
-    // Use the official Apify Google SERP actor
-    const items = await runActorAndGetItems("apify~google-search-scraper", {
-      queries: query,
-      maxPagesPerQuery: 2,
-      resultsPerPage: 20,
-      mobileResults: false,
-      languageCode: "de",
-      countryCode: "de",
-    });
+  const listings = [];
+  const seenUrls = new Set();
+  const reasons = { totalResults: 0, notMobileDe: 0, noPrice: 0, kept: 0 };
 
-    if (!items || items.length === 0) {
-      console.log("mobile.de: Google SERP returned no items");
-      return [];
-    }
+  for (const query of queries) {
+    if (listings.length >= 8) break;
+    try {
+      console.log(`mobile.de: trying Google SERP — query: "${query}"`);
 
-    // Google search results — handle both array-of-results and nested format
-    const listings = [];
-    const results = items[0]?.organicResults || items.flatMap(i => i.organicResults || [i]);
-
-    for (const result of results) {
-      const url = result.url || result.link || "";
-      const title = result.title || "";
-      const snippet = result.description || result.snippet || "";
-
-      if (!url.includes("mobile.de") || !url.includes("fahrzeuge")) continue;
-
-      // Extract price from snippet or title (format: "€ 89.900" or "89.900 €" or "EUR 89.900")
-      const combined = `${title} ${snippet}`;
-      const priceMatches = combined.match(/€?\s?(\d{2,3})[.\s](\d{3})\s?€?/g) || [];
-      let price = 0;
-      for (const pm of priceMatches) {
-        const num = parseInt(pm.replace(/[€\s.]/g, ""));
-        if (num >= 20000 && num <= 1500000) { price = num; break; }
-      }
-      if (!price) continue;
-
-      const kmMatch = combined.match(/([\d.]+)\s*km/);
-      let mileage = kmMatch ? parseInt(kmMatch[1].replace(/\./g, "")) : 0;
-      if (!Number.isFinite(mileage) || mileage > 999999 || mileage < 0) mileage = 0;
-
-      const yearMatch = combined.match(/\b(20[012]\d)\b/);
-      const year = yearMatch ? parseInt(yearMatch[1]) : 0;
-
-      listings.push({
-        title: title.substring(0, 120),
-        price,
-        mileage,
-        year,
-        dealer: null,
-        platform: "mobile.de",
-        url,
+      const items = await runActorAndGetItems("apify~google-search-scraper", {
+        queries: query,
+        maxPagesPerQuery: 2,
+        resultsPerPage: 20,
+        mobileResults: false,
+        languageCode: "de",
+        countryCode: "de",
       });
-    }
 
-    return listings;
-  } catch (err) {
-    console.log(`mobile.de: Google SERP failed: ${err.message}`);
-    return [];
+      if (!items || items.length === 0) {
+        console.log(`mobile.de: Google SERP returned no items for "${query}"`);
+        continue;
+      }
+
+      const results = items[0]?.organicResults || items.flatMap((i) => i.organicResults || [i]);
+
+      for (const result of results) {
+        reasons.totalResults++;
+        const url = result.url || result.link || "";
+        const title = result.title || "";
+        const snippet = result.description || result.snippet || "";
+
+        // Accept any mobile.de URL — previously required `fahrzeuge` in the
+        // path, but mobile.de uses multiple path variants (/fahrzeuge/details,
+        // /pkw/..., /motorraeder/..., share links) and some result snippets
+        // point at stable non-`fahrzeuge` URLs.
+        if (!url.includes("mobile.de")) { reasons.notMobileDe++; continue; }
+        if (seenUrls.has(url)) continue;
+
+        const combined = `${title} ${snippet}`;
+        // Three price-pattern shapes; `€?\s?` handles "€89.900", "89.900 €", "€ 89.900"
+        const pricePatterns = [
+          /€\s?(\d{2,3})[.,](\d{3})/g,
+          /(\d{2,3})[.,](\d{3})\s?€/g,
+          /EUR\s?(\d{2,3})[.,]?(\d{3})/g,
+        ];
+        let price = 0;
+        for (const pattern of pricePatterns) {
+          if (price) break;
+          pattern.lastIndex = 0;
+          let m;
+          while ((m = pattern.exec(combined)) !== null) {
+            const num = parseInt(m[1] + m[2], 10);
+            if (num >= 20000 && num <= 1500000) { price = num; break; }
+          }
+        }
+        if (!price) { reasons.noPrice++; continue; }
+
+        const kmMatch = combined.match(/([\d.]+)\s*km/);
+        let mileage = kmMatch ? parseInt(kmMatch[1].replace(/\./g, ""), 10) : 0;
+        if (!Number.isFinite(mileage) || mileage > 999999 || mileage < 0) mileage = 0;
+
+        const yearMatch = combined.match(/\b(20[012]\d)\b/);
+        const year = yearMatch ? parseInt(yearMatch[1], 10) : 0;
+
+        seenUrls.add(url);
+        listings.push({
+          title: title.substring(0, 120),
+          price,
+          mileage,
+          year,
+          dealer: null,
+          platform: "mobile.de",
+          url,
+        });
+        reasons.kept++;
+      }
+    } catch (err) {
+      console.log(`mobile.de: Google SERP query failed: ${err.message}`);
+    }
   }
+
+  console.log(`mobile.de SERP parse: kept=${reasons.kept}, totalResults=${reasons.totalResults}, notMobileDe=${reasons.notMobileDe}, noPrice=${reasons.noPrice}`);
+  return listings;
 }
 
 // ══════════════════════════════════════════

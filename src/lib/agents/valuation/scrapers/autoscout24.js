@@ -134,64 +134,126 @@ async function fetchAndParse(url, matchWords, skipFilter) {
 
 /**
  * Parse AutoScout24 HTML for listings.
+ *
+ * Resilience strategy:
+ *   - Multiple article-container selectors (AutoScout24 rotates `data-testid`
+ *     values; the stable signal is "an element that contains a link to
+ *     /angebote/…")
+ *   - Title extraction falls through 6 selectors + link-text fallback
+ *   - Title matching normalizes both sides (strips punctuation) so the
+ *     `"c-class"` matchword actually matches a `"C 220d"` article title
+ *   - Price pattern tries 3 shapes (dot-separator, comma-separator, €-prefix)
+ *   - Per-reason rejection counters logged so we can see the next breakage
+ *     at a glance
  */
 function parseListings(html, matchWords, skipFilter) {
   const $ = cheerio.load(html);
   const listings = [];
+  const reasons = { noTitle: 0, noPrice: 0, titleMismatch: 0, noListingLink: 0, kept: 0 };
 
-  // AutoScout24 uses <article> for listing cards, but also try other selectors
-  const articleSelectors = ["article", "[data-testid='listing-card']", ".ListItem_wrapper__TxHWu", ".cl-list-element"];
+  // Find candidate listing cards. The stable invariant across DOM rotations
+  // is "an element that contains an `/angebote/` link" — everything else
+  // (class names, data-testids) drifts.
   let articles = $("article");
-
   if (articles.length === 0) {
-    for (const sel of articleSelectors) {
+    // Try the known-structured selectors
+    const structuredSelectors = [
+      "[data-testid='listing-card']",
+      "[data-testid='ad-card']",
+      ".ListItem_wrapper__TxHWu",
+      ".cl-list-element",
+      "[data-item-id]",
+    ];
+    for (const sel of structuredSelectors) {
       articles = $(sel);
       if (articles.length > 0) break;
     }
   }
+  if (articles.length === 0) {
+    // Last resort: every link to /angebote/ is a listing; walk up to its
+    // nearest block-level parent for context.
+    articles = $('a[href*="/angebote/"]').map((_, a) => $(a).closest("article, li, div")).toArray();
+  }
 
-  console.log(`autoscout24: found ${articles.length} article elements in HTML`);
+  console.log(`autoscout24: found ${articles.length} candidate listing cards in HTML`);
+
+  const normalizeForMatch = (s) => String(s || "").toLowerCase().replace(/[\s\-.()]+/g, "");
+  const normalizedMatchWords = (matchWords || []).map(normalizeForMatch).filter(Boolean);
 
   articles.each((_, el) => {
     try {
       const card = $(el);
-      const title = card.find("h2, h3, [data-testid='listing-title']").first().text().trim();
-      if (!title) return;
 
-      // Filter to matching model if needed
-      if (!skipFilter && matchWords.length > 0) {
-        const titleLower = title.toLowerCase();
-        if (!matchWords.some((w) => titleLower.includes(w))) return;
+      // ── Title: try 6 selectors, then fall back to first link's text ──
+      const titleSelectors = [
+        "h2", "h3",
+        "[data-testid='listing-title']",
+        "[data-testid='ad-title']",
+        "[data-testid*='title']",
+        "[class*='title' i]",
+      ];
+      let title = "";
+      for (const sel of titleSelectors) {
+        title = card.find(sel).first().text().trim();
+        if (title && title.length >= 5) break;
+      }
+      if (!title || title.length < 5) {
+        // Fall back to the first link's text or title attribute
+        const firstLink = card.find('a[href*="/angebote/"]').first();
+        title = firstLink.attr("title") || firstLink.text().trim();
+      }
+      // Clean common prefixes
+      title = title.replace(/^(Gesponsert|NEU|Sponsored)\s*/i, "").trim();
+      if (!title || title.length < 5) { reasons.noTitle++; return; }
+
+      // ── Match filter: normalized substring check on both sides ──
+      if (!skipFilter && normalizedMatchWords.length > 0) {
+        const titleNorm = normalizeForMatch(title);
+        const matches = normalizedMatchWords.some((w) => titleNorm.includes(w));
+        if (!matches) { reasons.titleMismatch++; return; }
       }
 
       const text = card.text().replace(/\s+/g, " ");
 
-      // Price: xxx.xxx format, skip numbers followed by "km"
-      const priceMatches = text.match(/(\d{2,3})\.(\d{3})(?!\s*km)/g);
+      // ── Price: try 3 shapes ──
       let price = 0;
-      if (priceMatches) {
-        for (const pm of priceMatches) {
-          const num = parseInt(pm.replace(/\./g, ""));
+      const pricePatterns = [
+        /(\d{2,3})\.(\d{3})(?!\s*km)/g,   // "89.900" not immediately followed by km
+        /€\s*(\d{2,3})[.,](\d{3})/g,      // "€ 89.900" or "€ 89,900"
+        /(\d{2,3})[.,](\d{3})\s*€/g,       // "89.900 €"
+      ];
+      for (const pattern of pricePatterns) {
+        if (price) break;
+        pattern.lastIndex = 0;
+        let m;
+        while ((m = pattern.exec(text)) !== null) {
+          const num = parseInt(m[1] + m[2], 10);
           if (num >= 20000 && num <= 1500000) { price = num; break; }
         }
       }
-      if (!price) return;
+      if (!price) { reasons.noPrice++; return; }
 
+      // ── Mileage / year ──
       const kmMatch = text.match(/([\d.]+)\s*km/);
-      let mileage = kmMatch ? parseInt(kmMatch[1].replace(/\./g, "")) : 0;
-      // DOM sometimes concatenates adjacent spans without whitespace (e.g. year "2018" + "17.500 km")
-      // → "201817500" parses as 201M km. Clamp to realistic range.
+      let mileage = kmMatch ? parseInt(kmMatch[1].replace(/\./g, ""), 10) : 0;
       if (!Number.isFinite(mileage) || mileage > 999999 || mileage < 0) mileage = 0;
 
       const yearMatch = text.match(/(?:\d{2}\/)(20\d{2})/) || text.match(/\b(20[012]\d)\b/);
-      const year = yearMatch ? parseInt(yearMatch[1]) : 0;
+      const year = yearMatch ? parseInt(yearMatch[1], 10) : 0;
 
-      const link = card.find('a[href*="/angebote/"], a[href*="/offers/"]').first().attr("href") || card.find("a").first().attr("href") || "";
-      const fullUrl = link ? (link.startsWith("http") ? link : `https://www.autoscout24.de${link}`) : "https://www.autoscout24.de";
+      // ── Listing URL: prefer /angebote/ link over any link ──
+      const link = card.find('a[href*="/angebote/"], a[href*="/offers/"]').first().attr("href")
+        || card.find("a").first().attr("href") || "";
+      if (!link) { reasons.noListingLink++; return; }
+      const fullUrl = link.startsWith("http") ? link : `https://www.autoscout24.de${link}`;
 
       listings.push({ title: title.substring(0, 120), price, mileage, year, dealer: null, platform: "autoscout24.de", url: fullUrl });
-    } catch (e) {}
+      reasons.kept++;
+    } catch (e) {
+      // swallow per-card errors — diagnostic counters surface the class
+    }
   });
 
+  console.log(`autoscout24 parse: kept=${reasons.kept}, titleMismatch=${reasons.titleMismatch}, noTitle=${reasons.noTitle}, noPrice=${reasons.noPrice}, noLink=${reasons.noListingLink}`);
   return listings;
 }

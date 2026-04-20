@@ -51,6 +51,7 @@ Comparable Listings: ${data.comparableCount}
 Avg Days on Market: ${data.avgDaysOnMarket}
 Market Liquidity: ${data.marketLiquidity}
 Trend: ${data.trendDirection}
+${data.webSearchFallback ? `⚠ DATA-QUALITY ALERT: Direct scrapers (mobile.de, AutoScout24) were blocked. Market estimate is from Google snippet parsing — fewer details, higher wrong-variant risk. Treat market_risk as MEDIUM minimum. The pipeline will deterministically downgrade any BUY verdict to REVIEW when this flag is set, so BUY here means nothing.` : ""}${data.webSearchFilterStats ? `Filter stats: raw=${data.webSearchFilterStats.raw}, aggregator_filtered=${data.webSearchFilterStats.aggregatorFiltered}, variant_mismatch_filtered=${data.webSearchFilterStats.variantFiltered}, accepted=${data.webSearchFilterStats.accepted}` : ""}
 
 ${data.historicalComparison ? `HISTORICAL CONTEXT:\n${data.historicalComparison}` : ""}
 

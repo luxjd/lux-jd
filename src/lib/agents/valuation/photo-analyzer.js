@@ -150,5 +150,28 @@ export async function analyzePhotos(images, make, model, year) {
     system: SYSTEM_PROMPT,
   });
 
-  return validatePhotoOutput(result);
+  const validated = validatePhotoOutput(result);
+  if (!validated) return null;
+
+  // Everything photo-derived is an AI estimate by definition — no field on
+  // a photo is "extracted" in the sheet-parser sense. Surface this
+  // explicitly so the UI can annotate every score/note with "(Estimated)".
+  validated._all_fields_estimated = true;
+  validated._estimation_labels = {
+    exterior_score: "Estimated",
+    interior_score: "Estimated",
+    exterior_notes: "Estimated",
+    interior_notes: "Estimated",
+    visible_modifications: "Estimated",
+    visible_damage: "Estimated",
+    overall_impression: "Estimated",
+    notable_features_spotted: "Estimated",
+    tuv_risk_flags: "Estimated",
+    respray_detected: "Estimated",
+    interior_originality: "Estimated",
+    drive_side_observed: "Estimated",
+    confidence: "Estimated",
+  };
+
+  return validated;
 }

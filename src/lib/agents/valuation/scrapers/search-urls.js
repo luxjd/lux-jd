@@ -24,17 +24,26 @@ export function buildMobileDeSearchUrl({ make, model, yearFrom, yearTo, maxMilea
 }
 
 export function buildAutoScout24SearchUrl({ make, model, yearFrom, yearTo, maxMileage }) {
-  const { makeSlug } = normalizeAutoScout24(make, model);
+  const { makeSlug, modelSlug } = normalizeAutoScout24(make, model);
+
+  // Required canonical parameters AutoScout24 expects on listing URLs.
+  // Missing any of `atype`/`cy`/`ustate` combined with a freetext `search=`
+  // param triggers the "Die gesuchte Seite existiert leider nicht mehr" 404.
   const params = new URLSearchParams({
-    fregfrom: String(yearFrom),
-    fregto: String(yearTo),
+    atype: "C",          // article type: Car
+    cy: "D",             // country: Germany
     sort: "standard",
     desc: "0",
-    cy: "D",
+    ustate: "N,U",       // N=new + U=used (AS24 serialises as N%2CU)
   });
+  if (yearFrom) params.set("fregfrom", String(yearFrom));
+  if (yearTo) params.set("fregto", String(yearTo));
   if (maxMileage) params.set("kmto", String(maxMileage));
-  // Use make + free-text search: the model-slug path (/lst/make/model) breaks whenever
-  // AutoScout24 rotates slugs. The make-only path with ?search= always resolves.
-  params.set("search", model);
-  return `https://www.autoscout24.de/lst/${makeSlug}?${params}`;
+
+  // Prefer the model-specific path (/lst/mercedes-benz/amg-gt) when we have
+  // a slug mapping — it's the canonical "listing by make + model" URL. Fall
+  // back to make-only path when no slug is known. The old `search=` freetext
+  // param against a bare make path has been deprecated and now 404s.
+  const path = modelSlug ? `${makeSlug}/${modelSlug}` : makeSlug;
+  return `https://www.autoscout24.de/lst/${path}?${params}`;
 }
