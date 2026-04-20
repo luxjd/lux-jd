@@ -61,6 +61,20 @@ export async function generateTVR(scan, settings = null) {
       specPremiumModifiers: scan.spec_premiums?.colors || {},
       optionPremiums: scan.spec_premiums?.options || {},
       specPremiumSource: scan.spec_premiums?.seededBrand ? "seeded+ai" : "ai-only",
+      // Docx §6.1.3: "Differentiate by critical spec elements (exterior color,
+      // interior, optional equipment, service history completeness)"
+      comparablesBySpec: scan.comparables_by_spec
+        ? {
+            byColor: scan.comparables_by_spec.byColor || {},
+            byMileage: scan.comparables_by_spec.byMileage || {},
+            byServiceHistory: scan.comparables_by_spec.byServiceHistory || {},
+            derivedColorPremiums: scan.comparables_by_spec.derivedColorPremiums || {},
+            sampleSize: scan.comparables_by_spec.sampleSize || 0,
+            enrichmentSource: scan.comparables_by_spec.enrichmentSource || "none",
+            skipped: scan.comparables_by_spec.skipped || false,
+            skipReason: scan.comparables_by_spec.skipReason || null,
+          }
+        : null,
     },
 
     demand: {
@@ -74,11 +88,27 @@ export async function generateTVR(scan, settings = null) {
       change7dPct: scan.trend?.change_7d_pct,
       change30dPct: scan.trend?.change_30d_pct,
       change90dPct: scan.trend?.change_90d_pct,
+      // Docx §6.1.3: "historical trend (30/90/180 days)"
+      change180dPct: scan.trend?.change_180d_pct ?? null,
+      change180dCovered: scan.trend?.change_180d_covered ?? false,
+      historySpanDays: scan.trend?.history_span_days ?? null,
       seasonalFactor: scan.trend?.seasonal_factor,
       seasonalNotes: scan.trend?.seasonal_notes,
       trendSource: scan.trend?.data_source || "fallback",
       trendDataPoints: scan.trend?.data_points || 0,
     },
+
+    // Docx §6.1.3: "market shifts due to new model releases"
+    lifecycle: scan.lifecycle
+      ? {
+          phase: scan.lifecycle.phase,
+          successor: scan.lifecycle.successor,
+          successorLaunchDate: scan.lifecycle.successorLaunchDate,
+          monthsSinceSuccessor: scan.lifecycle.monthsSinceSuccessor,
+          expectedDepreciationBias: scan.lifecycle.expectedDepreciationBias,
+          notes: scan.lifecycle.notes,
+        }
+      : null,
 
     financialThresholds: {
       recommendedMaxLandedCostEur: recommendedMaxLanded,

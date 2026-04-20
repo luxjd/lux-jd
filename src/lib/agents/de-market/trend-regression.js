@@ -18,8 +18,15 @@ function linearSlopePct(points, anchorMedian) {
   return Number(((totalChange / anchorMedian) * 100).toFixed(2));
 }
 
-function classify(pct7, pct30, pct90) {
-  const signal = pct30 !== 0 ? pct30 : pct90 !== 0 ? pct90 : pct7;
+function classify(pct7, pct30, pct90, pct180) {
+  // Prefer longest horizon with signal — 30d stays primary to avoid over-reacting
+  // to short-horizon noise, but 90d/180d are used when 30d is flat and a longer
+  // trend has established itself.
+  const signal =
+    pct30 !== 0 ? pct30
+    : pct90 !== 0 ? pct90
+    : pct180 !== 0 ? pct180
+    : pct7;
   if (signal >= 2.0) return "APPRECIATING";
   if (signal <= -2.0) return "DEPRECIATING";
   return "STABLE";
@@ -45,16 +52,26 @@ export async function computeTrendFromHistory(modelId, currentMedian) {
   const pct7 = linearSlopePct(window(7), anchor);
   const pct30 = linearSlopePct(window(30), anchor);
   const pct90 = linearSlopePct(window(90), anchor);
+  const pct180 = linearSlopePct(window(180), anchor);
   const season = seasonalFactor();
 
+  // Track whether the 180d window actually has coverage — otherwise consumers
+  // can't distinguish "no drift over 180d" from "we haven't been running that long".
+  const oldestAgeDays = history.length > 0
+    ? (now - new Date(history[0].timestamp).getTime()) / 86400000
+    : 0;
+
   return {
-    direction: classify(pct7, pct30, pct90),
+    direction: classify(pct7, pct30, pct90, pct180),
     change_7d_pct: pct7,
     change_30d_pct: pct30,
     change_90d_pct: pct90,
+    change_180d_pct: pct180,
+    change_180d_covered: oldestAgeDays >= 180,
     seasonal_factor: season.factor,
     seasonal_notes: season.notes,
     data_source: "snapshot_regression",
     data_points: history.length,
+    history_span_days: Math.round(oldestAgeDays),
   };
 }

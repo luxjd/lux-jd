@@ -13,10 +13,13 @@ import { scrapeAutoScout24 } from "@/lib/agents/valuation/scrapers/autoscout24";
 import { scrapeElferspot } from "../scrapers/elferspot";
 import { scrapeClassicDriver } from "../scrapers/classicdriver";
 import { scrapeAllSites } from "../scrapers/site-serp";
+import { scrapeAuctionHouses } from "../scrapers/auction-houses";
 import { runActorAndGetItems } from "@/lib/agents/valuation/scrapers/apify-client";
 import { recordListingSnapshot, computeDemandVelocity } from "../demand-tracker";
 import { computeTrendFromHistory } from "../trend-regression";
 import { getSeedPremiums, mergeSeedWithAi } from "../spec-premiums";
+import { bucketComparablesBySpec } from "../spec-bucketer";
+import { detectLifecycleShift } from "../model-lifecycle";
 
 const ANALYSIS_SYSTEM = `You are a senior German luxury car market analyst. You are given REAL scraped listing data from mobile.de and AutoScout24. Analyze the data to produce accurate market intelligence. Only base your analysis on the actual data provided — do not invent listings or prices.`;
 
@@ -105,14 +108,15 @@ export async function scanModel(model) {
   const yearTo = model.yearRange[1];
   const maxMileage = 50000;
 
-  // Scrape ALL platforms in parallel (primary + specialist)
+  // Scrape ALL platforms in parallel (primary + specialist + auction houses)
   const isPorsche = /porsche/i.test(model.make);
   const isExotic = /ferrari|lamborghini|aston martin|bentley|rolls|mclaren|maserati|bugatti/i.test(model.make);
 
   const scrapePromises = [
-    scrapeMobileDe({ make: model.make, model: model.model, yearFrom, yearTo, maxMileage }),
-    scrapeAutoScout24({ make: model.make, model: model.model, yearFrom, yearTo, maxMileage }),
-    scrapeAllSites({ make: model.make, model: model.model, yearFrom, yearTo }),
+    scrapeMobileDe({ make: model.make, model: model.model, yearFrom, yearTo, maxMileage }),       // 0
+    scrapeAutoScout24({ make: model.make, model: model.model, yearFrom, yearTo, maxMileage }),    // 1
+    scrapeAllSites({ make: model.make, model: model.model, yearFrom, yearTo }),                   // 2
+    scrapeAuctionHouses({ make: model.make, model: model.model, yearFrom, yearTo }),              // 3 — auction houses (spec §6.1.2)
   ];
 
   // Add specialist platforms where relevant (per spec Section 6.1.2)
@@ -130,14 +134,22 @@ export async function scanModel(model) {
   const autoscoutListings = tagSaleType(results[1].status === "fulfilled" ? (results[1].value?.listings || []) : [], "retail");
   const siteSerp = results[2].status === "fulfilled" ? (results[2].value || { listings: [], bySaleType: {}, byPlatform: {} }) : { listings: [], bySaleType: {}, byPlatform: {} };
   const siteSerpListings = siteSerp.listings;
+  // Auction houses already carry their own saleType ("auction" / "specialist") from the scraper
+  const auctionHouseListings = results[3].status === "fulfilled" ? (results[3].value?.listings || []) : [];
   const specialistListings = tagSaleType(
-    results.slice(3).filter((r) => r.status === "fulfilled").flatMap((r) => r.value),
+    results.slice(4).filter((r) => r.status === "fulfilled").flatMap((r) => r.value),
     "specialist"
   );
 
-  console.log(`DE Market [${model.id}]: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}, site-serp=${siteSerpListings.length} (retail ${siteSerp.bySaleType.retail || 0} / auction ${siteSerp.bySaleType.auction || 0} / specialist ${siteSerp.bySaleType.specialist || 0}), specialist-direct=${specialistListings.length}`);
+  console.log(`DE Market [${model.id}]: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}, site-serp=${siteSerpListings.length} (retail ${siteSerp.bySaleType.retail || 0} / auction ${siteSerp.bySaleType.auction || 0} / specialist ${siteSerp.bySaleType.specialist || 0}), auction-houses=${auctionHouseListings.length}, specialist-direct=${specialistListings.length}`);
 
-  const allListings = deduplicate([...mobileListings, ...autoscoutListings, ...siteSerpListings, ...specialistListings]);
+  const allListings = deduplicate([
+    ...mobileListings,
+    ...autoscoutListings,
+    ...siteSerpListings,
+    ...auctionHouseListings,
+    ...specialistListings,
+  ]);
   const stats = calcStats(allListings);
 
   // ── Fallback: Google web search when all scrapers fail ──
@@ -212,6 +224,11 @@ export async function scanModel(model) {
     "mobile.de": mobileListings.length,
     "AutoScout24": autoscoutListings.length,
     ...siteSerp.byPlatform,
+    // Auction house counts per domain (only include non-zero)
+    ...auctionHouseListings.reduce((acc, l) => {
+      if (l.platform) acc[l.platform] = (acc[l.platform] || 0) + 1;
+      return acc;
+    }, {}),
     ...(specialistListings.length > 0 && {
       ...(isPorsche && { "elferspot.com": specialistListings.filter((l) => l.platform === "elferspot.com").length }),
       ...((isExotic || isPorsche) && { "classicdriver.com": specialistListings.filter((l) => l.platform === "classicdriver.com").length }),
@@ -246,6 +263,20 @@ export async function scanModel(model) {
   // Use settings from DB (not hardcoded env vars)
   const settings = await getSettings();
   const minMargin = Math.max(settings.minMarginEur, finalStats.median * (settings.minMarginPct / 100));
+
+  // ─── Spec-differentiated bucketing (docx §6.1.3) ───
+  // Buckets the scraped listings by color / mileage band / service history so the
+  // TVR can expose per-spec medians instead of only a single aggregate median.
+  // Gated internally on ≥5 listings to avoid wasting Claude tokens on thin data.
+  let comparablesBySpec = null;
+  try {
+    comparablesBySpec = await bucketComparablesBySpec(allListings, model.make, model.model);
+  } catch (e) {
+    console.warn(`DE Market [${model.id}]: spec bucketing failed — ${e.message}`);
+  }
+
+  // ─── Model lifecycle phase (docx §6.1.3 — market shifts due to new model releases) ───
+  const lifecycle = detectLifecycleShift(model.id);
 
   return {
     modelId: model.id,
@@ -302,6 +333,8 @@ export async function scanModel(model) {
     spec_premiums: mergedPremiums,
 
     comparable_listings: comparableListings,
+    comparables_by_spec: comparablesBySpec,
+    lifecycle,
     data_sources: dataSources,
 
     market_notes: aiAnalysis?.market_notes || `${allListings.length} real listings found. Median price €${formatNumber(finalStats.median)}.`,
