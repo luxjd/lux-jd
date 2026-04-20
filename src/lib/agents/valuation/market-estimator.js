@@ -264,9 +264,12 @@ export async function estimateMarketValue(input) {
   console.log(`Market estimator: scraping ${input.make} ${input.model} (${input.year})...`);
 
   // Step 1: Scrape both platforms in parallel
+  // Spec §4.4.1: ±2 years, mileage range ±30% or ±20,000 km (whichever is larger)
   const yearFrom = input.year - 2;
   const yearTo = input.year + 2;
-  const maxMileage = input.mileageKm + 30000;
+  const mileageRange = Math.max(Math.round(input.mileageKm * 0.3), 20000);
+  const minMileage = Math.max(0, input.mileageKm - mileageRange);
+  const maxMileage = input.mileageKm + mileageRange;
 
   const [mobileResults, autoscoutResults] = await Promise.allSettled([
     scrapeMobileDe({ make: input.make, model: input.model, yearFrom, yearTo, maxMileage }),
@@ -291,11 +294,11 @@ export async function estimateMarketValue(input) {
   // Step 1b: If <5 results, widen search (±4 years, +50% mileage)
   let searchWidened = false;
   if (mobileListings.length + autoscoutListings.length < 5) {
-    console.log("Few results, widening search to ±4 years...");
+    console.log("Few results, widening search to ±4 years, ±50% mileage...");
     searchWidened = true;
     const wideYearFrom = input.year - 4;
     const wideYearTo = input.year + 4;
-    const wideMileage = Math.round(input.mileageKm * 1.5) + 30000;
+    const wideMileage = input.mileageKm + Math.max(Math.round(input.mileageKm * 0.5), 30000);
 
     const [wideM, wideA] = await Promise.allSettled([
       scrapeMobileDe({ make: input.make, model: input.model, yearFrom: wideYearFrom, yearTo: wideYearTo, maxMileage: wideMileage }),

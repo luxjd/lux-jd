@@ -229,9 +229,9 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
         <h3 className="font-headline font-bold text-lg mb-4">Margin Scenarios</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 print:grid-cols-3">
           {[
-            { label: "Pessimistic (P25)", value: m.pessimisticMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics?.p25)}` },
-            { label: "Base (Median)", value: m.baseMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics?.median)}` },
-            { label: "Optimistic (P75)", value: m.optimisticMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics?.p75)}` },
+            { label: "Pessimistic (P25)", value: m.marginRange?.pessimistic ?? m.pessimisticMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics?.p25)}` },
+            { label: "Base (Median)", value: m.marginRange?.base ?? m.baseMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics?.median)}` },
+            { label: "Optimistic (P75)", value: m.marginRange?.optimistic ?? m.optimisticMargin, sub: `Sale at ${fmtFull(mkt.priceStatistics?.p75)}` },
           ].map((s, i) => (
             <div key={i} className={`p-4 rounded-xl text-center ${i === 1 ? "bg-primary/5 border border-primary/20" : "bg-surface-container-high/30"}`}>
               <p className="text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">{s.label}</p>

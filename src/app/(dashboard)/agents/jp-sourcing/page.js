@@ -498,9 +498,9 @@ export default function JpSourcingPage() {
                       <h5 className="text-[10px] uppercase text-on-surface-variant tracking-wider mb-2 font-bold">Margin Scenarios</h5>
                       <div className="grid grid-cols-3 gap-2">
                         {[
-                          { label: "Pessimistic (P25)", value: opp.margin?.pessimisticMargin },
+                          { label: "Pessimistic (P25)", value: opp.margin?.marginRange?.pessimistic ?? opp.margin?.pessimisticMargin },
                           { label: "Base (Median)", value: opp.margin?.grossMarginEur },
-                          { label: "Optimistic (P75)", value: opp.margin?.optimisticMargin },
+                          { label: "Optimistic (P75)", value: opp.margin?.marginRange?.optimistic ?? opp.margin?.optimisticMargin },
                         ].map((s) => (
                           <div key={s.label} className="bg-surface-container-high/30 rounded-lg p-2 text-center">
                             <p className="text-[9px] uppercase text-on-surface-variant">{s.label}</p>

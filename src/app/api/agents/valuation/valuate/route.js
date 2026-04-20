@@ -14,6 +14,7 @@ export async function POST(request) {
   let input;
   let images = [];
   let auctionSheetImage = null;
+  let additionalDocImages = [];
 
   if (contentType.includes("multipart/form-data")) {
     const formData = await request.formData();
@@ -28,6 +29,8 @@ export async function POST(request) {
       askingPriceJpy: rawAskingPrice ? parseInt(rawAskingPrice) : null,
       exteriorColor: formData.get("exteriorColor"),
       interiorColor: formData.get("interiorColor") || "",
+      transmission: formData.get("transmission") || "",
+      fuelType: formData.get("fuelType") || "",
       serviceHistory: formData.get("serviceHistory") || "UNKNOWN",
       accidentHistory: formData.get("accidentHistory") === "true",
       auctionGrade: formData.get("auctionGrade") ? parseFloat(formData.get("auctionGrade")) : null,
@@ -50,6 +53,17 @@ export async function POST(request) {
       const base64 = Buffer.from(buffer).toString("base64");
       auctionSheetImage = { data: base64, mediaType: sheetFile.type || "image/jpeg" };
     }
+
+    // additional_docs: service booklet photos, build sheet, CoC, etc. (spec §2.1)
+    const docFiles = formData.getAll("additionalDocs");
+    for (const file of docFiles) {
+      if (file && file.size > 0) {
+        const buffer = await file.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString("base64");
+        const mediaType = file.type || "image/jpeg";
+        additionalDocImages.push({ data: base64, mediaType });
+      }
+    }
   } else {
     input = await request.json();
   }
@@ -66,6 +80,7 @@ export async function POST(request) {
       ...input,
       images: images.length > 0 ? images : null,
       auctionSheetImage,
+      additionalDocImages: additionalDocImages.length > 0 ? additionalDocImages : null,
     });
 
     try {

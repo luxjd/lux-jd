@@ -54,8 +54,8 @@ export async function POST(request) {
       margin: {
         grossMarginEur: ma.grossMarginEur || 0,
         grossMarginPct: ma.grossMarginPct || 0,
-        pessimisticMargin: ma.pessimisticMargin || 0,
-        optimisticMargin: ma.optimisticMargin || 0,
+        pessimisticMargin: ma.marginRange?.pessimistic ?? ma.pessimisticMargin ?? 0,
+        optimisticMargin: ma.marginRange?.optimistic ?? ma.optimisticMargin ?? 0,
         annualizedRoi: ma.annualizedRoi || 0,
       },
       marginConfidence: ma.marginConfidence || 0,

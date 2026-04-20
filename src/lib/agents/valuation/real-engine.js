@@ -16,7 +16,7 @@
  * 12. Report assembly
  */
 
-import { isAIAvailable, callClaude } from "@/lib/claude";
+import { isAIAvailable, callClaude, callClaudeVision } from "@/lib/claude";
 import { formatEur } from "@/lib/format";
 import { analyzePhotos } from "./photo-analyzer";
 import { parseAuctionSheet } from "./sheet-parser";
@@ -333,6 +333,100 @@ function mergeConditionData(photoResult, sheetResult, auctionGrade) {
 }
 
 // ══════════════════════════════════════════
+// NOTABLE OPTIONS MERGE (spec §3.2)
+// Merge options from enrichment (with premiums), additional docs, and photos
+// ══════════════════════════════════════════
+
+function mergeNotableOptions(enrichmentOptions, docOptions, photoOptions) {
+  // enrichmentOptions: [{option, estimated_premium_eur}] from Claude enrichment
+  // docOptions: ["option string"] from additional docs
+  // photoOptions: ["feature string"] from photo analysis
+  const merged = [];
+  const seen = new Set();
+
+  // Primary: enrichment options with premiums
+  if (Array.isArray(enrichmentOptions)) {
+    for (const opt of enrichmentOptions) {
+      if (opt?.option) {
+        const key = opt.option.toLowerCase().replace(/[\s\-()]/g, "");
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push({
+            option: opt.option,
+            estimatedPremiumEur: opt.estimated_premium_eur || 0,
+            source: "enrichment",
+          });
+        }
+      }
+    }
+  }
+
+  // Secondary: options from additional documents (no premium data)
+  if (Array.isArray(docOptions)) {
+    for (const opt of docOptions) {
+      if (opt) {
+        const key = String(opt).toLowerCase().replace(/[\s\-()]/g, "");
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push({ option: String(opt), estimatedPremiumEur: 0, source: "document" });
+        }
+      }
+    }
+  }
+
+  // Tertiary: features spotted in photos (no premium data)
+  if (Array.isArray(photoOptions)) {
+    for (const opt of photoOptions) {
+      if (opt) {
+        const key = String(opt).toLowerCase().replace(/[\s\-()]/g, "");
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push({ option: String(opt), estimatedPremiumEur: 0, source: "photo" });
+        }
+      }
+    }
+  }
+
+  return merged;
+}
+
+// ══════════════════════════════════════════
+// ADDITIONAL DOCUMENTS ANALYSIS (spec §2.1)
+// Extracts context from service booklets, build sheets, CoC, etc.
+// ══════════════════════════════════════════
+
+async function analyzeAdditionalDocs(docImages, make, model, year) {
+  if (!docImages || docImages.length === 0 || !isAIAvailable()) return null;
+  try {
+    const result = await callClaudeVision({
+      prompt: `These are supplementary documents for a ${year} ${make} ${model} being evaluated for purchase.
+Documents may include: service booklet pages, build sheet / option sticker, Certificate of Conformity (CoC), warranty records, inspection reports, or other provenance documentation.
+
+Extract ALL useful information. Return ONLY valid JSON:
+{
+  "document_types_identified": ["service_booklet", "build_sheet", "coc", "warranty", "inspection", "other"],
+  "service_history_evidence": "Summary of service history found, or null if none",
+  "factory_options_found": ["option 1", "option 2"],
+  "build_date": "YYYY-MM or null",
+  "first_registration_date": "YYYY-MM-DD or null",
+  "country_of_origin": "country code or null",
+  "eu_type_approval": true/false/null,
+  "warranty_status": "active/expired/unknown",
+  "notable_findings": ["any other relevant finding"],
+  "provenance_confidence": 0.0-1.0,
+  "summary": "1-2 sentence summary of what these documents tell us about the vehicle"
+}`,
+      images: docImages.slice(0, 10),
+      system: "You are an expert automotive document analyst specializing in luxury vehicle provenance verification for import/export operations.",
+    });
+    return result;
+  } catch (e) {
+    console.warn("Additional docs analysis failed:", e.message);
+    return null;
+  }
+}
+
+// ══════════════════════════════════════════
 // VALUATION HISTORY COMPARISON
 // ══════════════════════════════════════════
 
@@ -416,17 +510,21 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
   "full_model_name": "e.g. Ferrari 488 GTB (F142M) — include internal designation/chassis code if known",
   "transmission_type": "AUTOMATIC/MANUAL/DCT/PDK/SMG — only if not already provided, otherwise echo provided value",
   "fuel_type": "PETROL/DIESEL/HYBRID/ELECTRIC — only if not already provided",
-  "notable_standard_features": ["key standard features for this model that affect resale value"],
+  "notable_options": [
+    {"option": "Carbon ceramic brakes (CCB/PCCB)", "estimated_premium_eur": 5000},
+    {"option": "Sport exhaust system", "estimated_premium_eur": 3000}
+  ],
   "known_issues": ["common problems/failure points for this model that a buyer should be aware of"],
   "depreciation_profile": "SLOW/MODERATE/FAST — how this model typically depreciates"
-}`,
+}
+IMPORTANT for notable_options: Identify factory options from the specification_notes provided. For each option, estimate the resale premium it adds in EUR on the German market. Include standard standout features of this variant too (e.g. if it's a Performance/Competition/Pista variant). Return empty array if no notable options are identifiable.`,
       model: process.env.CLAUDE_MODEL_FAST,
       jsonMode: true,
     });
   }
 
   // ─── Steps 2-5: Parallel execution ───
-  const [photoResult, sheetResult, marketResult, fxResult] = await Promise.all([
+  const [photoResult, sheetResult, marketResult, fxResult, additionalDocsResult] = await Promise.all([
     // Step 2: Photo analysis (with classification)
     input.images?.length > 0
       ? analyzePhotos(input.images, validatedInput.make, validatedInput.model, validatedInput.year)
@@ -442,6 +540,11 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
 
     // Step 5: FX rate (with volatility)
     fetchFxRate(),
+
+    // Step 5b: Additional documents analysis (spec §2.1 — service booklet, build sheet, CoC)
+    input.additionalDocImages?.length > 0
+      ? analyzeAdditionalDocs(input.additionalDocImages, validatedInput.make, validatedInput.model, validatedInput.year)
+      : Promise.resolve(null),
   ]);
 
   // ─── Step 6: Merge condition data ───
@@ -516,7 +619,10 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
     historicalComparison = await getHistoricalComparison(validatedInput.make, validatedInput.model, validatedInput.year);
   } catch { /* non-critical */ }
 
-  // ─── Step 11: Risk + Recommendation (Claude Sonnet) ───
+  // ─── Step 11: Risk + Recommendation ───
+  // Per spec §6.5: 6 risk scores computed deterministically (rule-based) inside
+  // assessRiskAndRecommend → see risk-scorer.js. The LLM is used only for
+  // qualitative nuance on condition/provenance + the final verdict bundle.
   let riskRecommendation = null;
   if (isAIAvailable()) {
     riskRecommendation = await assessRiskAndRecommend({
@@ -541,6 +647,11 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       modifications: condition.modifications,
       panelConditions: condition.panelConditions,
       damageCodes: condition.damageCodes,
+      // Sheet-derived signals consumed by the rule scorer (condition + tuv)
+      damageSeverityScore: condition.damageSeverityScore,
+      structuralConcern: condition.structuralConcern,
+      resprayDetected: condition.resprayDetected,
+      // Cost/financial signals
       askingPriceJpy: effectiveAskingPriceJpy,
       purchaseEur: landedCost.purchasePriceEur,
       totalLandedCost: landedCost.totalLandedCostEur,
@@ -550,10 +661,17 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       pessimisticMargin,
       optimisticMargin,
       cashOutlay: landedCost.totalCashOutlayEur,
+      holdDays,
+      exceedsMaxPurchase,
+      tuvComplexity: landedCost.tuvComplexity,
+      // FX signals — full volatility object so currency_risk rule can score it
       fxRate: fxResult.rate,
+      fxBufferPct: settings.fxBufferPct,
+      fxVolatility: fxResult.volatility || null,
       fxVolatilityAlert: fxResult.volatility?.alert || false,
       fxVolatilityAlertReason: fxResult.volatility?.alertReason || null,
-      deterministicMaxBid: deterministicMaxBid,
+      deterministicMaxBid,
+      // Market signals
       comparableCount,
       avgDaysOnMarket: marketResult?.avg_days_on_market || 30,
       marketLiquidity: marketResult?.market_liquidity || "MEDIUM",
@@ -563,9 +681,19 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       minMarginEur: MIN_MARGIN_EUR,
       minMarginPct: MIN_MARGIN_PCT,
       maxPurchaseEur: settings.maxPurchaseEur,
-      // Data-quality flags (for the AI's context; deterministic override below)
+      // Data-quality flags consumed by both the market_risk rule and the LLM prompt
       webSearchFallback: !!marketResult?.web_search_fallback,
       webSearchFilterStats: marketResult?.web_search_filter_stats || null,
+      disparateVariants: !!marketResult?.disparate_variants_detected,
+      genericModel: !!marketResult?.generic_model_input,
+      // Additional documents context (spec §2.1) — feeds provenance_risk rule
+      additionalDocsContext: additionalDocsResult?.summary || null,
+      euTypeApproval: additionalDocsResult?.eu_type_approval ?? null,
+      additionalDocs: additionalDocsResult ? {
+        documentTypes: additionalDocsResult.document_types_identified || [],
+        provenanceConfidence: additionalDocsResult.provenance_confidence ?? null,
+        euTypeApproval: additionalDocsResult.eu_type_approval ?? null,
+      } : null,
     });
   }
 
@@ -603,28 +731,55 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
     dataQualityWarnings.push(msrpSanity.reason);
   }
 
-  const forceReview = webSearchFallback || !msrpSanity.passed || disparateVariants || genericModel;
-  if (forceReview && riskRecommendation) {
-    const originalVerdict = riskRecommendation.verdict;
-    if (originalVerdict === "BUY") {
-      riskRecommendation.verdict = "REVIEW";
-      const triggers = [];
-      if (webSearchFallback) triggers.push("web-search fallback active");
-      if (disparateVariants) triggers.push("comparables span disparate sub-variants");
-      if (genericModel) triggers.push("model input is generic (no variant code)");
-      if (!msrpSanity.passed) triggers.push("MSRP sanity floor breached");
-      const reason = `Data quality issues: ${triggers.join(" + ")}. Market comparables need human verification before BUY.`;
-      riskRecommendation.verdict_reasoning = `${reason} ${riskRecommendation.verdict_reasoning || ""}`.trim();
+  // ── Spec §3.8: Confidence thresholds (deterministic) ──
+  // BUY requires confidence ≥ 0.70; PASS if confidence < 0.50;
+  // Margin borderline (within 15% of threshold) → REVIEW.
+  const lowConfidence = confidence < 0.50;
+  const insufficientConfidence = confidence < 0.70;
+  const marginBorderline = grossMargin >= MIN_MARGIN_EUR && grossMarginPct >= MIN_MARGIN_PCT
+    && (grossMargin < MIN_MARGIN_EUR * 1.15 || grossMarginPct < MIN_MARGIN_PCT * 1.15);
+
+  const forceReview = webSearchFallback || !msrpSanity.passed || disparateVariants || genericModel || insufficientConfidence || marginBorderline;
+
+  if (riskRecommendation) {
+    // Force PASS when confidence is too low (spec §3.8)
+    if (lowConfidence && riskRecommendation.verdict !== "PASS") {
+      const originalVerdict = riskRecommendation.verdict;
+      riskRecommendation.verdict = "PASS";
+      riskRecommendation.verdict_reasoning = `Confidence too low (${(confidence * 100).toFixed(0)}% < 50% minimum). Insufficient data to support any purchase recommendation. ${riskRecommendation.verdict_reasoning || ""}`.trim();
       riskRecommendation.key_concerns = [
-        `Data quality override: verdict downgraded from ${originalVerdict} to REVIEW`,
-        ...dataQualityWarnings,
+        `Confidence override: verdict downgraded from ${originalVerdict} to PASS — confidence ${(confidence * 100).toFixed(0)}% is below 50% minimum`,
         ...(riskRecommendation.key_concerns || []),
       ].slice(0, 6);
-      riskRecommendation.action_items = [
-        "Verify comparables on mobile.de / AutoScout24 directly (scrapers were blocked)",
-        msrpSanity.floor ? `Confirm the DE market value is at least €${msrpSanity.floor.toLocaleString()} (MSRP-derived floor) — currently estimated at €${estimatedSalePrice.toLocaleString()}` : null,
-        ...(riskRecommendation.action_items || []),
-      ].filter(Boolean).slice(0, 6);
+      dataQualityWarnings.push(`Confidence ${(confidence * 100).toFixed(0)}% is below the 50% minimum required for any actionable verdict. Result forced to PASS.`);
+    }
+    // Force BUY → REVIEW when confidence < 0.70 or margin is borderline or data quality issues
+    else if (forceReview) {
+      const originalVerdict = riskRecommendation.verdict;
+      if (originalVerdict === "BUY") {
+        riskRecommendation.verdict = "REVIEW";
+        const triggers = [];
+        if (webSearchFallback) triggers.push("web-search fallback active");
+        if (disparateVariants) triggers.push("comparables span disparate sub-variants");
+        if (genericModel) triggers.push("model input is generic (no variant code)");
+        if (!msrpSanity.passed) triggers.push("MSRP sanity floor breached");
+        if (insufficientConfidence) triggers.push(`confidence ${(confidence * 100).toFixed(0)}% < 70% required for BUY`);
+        if (marginBorderline) triggers.push(`margin is borderline (within 15% of threshold)`);
+        const reason = `Data quality / threshold issues: ${triggers.join(" + ")}. Human verification required before BUY.`;
+        riskRecommendation.verdict_reasoning = `${reason} ${riskRecommendation.verdict_reasoning || ""}`.trim();
+        riskRecommendation.key_concerns = [
+          `Data quality override: verdict downgraded from ${originalVerdict} to REVIEW`,
+          ...dataQualityWarnings,
+          ...(riskRecommendation.key_concerns || []),
+        ].slice(0, 6);
+        riskRecommendation.action_items = [
+          webSearchFallback ? "Verify comparables on mobile.de / AutoScout24 directly (scrapers were blocked)" : null,
+          msrpSanity.floor ? `Confirm the DE market value is at least €${msrpSanity.floor.toLocaleString()} (MSRP-derived floor) — currently estimated at €${estimatedSalePrice.toLocaleString()}` : null,
+          insufficientConfidence ? `Gather more data to raise confidence above 70% (currently ${(confidence * 100).toFixed(0)}%)` : null,
+          marginBorderline ? `Margin is borderline — verify pricing assumptions before committing capital` : null,
+          ...(riskRecommendation.action_items || []),
+        ].filter(Boolean).slice(0, 6);
+      }
     }
   }
 
@@ -650,6 +805,9 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       msrpFloorEur: msrpSanity.floor,
       disparateVariants,
       genericModel,
+      confidenceBelowBuyThreshold: insufficientConfidence,
+      confidenceBelowPassThreshold: lowConfidence,
+      marginBorderline,
       priceSpreadPct: marketResult?.price_statistics?.coefficientOfVariation != null
         ? Math.round(marketResult.price_statistics.coefficientOfVariation * 100)
         : null,
@@ -665,7 +823,7 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       driveSide: validatedInput.driveSide,
       exteriorColor: validatedInput.exteriorColor,
       interiorColor: validatedInput.interiorColor || "Not specified",
-      serviceHistory: condition.serviceHistoryIndicator || validatedInput.serviceHistory || "UNKNOWN",
+      serviceHistory: additionalDocsResult?.service_history_evidence || condition.serviceHistoryIndicator || validatedInput.serviceHistory || "UNKNOWN",
       auctionGrade: validatedInput.auctionGrade || null,
       accidentHistory: validatedInput.accidentHistory || false,
       segment: enrichment?.full_model_name ? "ENRICHED" : "STANDARD",
@@ -673,11 +831,26 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       transmission: validatedInput.transmission || enrichment?.transmission_type || null,
       fuelType: validatedInput.fuelType || enrichment?.fuel_type || null,
       engineSpec: enrichment?.engine_spec || null,
+      originalMsrpEur: enrichment?.original_msrp_eur || null,
       originalMsrp: enrichment?.original_msrp_eur || null,
       productionYears: enrichment?.production_years || null,
       fullModelName: enrichment?.full_model_name || null,
+      notableOptions: mergeNotableOptions(enrichment?.notable_options, additionalDocsResult?.factory_options_found, photoResult?.notable_features_spotted),
       knownIssues: enrichment?.known_issues || [],
       depreciationProfile: enrichment?.depreciation_profile || null,
+      // Additional documents context (spec §2.1)
+      additionalDocs: additionalDocsResult ? {
+        documentTypes: additionalDocsResult.document_types_identified || [],
+        factoryOptionsFound: additionalDocsResult.factory_options_found || [],
+        buildDate: additionalDocsResult.build_date || null,
+        firstRegistrationDate: additionalDocsResult.first_registration_date || null,
+        countryOfOrigin: additionalDocsResult.country_of_origin || null,
+        euTypeApproval: additionalDocsResult.eu_type_approval ?? null,
+        warrantyStatus: additionalDocsResult.warranty_status || null,
+        notableFindings: additionalDocsResult.notable_findings || [],
+        provenanceConfidence: additionalDocsResult.provenance_confidence || null,
+        summary: additionalDocsResult.summary || null,
+      } : null,
     },
 
     conditionAssessment: {
@@ -745,7 +918,7 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
         make: validatedInput.make,
         model: validatedInput.model,
         yearRange: [validatedInput.year - 2, validatedInput.year + 2],
-        mileageRange: [Math.max(0, validatedInput.mileageKm - 20000), validatedInput.mileageKm + 20000],
+        mileageRange: [Math.max(0, validatedInput.mileageKm - Math.max(Math.round(validatedInput.mileageKm * 0.3), 20000)), validatedInput.mileageKm + Math.max(Math.round(validatedInput.mileageKm * 0.3), 20000)],
         driveSide: validatedInput.driveSide,
         searchWidened: marketResult?.search_widened || false,
       },
@@ -785,9 +958,11 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
       grossMarginEur: grossMargin,
       grossMarginPct,
       marginAfterOpex: grossMargin - OPEX_PER_VEHICLE,
-      pessimisticMargin,
-      baseMargin: grossMargin,
-      optimisticMargin,
+      marginRange: {
+        pessimistic: pessimisticMargin,
+        base: grossMargin,
+        optimistic: optimisticMargin,
+      },
       capitalRequired: landedCost.totalCashOutlayEur,
       returnOnCapital: landedCost.totalCashOutlayEur > 0 ? Number(((grossMargin / landedCost.totalCashOutlayEur) * 100).toFixed(1)) : 0,
       estimatedHoldDays: holdDays,
@@ -803,9 +978,7 @@ Return ONLY valid JSON with these fields. Be precise — this data is used for f
         grossMarginEur: "Estimated",
         grossMarginPct: "Estimated",
         marginAfterOpex: "Estimated",
-        pessimisticMargin: "Estimated",
-        baseMargin: "Estimated",
-        optimisticMargin: "Estimated",
+        marginRange: "Estimated",
         returnOnCapital: "Estimated",
         estimatedHoldDays: "Estimated",
         annualizedRoi: "Estimated",

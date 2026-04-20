@@ -1,10 +1,27 @@
 import { callClaude } from "@/lib/claude";
 import { formatNumber } from "@/lib/format";
 import { validateRiskOutput } from "./validation";
+import { scoreRisksDeterministic } from "./risk-scorer";
 
-const SYSTEM_PROMPT = `You are a senior automotive investment analyst specializing in Japanese-to-European luxury vehicle arbitrage. You evaluate acquisition opportunities with rigorous financial discipline. Your recommendations directly influence purchasing decisions on vehicles worth €50,000-€400,000. Be conservative — a missed deal costs nothing, a bad purchase costs everything.`;
+/**
+ * Spec §6.5 split:
+ *   - The 6 risk scores + weighted overall come from `scoreRisksDeterministic`
+ *     (pure rules, no LLM). See `risk-scorer.js`.
+ *   - The LLM produces only:
+ *       * qualitative nuance for condition_risk + provenance_risk
+ *         (the two judgment-heavy dimensions per spec §6.5)
+ *       * the verdict bundle: verdict, max_bid, strengths, concerns, action_items
+ *
+ * The LLM receives the deterministic scores as INPUTS — it cannot change them.
+ */
 
-const USER_PROMPT = (data) => `Evaluate this vehicle acquisition opportunity. All financial data has been pre-calculated with real market data.
+const SYSTEM_PROMPT = `You are a senior automotive investment analyst specializing in Japanese-to-European luxury vehicle arbitrage. You evaluate acquisition opportunities with rigorous financial discipline. Your recommendations directly influence purchasing decisions on vehicles worth €50,000-€400,000. Be conservative — a missed deal costs nothing, a bad purchase costs everything.
+
+The 6 numerical risk scores have ALREADY been computed deterministically from rules (per spec §6.5). You DO NOT score risks. Your job is two-fold:
+1. Provide qualitative nuance for condition_risk and provenance_risk reasoning — the two dimensions where human judgment adds value beyond the rule.
+2. Produce the final verdict, max-bid, key strengths/concerns, and action items.`;
+
+const USER_PROMPT = (data, det) => `Evaluate this vehicle acquisition opportunity.
 
 VEHICLE:
 ${data.make} ${data.model} ${data.year}
@@ -51,57 +68,104 @@ Comparable Listings: ${data.comparableCount}
 Avg Days on Market: ${data.avgDaysOnMarket}
 Market Liquidity: ${data.marketLiquidity}
 Trend: ${data.trendDirection}
-${data.webSearchFallback ? `⚠ DATA-QUALITY ALERT: Direct scrapers (mobile.de, AutoScout24) were blocked. Market estimate is from Google snippet parsing — fewer details, higher wrong-variant risk. Treat market_risk as MEDIUM minimum. The pipeline will deterministically downgrade any BUY verdict to REVIEW when this flag is set, so BUY here means nothing.` : ""}${data.webSearchFilterStats ? `Filter stats: raw=${data.webSearchFilterStats.raw}, aggregator_filtered=${data.webSearchFilterStats.aggregatorFiltered}, variant_mismatch_filtered=${data.webSearchFilterStats.variantFiltered}, accepted=${data.webSearchFilterStats.accepted}` : ""}
+${data.webSearchFallback ? `⚠ DATA-QUALITY ALERT: Direct scrapers (mobile.de, AutoScout24) were blocked. Market estimate is from Google snippet parsing — fewer details, higher wrong-variant risk. Pipeline will deterministically downgrade BUY → REVIEW.` : ""}${data.webSearchFilterStats ? `\nFilter stats: raw=${data.webSearchFilterStats.raw}, aggregator_filtered=${data.webSearchFilterStats.aggregatorFiltered}, variant_mismatch_filtered=${data.webSearchFilterStats.variantFiltered}, accepted=${data.webSearchFilterStats.accepted}` : ""}
+
+${data.additionalDocsContext ? `ADDITIONAL DOCUMENTS:\n${data.additionalDocsContext}${data.euTypeApproval != null ? `\nEU Type Approval: ${data.euTypeApproval ? "YES" : "NO"}` : ""}` : ""}
 
 ${data.historicalComparison ? `HISTORICAL CONTEXT:\n${data.historicalComparison}` : ""}
 
-RISK WEIGHTING (use these weights for overall_risk_score):
-- condition: 25% (condition_risk)
-- market: 25% (market_risk)
-- currency: 20% (currency_risk)
-- provenance: 15% (provenance_risk)
-- tuv: 10% (tuv_risk)
-- capital: 5% (capital_risk)
+═══════════════════════════════════════════════════
+PRE-COMPUTED RISK SCORES (rule-based per spec §6.5)
+═══════════════════════════════════════════════════
+These scores are FINAL — you cannot change them. Use them as inputs to your verdict.
+
+Condition Risk:   ${det.risk_scores.condition.score}/5 (${det.risk_scores.condition.level}) — ${det.risk_scores.condition.reasoning}
+Provenance Risk:  ${det.risk_scores.provenance.score}/5 (${det.risk_scores.provenance.level}) — ${det.risk_scores.provenance.reasoning}
+TUV Risk:         ${det.risk_scores.tuv.score}/5 (${det.risk_scores.tuv.level}) — ${det.risk_scores.tuv.reasoning}
+Market Risk:      ${det.risk_scores.market.score}/5 (${det.risk_scores.market.level}) — ${det.risk_scores.market.reasoning}
+Currency Risk:    ${det.risk_scores.currency.score}/5 (${det.risk_scores.currency.level}) — ${det.risk_scores.currency.reasoning}
+Capital Risk:     ${det.risk_scores.capital.score}/5 (${det.risk_scores.capital.level}) — ${det.risk_scores.capital.reasoning}
+Overall:          ${det.overall_risk_score}/5 (${det.overall_risk_level})
+                  [weighted: condition×25% + market×25% + currency×20% + provenance×15% + tuv×10% + capital×5%]
+
+═══════════════════════════════════════════════════
 
 Return ONLY valid JSON:
 {
-  "risk_scores": {
-    "condition": {"score": <1-5 integer>, "level": "LOW/MEDIUM/HIGH", "reasoning": "2-3 sentences with specific evidence from the data above"},
-    "provenance": {"score": <1-5 integer>, "level": "LOW/MEDIUM/HIGH", "reasoning": "based on service history, accident record, documentation"},
-    "tuv": {"score": <1-5 integer>, "level": "LOW/MEDIUM/HIGH", "reasoning": "based on TUV flags, modifications, drive side, EU compatibility"},
-    "market": {"score": <1-5 integer>, "level": "LOW/MEDIUM/HIGH", "reasoning": "based on comparable count, liquidity, trend direction"},
-    "currency": {"score": <1-5 integer>, "level": "LOW/MEDIUM/HIGH", "reasoning": "based on FX volatility data and buffer applied"},
-    "capital": {"score": <1-5 integer>, "level": "LOW/MEDIUM/HIGH", "reasoning": "based on cash outlay vs expected margin and hold time"}
-  },
-  "overall_risk_score": <float — MUST be the weighted average using weights above>,
-  "overall_risk_level": "LOW/MEDIUM/HIGH",
-  "verdict": "BUY" or "REVIEW" or "PASS",
-  "verdict_reasoning": "2-3 sentence explanation referencing specific numbers",
-  "max_bid_jpy": <integer — use the deterministicMaxBid as baseline, adjust based on your risk assessment. If PASS, use null>,
-  "max_bid_reasoning": "How you arrived at this bid — reference the deterministic calculation and any adjustments",
+  "condition_nuance": "1-2 sentences adding qualitative judgment that the rule didn't capture (e.g. 'bolster wear inconsistent with claimed mileage', 'paint quality belies the score'). Empty string if rule reasoning is sufficient.",
+  "provenance_nuance": "1-2 sentences adding qualitative judgment on documentation/history (e.g. 'stamps from non-authorized dealer', 'CoC missing critical pages'). Empty string if rule reasoning is sufficient.",
+  "verdict": "BUY" | "REVIEW" | "PASS",
+  "verdict_reasoning": "2-3 sentence explanation referencing specific numbers and the risk levels above",
+  "max_bid_jpy": <integer — use the deterministic max bid as baseline, may adjust based on overall risk. Null if PASS.>,
+  "max_bid_reasoning": "How you arrived at this bid — reference the deterministic calculation and any risk-driven adjustments",
   "key_strengths": ["strength 1 with evidence", "strength 2", "strength 3"],
   "key_concerns": ["concern 1 with evidence", "concern 2"],
   "action_items": ["specific action for REVIEW verdicts — what info would change the verdict"]
 }
 
 VERDICT RULES (STRICT — you MUST follow these thresholds set by the user):
-- BUY: Gross margin >= €${data.minMarginEur != null ? formatNumber(data.minMarginEur) : "15,000"} AND >= ${data.minMarginPct || 20}% AND overall_risk <= 3.0 AND no HIGH individual risks AND pessimistic margin > €0${data.maxPurchaseEur ? ` AND total landed cost <= €${formatNumber(data.maxPurchaseEur)}` : ""}
-- REVIEW: Margin meets BUY threshold but one or more: overall_risk 3.0-4.0, one HIGH risk, pessimistic margin < €0, FX alert active
-- PASS: Margin < €${data.minMarginEur != null ? formatNumber(data.minMarginEur) : "15,000"} OR < ${data.minMarginPct || 20}% OR overall_risk > 4.0 OR multiple HIGH risks OR accident history with poor condition${data.maxPurchaseEur ? ` OR total landed cost > €${formatNumber(data.maxPurchaseEur)}` : ""}`;
+- BUY: Gross margin >= €${data.minMarginEur != null ? formatNumber(data.minMarginEur) : "15,000"} AND >= ${data.minMarginPct || 20}% AND confidence >= 0.70 AND overall_risk <= 3.0 AND no HIGH individual risks AND pessimistic margin > €0 AND margin is NOT borderline (within 15% of threshold)${data.maxPurchaseEur ? ` AND total landed cost <= €${formatNumber(data.maxPurchaseEur)}` : ""}
+- REVIEW: Margin meets BUY threshold but one or more: confidence 0.50-0.70, overall_risk 3.0-4.0, one HIGH risk, pessimistic margin < €0, FX alert active, margin is borderline (within 15% of threshold)
+- PASS: Margin < €${data.minMarginEur != null ? formatNumber(data.minMarginEur) : "15,000"} OR < ${data.minMarginPct || 20}% OR confidence < 0.50 OR overall_risk > 4.0 OR multiple HIGH risks OR accident history with poor condition${data.maxPurchaseEur ? ` OR total landed cost > €${formatNumber(data.maxPurchaseEur)}` : ""}`;
 
 /**
- * Assess risks and generate final BUY/REVIEW/PASS recommendation.
- * Receives enriched data including thresholds from app settings.
- * @param {object} data - All prior analysis results + thresholds
- * @returns {object|null} Risk assessment + recommendation
+ * Assess risks (rules) + generate final BUY/REVIEW/PASS recommendation (LLM).
+ *
+ * Per spec §6.5, the 6 risk scores are computed deterministically.
+ * The LLM is used ONLY for:
+ *   - qualitative nuance on condition_risk and provenance_risk
+ *   - the final verdict bundle (verdict, max_bid, strengths, concerns, action_items)
+ *
+ * Output shape matches the previous LLM-only contract so downstream consumers
+ * (real-engine.js report assembly, UI) need no changes.
  */
 export async function assessRiskAndRecommend(data) {
-  const result = await callClaude({
-    prompt: USER_PROMPT(data),
+  // ── Step 1: Deterministic risk scoring (pure rules) ──
+  const det = scoreRisksDeterministic(data);
+
+  // ── Step 2: LLM call — verdict bundle + condition/provenance nuance only ──
+  const llm = await callClaude({
+    prompt: USER_PROMPT(data, det),
     system: SYSTEM_PROMPT,
     jsonMode: true,
     maxTokens: 4096,
   });
 
-  return validateRiskOutput(result);
+  // ── Step 3: Compose final result ──
+  // Risk scores ALWAYS come from rules. LLM nuance text is appended to the
+  // condition/provenance reasoning when the LLM provides it.
+  const conditionNuance = typeof llm?.condition_nuance === "string" ? llm.condition_nuance.trim() : "";
+  const provenanceNuance = typeof llm?.provenance_nuance === "string" ? llm.provenance_nuance.trim() : "";
+
+  const composed = {
+    risk_scores: {
+      ...det.risk_scores,
+      condition: {
+        ...det.risk_scores.condition,
+        reasoning: conditionNuance
+          ? `${det.risk_scores.condition.reasoning}. Nuance: ${conditionNuance}`
+          : det.risk_scores.condition.reasoning,
+        nuance: conditionNuance || null,
+      },
+      provenance: {
+        ...det.risk_scores.provenance,
+        reasoning: provenanceNuance
+          ? `${det.risk_scores.provenance.reasoning}. Nuance: ${provenanceNuance}`
+          : det.risk_scores.provenance.reasoning,
+        nuance: provenanceNuance || null,
+      },
+    },
+    overall_risk_score: det.overall_risk_score,
+    overall_risk_level: det.overall_risk_level,
+    verdict: llm?.verdict || "REVIEW",
+    verdict_reasoning: llm?.verdict_reasoning || "Verdict reasoning unavailable",
+    max_bid_jpy: llm?.max_bid_jpy ?? null,
+    max_bid_reasoning: llm?.max_bid_reasoning || null,
+    key_strengths: Array.isArray(llm?.key_strengths) ? llm.key_strengths : [],
+    key_concerns: Array.isArray(llm?.key_concerns) ? llm.key_concerns : [],
+    action_items: Array.isArray(llm?.action_items) ? llm.action_items : [],
+    _rule_based_risks: true,
+  };
+
+  return validateRiskOutput(composed);
 }
