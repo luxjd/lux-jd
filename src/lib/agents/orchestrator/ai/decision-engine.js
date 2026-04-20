@@ -126,6 +126,10 @@ export function evaluateOpportunity(opportunity, portfolio) {
   if (!step2Pass) { hasFlag = true; flagReasons.push("Low confidence — margin estimate may be unreliable"); }
 
   // ─── STEP 3: RISK CHECK ───
+  // Docx §7.2 step 5: "Are there any HIGH risk flags from the Sourcing Agent?
+  // If yes → FLAG for human review with detailed risk summary."
+  // Risk alone never REJECTs — only margin (step 1) and capital (step 5) do.
+  // The human operator reviewing a FLAGged decision can choose to reject.
   const highRiskDimensions = [];
   if (opportunity.risk) {
     for (const [key, val] of Object.entries(opportunity.risk)) {
@@ -135,23 +139,30 @@ export function evaluateOpportunity(opportunity, portfolio) {
     }
   }
   const step3Pass = riskScore <= 2.0 && highRiskDimensions.length === 0;
-  const step3Flag = riskScore <= 3.0;
+  const extremeRisk = riskScore > 4.0 || highRiskDimensions.length >= 3;
   steps.push({
     step: 3,
     name: "RISK CHECK",
     icon: "shield",
     check: "Composite risk <= 2.0, no HIGH individual risks",
     actual: `${riskScore}/3.0 (${riskLevel})${highRiskDimensions.length > 0 ? ` — ${highRiskDimensions.length} HIGH dimensions` : ""}`,
-    result: step3Pass ? "PASS" : step3Flag ? "FLAG" : "FAIL",
-    critical: !step3Flag,
+    // Per docx §7.2 step 5 this only ever PASSes or FLAGs — never FAILs.
+    result: step3Pass ? "PASS" : "FLAG",
+    critical: false,
     reasoning: step3Pass
       ? `Risk score ${riskScore}/3.0 with no high-risk dimensions — acceptable risk profile.`
-      : step3Flag
-      ? `Risk score ${riskScore}/3.0 — elevated. ${highRiskDimensions.length > 0 ? `High dimensions: ${highRiskDimensions.join(", ")}` : "Requires human risk assessment."}`
-      : `Risk score ${riskScore}/3.0 — unacceptable. ${highRiskDimensions.join(", ")}`,
+      : extremeRisk
+      ? `Risk score ${riskScore}/3.0 — EXTREME. ${highRiskDimensions.length > 0 ? `HIGH dimensions: ${highRiskDimensions.join(", ")}. ` : ""}Per spec §7.2 step 5, flagged for human review (strong rejection recommended).`
+      : `Risk score ${riskScore}/3.0 — elevated. ${highRiskDimensions.length > 0 ? `HIGH dimensions: ${highRiskDimensions.join(", ")}. ` : ""}Per spec §7.2 step 5, flagged for human review.`,
   });
-  if (!step3Pass && !step3Flag) hasReject = true;
-  if (!step3Pass && step3Flag) { hasFlag = true; flagReasons.push(`Elevated risk: ${riskScore}/3.0`); }
+  if (!step3Pass) {
+    hasFlag = true;
+    flagReasons.push(
+      extremeRisk
+        ? `EXTREME risk: composite ${riskScore}/3.0${highRiskDimensions.length > 0 ? ` + ${highRiskDimensions.length} HIGH dim(s)` : ""} — strong rejection recommended`
+        : `Elevated risk: composite ${riskScore}/3.0${highRiskDimensions.length > 0 ? ` + ${highRiskDimensions.length} HIGH dim(s)` : ""}`
+    );
+  }
 
   // ─── STEP 4: PORTFOLIO FIT ───
   const currentBrandPct = portfolio.brandConcentration?.[make] || 0;

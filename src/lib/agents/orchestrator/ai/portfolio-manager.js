@@ -7,6 +7,7 @@
 
 import { getPipelineVehicles } from "@/lib/agents/logistics/storage";
 import { getAllTransactions } from "@/lib/agents/finance/storage";
+import { computeAvailableCapital } from "@/lib/agents/finance/treasury";
 
 /**
  * Load current portfolio state from all agent data.
@@ -41,8 +42,11 @@ export async function loadPortfolioState() {
     else segmentCounts.STANDARD++;
   }
 
-  // Total available capital — env-driven until Finance exposes a real treasury endpoint.
-  const totalAvailableCapital = parseInt(process.env.AVAILABLE_CAPITAL_EUR || "2000000", 10);
+  // Real treasury — docx §7.1 "available capital" + §6.4 Finance cash tracking.
+  // Derived from the transaction ledger: opening capital + realized P&L on sold
+  // vehicles. Falls back to env baseline if the ledger query fails.
+  const treasury = await computeAvailableCapital();
+  const totalAvailableCapital = treasury.availableCapitalEur;
 
   // Brand concentration percentages
   const brandConcentration = {};
@@ -65,6 +69,10 @@ export async function loadPortfolioState() {
     deploymentPct: Number(((totalCapitalDeployed / totalAvailableCapital) * 100).toFixed(1)),
     remainingCapacity: totalAvailableCapital * 0.80 - totalCapitalDeployed,
     canAddMore: totalCapitalDeployed < totalAvailableCapital * 0.80,
+
+    // Full treasury breakdown so the decision brief + UI can show the operator
+    // how `totalAvailableCapital` was derived (opening capital + realized P&L).
+    treasury,
 
     brandCapital,
     brandConcentration,
