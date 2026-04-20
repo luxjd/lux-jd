@@ -18,6 +18,8 @@ import { checkFxRate, calculateFxImpact, calculatePortfolioFxExposure } from "./
 import { compareTaxTreatments, generateVatDeclaration, reviewTaxCompliance } from "./tax-optimizer";
 import { runRegulatoryCheck } from "./regulatory-monitor";
 import { projectCashFlow } from "./cashflow-projector";
+import { calculateCostDelta, calculatePredictionAccuracy } from "./cost-delta";
+import { saveCostEstimate, landedCostToCategoryMap } from "../cost-estimates";
 import {
   addTransaction, addTransactions, getTransactionsByVehicle, getAllTransactions,
   getFxHistory, addFxRate, addFxAlert,
@@ -36,8 +38,21 @@ export async function recordTransaction(data) {
 
 /**
  * Record all costs from a landed cost breakdown (when vehicle enters pipeline).
+ *
+ * Docx §6.4.2.1: also freezes a Sourcing-agent cost estimate snapshot so
+ * future actuals can be compared against prediction (idempotent — preserves
+ * the original snapshot if one already exists).
  */
-export async function recordLandedCosts(vehicleId, landedCost, fxRate) {
+export async function recordLandedCosts(vehicleId, landedCost, fxRate, { opportunityId = null, sourceAgent = "jp-sourcing" } = {}) {
+  // Freeze the Sourcing-agent estimate BEFORE generating transactions, so
+  // the delta engine has a stable baseline. Per-vehicle idempotent.
+  await saveCostEstimate(vehicleId, {
+    byCategory: landedCostToCategoryMap(landedCost),
+    totalLandedCostEur: landedCost.totalLandedCostEur,
+    sourceAgent,
+    opportunityId,
+  });
+
   const txns = generateTransactionsFromLandedCost(vehicleId, landedCost, fxRate);
   await addTransactions(txns);
   await updateAgentStatus({ status: "ONLINE", lastAction: `Recorded ${txns.length} transactions for ${vehicleId}` });
@@ -62,8 +77,15 @@ export async function recordSale(vehicleId, salePrice, date) {
 
 /**
  * Run a full financial health check.
+ *
+ * @param {Array} vehicles — active pipeline vehicles
+ * @param {{ upcomingPurchases?: Array }} [opts]
+ *   upcomingPurchases: pending Orchestrator AUTO_APPROVE commitments not yet
+ *   reflected in the ledger. Each: {vehicleName, expectedPurchaseDate,
+ *   expectedOutlayEur, opportunityId?}. Feeds cash-flow projection per
+ *   docx §6.4.2.3.
  */
-export async function runFinancialCheck(vehicles) {
+export async function runFinancialCheck(vehicles, { upcomingPurchases = [] } = {}) {
   const startTime = Date.now();
   await updateAgentStatus({ status: "ANALYZING" });
 
@@ -107,11 +129,19 @@ export async function runFinancialCheck(vehicles) {
   // ─── Portfolio FX Exposure ───
   const fxExposure = calculatePortfolioFxExposure(vehicles, fxCheck.current.rate);
 
-  // ─── Cash Flow Projection ───
-  const cashFlow = projectCashFlow(vehicles, allTxns, 8);
+  // ─── Cash Flow Projection (with upcoming purchases per docx §6.4.2.3) ───
+  const cashFlow = projectCashFlow(vehicles, allTxns, 8, upcomingPurchases);
 
-  // ─── Regulatory Check ───
-  const regulatoryCheck = runRegulatoryCheck();
+  // ─── Regulatory Check (vehicles fed in so reported changes get impact calc) ───
+  const regulatoryCheck = await runRegulatoryCheck(vehicles);
+
+  // ─── Cost Prediction Accuracy (docx §6.4.2.1 feedback loop) ───
+  const predictionAccuracy = await calculatePredictionAccuracy(
+    vehicles.map((v) => ({
+      vehicle: v,
+      transactions: allTxns.filter((t) => t.vehicleId === v.id),
+    }))
+  );
 
   // ─── AI Tax Review (if available) ───
   let taxReview = null;
@@ -127,6 +157,7 @@ export async function runFinancialCheck(vehicles) {
     taxComparisons,
     vatDeclaration,
     cashFlow,
+    predictionAccuracy,
     taxReview,
     regulatoryCheck,
     duration: Date.now() - startTime,
@@ -145,7 +176,19 @@ export async function runFinancialCheck(vehicles) {
     alertCount: fxCheck.alerts.length,
     portfolioMargin: portfolioPnL.summary.totalMargin,
     capitalDeployed: portfolioPnL.summary.totalCapitalDeployed,
+    predictionBiasPct: predictionAccuracy.signedBiasPct ?? null,
+    regulatoryAlerts: regulatoryCheck.alerts?.length || 0,
   });
 
   return report;
+}
+
+/**
+ * Per-vehicle cost-delta lookup (re-export for route handlers / UI).
+ * Returns actual-vs-estimate comparison; `hasEstimate: false` when no
+ * snapshot was captured at approval time.
+ */
+export async function getVehicleCostDelta(vehicle) {
+  const txns = await getTransactionsByVehicle(vehicle.id);
+  return calculateCostDelta(vehicle, txns);
 }

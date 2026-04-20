@@ -2,13 +2,25 @@
  * Regulatory Monitor — tracks EU import regulations, customs duty rates,
  * emissions standards, and German vehicle trading requirements.
  *
- * Fetches real data from:
- * - EUR-Lex (EU regulations)
- * - German Zoll (customs rates)
- * - KBA (emissions standards)
+ * Docx §6.4.2 Function 6: "Track changes to EU import regulations, customs
+ * duty rates, emissions standards, and German vehicle trading requirements.
+ * **Flag any changes that affect current pipeline or future strategy**."
  *
- * Flags changes that affect current pipeline or strategy.
+ * Two change-detection paths:
+ *   1. Operator-reported — `reportRegulatoryChange()` records an observed
+ *      change (e.g. after an ops person sees a new EUR-Lex regulation). The
+ *      change is persisted and surfaced as an alert on every subsequent
+ *      `runRegulatoryCheck` call with its pipeline-impact already computed
+ *      via `simulateRegulatoryChange`.
+ *   2. LLM periodic review — `reviewBaselineWithAI()` asks Claude to identify
+ *      KNOWN regulatory changes against the stored baseline. Results flow
+ *      into the same alerts path so the two sources merge cleanly.
+ *
+ * Static baseline remains authoritative until a change is explicitly recorded.
  */
+
+import { callClaude, isAIAvailable } from "@/lib/claude";
+import { getDb } from "@/lib/db";
 
 // Current regulatory baseline — these are the ACTUAL rates/rules as of 2026
 const REGULATORY_BASELINE = {
@@ -93,45 +105,236 @@ const REGULATORY_SOURCES = [
   },
 ];
 
+const CHANGES_KV_KEY = "regulatory.reported-changes";
+
+/**
+ * Record a regulatory change observed by the operator (or by an LLM review).
+ *
+ * Once recorded, every subsequent `runRegulatoryCheck` call will:
+ *   - surface it as an alert
+ *   - auto-compute pipeline impact via `simulateRegulatoryChange`
+ *   - flip the agent status to ACTION_REQUIRED
+ *
+ * Idempotent by id — pass the same id to update an existing change.
+ *
+ * @param {{
+ *   field: string,           // which baseline field changed
+ *   oldValue: any,           // previous value (for audit)
+ *   newValue: any,           // new value
+ *   effectiveDate?: string,  // ISO date when the change takes effect
+ *   source?: string,         // citation, e.g. "EUR-Lex 2025/xyz"
+ *   sourceUrl?: string,
+ *   notes?: string,
+ *   reportedBy?: string,     // operator id or "ai_review"
+ *   id?: string              // pass an existing id to update
+ * }} change
+ */
+export async function reportRegulatoryChange(change) {
+  if (!change?.field || change.newValue === undefined) {
+    throw new Error("Regulatory change must include `field` and `newValue`");
+  }
+  const db = await getDb();
+  if (!db) return null;
+
+  const existing = await db.keyValueStore.findUnique({ where: { key: CHANGES_KV_KEY } });
+  const changes = Array.isArray(existing?.value?.changes) ? [...existing.value.changes] : [];
+
+  const id = change.id || `reg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const now = new Date().toISOString();
+  const record = {
+    id,
+    field: change.field,
+    oldValue: change.oldValue !== undefined ? change.oldValue : REGULATORY_BASELINE[change.field],
+    newValue: change.newValue,
+    effectiveDate: change.effectiveDate || now,
+    source: change.source || "operator",
+    sourceUrl: change.sourceUrl || null,
+    notes: change.notes || null,
+    reportedBy: change.reportedBy || "operator",
+    reportedAt: now,
+  };
+
+  // Upsert by id
+  const idx = changes.findIndex((c) => c.id === id);
+  if (idx >= 0) changes[idx] = record;
+  else changes.push(record);
+
+  await db.keyValueStore.upsert({
+    where: { key: CHANGES_KV_KEY },
+    update: { value: { changes } },
+    create: { key: CHANGES_KV_KEY, value: { changes } },
+  });
+
+  return record;
+}
+
+/**
+ * Get all reported regulatory changes.
+ * @param {{activeOnly?: boolean}} [opts] — if true, filter to changes whose
+ *   effectiveDate is on or before today
+ */
+export async function getReportedChanges({ activeOnly = false } = {}) {
+  const db = await getDb();
+  if (!db) return [];
+  const row = await db.keyValueStore.findUnique({ where: { key: CHANGES_KV_KEY } });
+  const all = Array.isArray(row?.value?.changes) ? row.value.changes : [];
+  if (!activeOnly) return all;
+  const now = Date.now();
+  return all.filter((c) => {
+    if (!c.effectiveDate) return true;
+    const ts = new Date(c.effectiveDate).getTime();
+    return Number.isFinite(ts) && ts <= now;
+  });
+}
+
+/**
+ * Dismiss a reported change (e.g., it was a false alarm or is superseded).
+ */
+export async function dismissRegulatoryChange(id) {
+  if (!id) return null;
+  const db = await getDb();
+  if (!db) return null;
+  const row = await db.keyValueStore.findUnique({ where: { key: CHANGES_KV_KEY } });
+  const changes = Array.isArray(row?.value?.changes) ? row.value.changes : [];
+  const filtered = changes.filter((c) => c.id !== id);
+  await db.keyValueStore.upsert({
+    where: { key: CHANGES_KV_KEY },
+    update: { value: { changes: filtered } },
+    create: { key: CHANGES_KV_KEY, value: { changes: filtered } },
+  });
+  return { dismissed: changes.length - filtered.length };
+}
+
+/**
+ * LLM periodic review — ask Claude to identify KNOWN regulatory changes
+ * against the stored baseline. Returns a list of candidate changes (operator
+ * still has to confirm via `reportRegulatoryChange` for them to become live
+ * alerts).
+ *
+ * This is a scan, not an authoritative source. It supplements — not replaces
+ * — the operator-reported channel.
+ */
+export async function reviewBaselineWithAI() {
+  if (!isAIAvailable()) {
+    return { reviewed: false, reason: "AI not available", candidates: [] };
+  }
+
+  const result = await callClaude({
+    prompt: `You are a German customs and automotive regulatory expert. Review the following regulatory baseline and identify ONLY changes you are CONFIDENT have actually occurred based on public regulatory records. Do NOT fabricate changes.
+
+Current baseline (last updated ${REGULATORY_BASELINE.lastUpdated}):
+${JSON.stringify(REGULATORY_BASELINE, null, 2)}
+
+Fields to watch for changes:
+- customsDutyRate: EU customs duty on HS 8703 (motor vehicles >3000cc)
+- importVatRate: German Mehrwertsteuer under §12 UStG
+- emissionsStandard: EU emissions standard for passenger vehicle registration
+- differenzbesteuerungAllowed: margin scheme availability under §25a UStG
+- radiationCertRequired: Japan export regulation
+- rightHandDriveAllowed: German RHD registration policy
+
+If you have NO confident knowledge of any change, return an empty array — do not guess.
+
+Return ONLY valid JSON:
+{
+  "changes_detected": <boolean>,
+  "candidates": [
+    {
+      "field": "<baseline field name>",
+      "oldValue": <current baseline value>,
+      "newValue": <new value>,
+      "effectiveDate": "YYYY-MM-DD",
+      "source": "<citation, e.g. EUR-Lex 2025/xyz>",
+      "confidence": <float 0-1>,
+      "notes": "<1-sentence summary>"
+    }
+  ],
+  "review_notes": "<1-2 sentence summary>"
+}`,
+    system: "You are a conservative regulatory compliance reviewer. You only flag changes you are CONFIDENT about from public sources. Silence is better than hallucination.",
+    jsonMode: true,
+  });
+
+  return {
+    reviewed: true,
+    changes_detected: !!result?.changes_detected,
+    candidates: Array.isArray(result?.candidates) ? result.candidates : [],
+    review_notes: result?.review_notes || null,
+    reviewedAt: new Date().toISOString(),
+  };
+}
+
 /**
  * Run a regulatory compliance check.
- * Returns current regulatory status, any detected changes, and action items.
+ * Returns current baseline, per-source status, and impact alerts for any
+ * reported changes.
+ *
+ * @param {Array} [vehicles=[]] — active pipeline vehicles; when provided, each
+ *   reported change is run through `simulateRegulatoryChange` so the alert
+ *   shows its EUR impact on the current pipeline.
  */
-export function runRegulatoryCheck() {
+export async function runRegulatoryCheck(vehicles = []) {
   const now = new Date();
   const checks = [];
-  const alerts = [];
 
   for (const source of REGULATORY_SOURCES) {
     const lastChecked = now.toISOString();
-    let nextCheckDate;
 
-    // Calculate next check based on frequency
     const nextCheck = new Date(now);
     if (source.checkFrequency === "monthly") nextCheck.setMonth(nextCheck.getMonth() + 1);
     else if (source.checkFrequency === "quarterly") nextCheck.setMonth(nextCheck.getMonth() + 3);
     else nextCheck.setFullYear(nextCheck.getFullYear() + 1);
-    nextCheckDate = nextCheck.toISOString().split("T")[0];
 
     checks.push({
       id: source.id,
       name: source.name,
       url: source.url,
       currentValue: source.currentValue,
-      status: "CURRENT", // No changes detected vs baseline
+      status: "CURRENT",
       lastChecked,
-      nextCheckDue: nextCheckDate,
+      nextCheckDue: nextCheck.toISOString().split("T")[0],
       field: source.field,
     });
   }
 
-  // Check if any rates differ from baseline (would be flagged if we detected a change)
-  // Currently all match — in production, this would compare against last-fetched values
+  // Operator-reported + AI-confirmed changes become live alerts.
+  const activeChanges = await getReportedChanges({ activeOnly: true });
+  const alerts = [];
+  for (const change of activeChanges) {
+    // Tag affected sources as CHANGED so the dashboard can flag them.
+    const affectedCheck = checks.find((c) => c.field === change.field);
+    if (affectedCheck) affectedCheck.status = "CHANGED";
+
+    const impact = vehicles.length > 0 ? simulateRegulatoryChange(change, vehicles) : null;
+
+    alerts.push({
+      id: change.id,
+      field: change.field,
+      oldValue: change.oldValue,
+      newValue: change.newValue,
+      effectiveDate: change.effectiveDate,
+      source: change.source,
+      sourceUrl: change.sourceUrl,
+      reportedBy: change.reportedBy,
+      reportedAt: change.reportedAt,
+      notes: change.notes,
+      impact: impact ? {
+        vehiclesAffected: impact.vehiclesAffected,
+        totalImpactEur: impact.totalImpactEur,
+        assessment: impact.assessment,
+        perVehicle: impact.perVehicle,
+      } : null,
+      severity: impact?.assessment === "HIGH_IMPACT" ? "CRITICAL"
+        : impact?.assessment === "MODERATE_IMPACT" ? "WARN"
+        : "INFO",
+    });
+  }
 
   return {
     baseline: REGULATORY_BASELINE,
     checks,
     alerts,
+    activeChanges,
     summary: {
       totalSources: REGULATORY_SOURCES.length,
       currentCount: checks.filter((c) => c.status === "CURRENT").length,

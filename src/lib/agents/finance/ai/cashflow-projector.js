@@ -1,11 +1,24 @@
 /**
  * Cash Flow Projector — forecasts capital needs 4-8 weeks forward.
+ *
+ * Docx §6.4.2 Function 3: "Project cash requirements 4–8 weeks forward based on
+ * pipeline status, **expected sale timing, and upcoming purchase opportunities**.
+ * Alert when cash reserves drop below safety threshold."
+ *
+ * Docx §6.4.2 Function 2: Portfolio Dashboard must show "**expected revenue by
+ * week/month**" — delivered as `expectedRevenue.{byWeek, byMonth}` on the
+ * projection return.
  */
 
 /**
- * Project cash flow based on pipeline vehicles and their estimated timelines.
+ * @param {Array} vehicles       — vehicles already in pipeline
+ * @param {Array} transactions   — all recorded transactions
+ * @param {number} [weeksAhead=8]
+ * @param {Array} [upcomingPurchases=[]] — pending Orchestrator AUTO_APPROVE
+ *   commitments not yet reflected in transactions. Each entry:
+ *     { vehicleName, expectedPurchaseDate (ISO), expectedOutlayEur, opportunityId? }
  */
-export function projectCashFlow(vehicles, transactions, weeksAhead = 8) {
+export function projectCashFlow(vehicles, transactions, weeksAhead = 8, upcomingPurchases = []) {
   const projections = [];
   const now = new Date();
   let runningBalance = 0;
@@ -62,6 +75,26 @@ export function projectCashFlow(vehicles, transactions, weeksAhead = 8) {
       }
     }
 
+    // Docx §6.4.2.3: project outflows for upcoming purchase opportunities.
+    // Any Orchestrator-approved candidate whose auction/purchase date falls
+    // within this week contributes its expected cash outlay.
+    for (const up of upcomingPurchases) {
+      const purchaseDate = up.expectedPurchaseDate
+        ? new Date(up.expectedPurchaseDate)
+        : null;
+      if (!purchaseDate || isNaN(purchaseDate.getTime())) continue;
+      if (purchaseDate >= weekStart && purchaseDate < weekEnd) {
+        const outlay = Number(up.expectedOutlayEur) || Number(up.maxBidEur) || 80000;
+        outflows += outlay;
+        events.push({
+          type: "UPCOMING_PURCHASE",
+          vehicle: up.vehicleName || "Pending purchase",
+          amount: -outlay,
+          note: `Orchestrator-approved, not yet committed${up.opportunityId ? ` (opp ${up.opportunityId})` : ""}`,
+        });
+      }
+    }
+
     runningBalance += inflows - outflows;
 
     projections.push({
@@ -76,8 +109,43 @@ export function projectCashFlow(vehicles, transactions, weeksAhead = 8) {
     });
   }
 
+  // ── Expected revenue rollup (docx §6.4.2 Function 2: "by week/month") ──
+  // Sale proceeds only — VAT reclaim is a cash-flow item but not revenue.
+  const byWeek = projections.map((p) => {
+    const saleEvents = p.events.filter((e) => e.type === "SALE_PROCEEDS");
+    const revenueEur = saleEvents.reduce((s, e) => s + e.amount, 0);
+    return {
+      week: p.week,
+      weekStarting: p.weekStarting,
+      revenueEur,
+      vehicleCount: saleEvents.length,
+      vehicles: saleEvents.map((e) => e.vehicle),
+    };
+  });
+
+  const byMonth = {};
+  for (const w of byWeek) {
+    const monthKey = w.weekStarting.substring(0, 7); // YYYY-MM
+    if (!byMonth[monthKey]) byMonth[monthKey] = { revenueEur: 0, vehicleCount: 0, vehicles: [] };
+    byMonth[monthKey].revenueEur += w.revenueEur;
+    byMonth[monthKey].vehicleCount += w.vehicleCount;
+    byMonth[monthKey].vehicles.push(...w.vehicles);
+  }
+
   return {
     projections,
+    expectedRevenue: {
+      byWeek,
+      byMonth,
+      totalEur: byWeek.reduce((s, w) => s + w.revenueEur, 0),
+      horizonWeeks: weeksAhead,
+    },
+    upcomingPurchasesProjected: upcomingPurchases.filter((up) => {
+      const d = up.expectedPurchaseDate ? new Date(up.expectedPurchaseDate) : null;
+      if (!d || isNaN(d.getTime())) return false;
+      const weeksOut = (d.getTime() - now.getTime()) / (7 * 24 * 60 * 60 * 1000);
+      return weeksOut >= 0 && weeksOut < weeksAhead;
+    }).length,
     summary: {
       totalInflows: projections.reduce((s, p) => s + p.inflows, 0),
       totalOutflows: projections.reduce((s, p) => s + p.outflows, 0),
