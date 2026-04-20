@@ -5,9 +5,14 @@
  * Germany (port to workshop, workshop to storage, storage to buyer). Never
  * expose a €100,000+ vehicle to open transport or weather risk."
  *
- * Scope: two legs inside the Logistics agent's lifecycle — port→workshop on
- * CUSTOMS → WORKSHOP, and workshop→storage on TUV → READY_FOR_SALE. The
- * storage→buyer leg is handed off to the Listing agent after sale.
+ * All three docx-mandated legs are supported:
+ *   - PORT_TO_WORKSHOP      — fired on CUSTOMS → WORKSHOP
+ *   - WORKSHOP_TO_STORAGE   — fired on TUV → READY_FOR_SALE
+ *   - STORAGE_TO_BUYER      — fired by Listing/Sale flow after a sale closes
+ *
+ * The carrier database + distance table cover major German cities; unknown
+ * destinations fall back to a 500 km default so the booking is always
+ * quotable (real fulfillment would reconcile against the carrier's live quote).
  */
 
 // German carriers that specialise in enclosed luxury/exotic transport.
@@ -46,11 +51,26 @@ function selectCarrier(fromLocation, toLocation, vehicle) {
   return preferred || GERMAN_ENCLOSED_CARRIERS[0];
 }
 
+const VALID_LEG_TYPES = ["PORT_TO_WORKSHOP", "WORKSHOP_TO_STORAGE", "STORAGE_TO_BUYER"];
+
 /**
  * Build an inland-transport booking for a leg of the German journey.
  * Enclosed transport is non-negotiable per spec §6.5.2.
+ *
+ * @param {object} vehicle
+ * @param {"PORT_TO_WORKSHOP"|"WORKSHOP_TO_STORAGE"|"STORAGE_TO_BUYER"} legType
+ * @param {string} fromLocation — city name (must exist in DISTANCE_KM or options.distanceKm supplied)
+ * @param {string} toLocation   — city name (or arbitrary buyer address city for STORAGE_TO_BUYER)
+ * @param {object} [options]
+ * @param {number} [options.distanceKm] — explicit km override when cities aren't in the table
+ * @param {object} [options.carrier]
+ * @param {string} [options.scheduledDeparture]
+ * @param {string} [options.buyerReference] — sale/invoice id for STORAGE_TO_BUYER
  */
 export function bookInlandTransport(vehicle, legType, fromLocation, toLocation, options = {}) {
+  if (!VALID_LEG_TYPES.includes(legType)) {
+    throw new Error(`Invalid legType: ${legType}. Must be one of: ${VALID_LEG_TYPES.join(", ")}`);
+  }
   const carrier = options.carrier || selectCarrier(fromLocation, toLocation, vehicle);
   const distanceKm = options.distanceKm || estimateDistanceKm(fromLocation, toLocation);
   const estimatedCostEur = Math.round(distanceKm * carrier.avgEurPerKm);
@@ -64,7 +84,7 @@ export function bookInlandTransport(vehicle, legType, fromLocation, toLocation, 
   return {
     transportId: `INT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     vehicleId: vehicle.id,
-    legType, // PORT_TO_WORKSHOP | WORKSHOP_TO_STORAGE
+    legType,
     fromLocation,
     toLocation,
     enclosed: true, // Spec §6.5.2 — never open transport for luxury
@@ -85,9 +105,36 @@ export function bookInlandTransport(vehicle, legType, fromLocation, toLocation, 
       actualDeparture: null,
       actualArrival: null,
     },
+    buyerReference: legType === "STORAGE_TO_BUYER" ? (options.buyerReference || null) : null,
     status: "BOOKED",
     bookedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Book the storage→buyer delivery leg. Fired by the Listing/Sale flow after
+ * a sale closes. Docx §6.5.2 lists "storage to buyer" as the third mandatory
+ * German-soil leg; it must also be enclosed (no weather / no open transport).
+ *
+ * @param {object} vehicle
+ * @param {string} storageCity       — where the vehicle currently is (e.g. "Hamburg")
+ * @param {string} buyerDeliveryCity — buyer's city (German or EU-wide)
+ * @param {object} [options]
+ * @param {string} [options.saleReference] — invoice / sale id
+ * @param {string} [options.scheduledDeparture]
+ * @param {number} [options.distanceKm] — explicit km when destination isn't in the table
+ */
+export function bookDeliveryToBuyer(vehicle, storageCity, buyerDeliveryCity, options = {}) {
+  return bookInlandTransport(
+    vehicle,
+    "STORAGE_TO_BUYER",
+    storageCity,
+    buyerDeliveryCity,
+    {
+      ...options,
+      buyerReference: options.saleReference || options.buyerReference || null,
+    }
+  );
 }
 
 /** Default origin city for the port-to-workshop leg, based on the arrival port. */
@@ -97,3 +144,5 @@ export function defaultWorkshopOrigin(destinationPort) {
   if (/hamburg/i.test(destinationPort)) return "Hamburg";
   return destinationPort;
 }
+
+export { VALID_LEG_TYPES };

@@ -77,11 +77,61 @@ export function generateCustomsDeclaration(vehicle, shipment) {
       reference: `KN-${Date.now().toString().slice(-8)}`,
     },
 
+    // Spec §6.5.2.2: "Calculate duties and taxes, pre-arrange payment with customs
+    // agent." Payment starts un-authorized; operator/orchestrator must call
+    // `preArrangeDutyPayment(...)` before the declaration can be submitted.
+    paymentAuthorization: {
+      authorized: false,
+      method: null,           // "BANK_WIRE" | "BROKER_ACCOUNT" | "SEPA"
+      bankReference: null,
+      amountEur: customsDuty + importVat,
+      valueDate: null,
+      authorizedBy: null,
+      authorizedAt: null,
+    },
+
     status: "PREPARED",
     preparedAt: new Date().toISOString(),
     estimatedProcessingDays: 3,
   };
 }
+
+const VALID_PAYMENT_METHODS = ["BANK_WIRE", "BROKER_ACCOUNT", "SEPA"];
+
+/**
+ * Pre-arrange duty + VAT payment with the customs agent (spec §6.5.2.2).
+ *
+ * Marks the payment as authorized and records the method + bank reference so
+ * the customs broker can reconcile on port-of-entry. Mutates and returns the
+ * declaration for chained pipelines.
+ *
+ * Default `valueDate` is 3 days out — enough for SEPA to settle before vessel
+ * arrival on typical transit windows. Operator may override for urgent cases.
+ */
+export function preArrangeDutyPayment(declaration, { method, bankReference = null, valueDate = null, authorizedBy = "orchestrator" } = {}) {
+  if (!declaration) throw new Error("Missing declaration");
+  if (!VALID_PAYMENT_METHODS.includes(method)) {
+    throw new Error(`Invalid payment method: ${method}. Must be one of: ${VALID_PAYMENT_METHODS.join(", ")}`);
+  }
+  const amountEur = declaration.financial?.totalDueEur
+    || declaration.paymentAuthorization?.amountEur
+    || 0;
+  const computedValueDate = valueDate || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+
+  declaration.paymentAuthorization = {
+    authorized: true,
+    method,
+    bankReference,
+    amountEur,
+    valueDate: computedValueDate,
+    authorizedBy,
+    authorizedAt: new Date().toISOString(),
+  };
+  declaration.updatedAt = new Date().toISOString();
+  return declaration;
+}
+
+export { VALID_PAYMENT_METHODS };
 
 function calculateCIF(vehicle) {
   const purchaseEur = vehicle.purchasePriceEur || vehicle.askingPriceEur || 80000;
@@ -113,13 +163,23 @@ export function getDocumentStatus(declaration) {
   const uploaded = required.filter((d) => docs[d.key] === true);
   const pending = required.filter((d) => !docs[d.key]);
   const criticalMissing = pending.filter((d) => d.critical);
+  // Spec §6.5.2.2 requires duty payment to be pre-arranged BEFORE submission.
+  const paymentAuthorized = declaration.paymentAuthorization?.authorized === true;
 
   return {
     total: required.length,
     uploaded: uploaded.length,
     pending: pending.length,
     criticalMissing: criticalMissing.length,
-    readyForSubmission: criticalMissing.length === 0,
+    paymentAuthorized,
+    paymentAmountEur: declaration.paymentAuthorization?.amountEur ?? null,
+    paymentValueDate: declaration.paymentAuthorization?.valueDate ?? null,
+    // Submission is gated on BOTH critical docs AND duty-payment pre-arrangement.
+    readyForSubmission: criticalMissing.length === 0 && paymentAuthorized,
+    readyForSubmissionBlockers: [
+      ...criticalMissing.map((d) => `Missing critical doc: ${d.label}`),
+      ...(paymentAuthorized ? [] : ["Duty payment not pre-arranged (spec §6.5.2.2)"]),
+    ],
     documents: required.map((d) => ({
       ...d,
       status: docs[d.key] ? "UPLOADED" : "PENDING",
@@ -148,8 +208,18 @@ export function markDocumentUploaded(declaration, documentKey) {
 
 /**
  * Submit declaration to customs broker (simulated — v2 will integrate with ATLAS).
+ *
+ * Enforces spec §6.5.2.2 preconditions:
+ *   1. All critical documents uploaded
+ *   2. Duty payment pre-arranged with customs agent
  */
 export function submitToBroker(declaration) {
+  const status = getDocumentStatus(declaration);
+  if (!status.readyForSubmission) {
+    throw new Error(
+      `Cannot submit to broker — preconditions not met: ${status.readyForSubmissionBlockers.join("; ")}`
+    );
+  }
   declaration.status = "SUBMITTED_TO_BROKER";
   declaration.submittedAt = new Date().toISOString();
   declaration.brokerStatus = "PROCESSING";
