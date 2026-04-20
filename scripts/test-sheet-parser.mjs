@@ -18,10 +18,14 @@ try {
 } catch { /* ignore */ }
 
 // ── OpenRouter API client ──
+// Mirrors src/lib/claude.js so this test exercises the same stack as
+// production: Opus 4.7 + extended thinking + provider pin (+ tool-use when
+// tools are passed).
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
-const MODEL = process.argv[3] || "anthropic/claude-sonnet-4-6";
+const MODEL = process.argv[3] || "anthropic/claude-opus-4-7";
+const USE_THINKING = process.env.TEST_USE_THINKING !== "0";
 
-async function callClaudeVision({ prompt, images = [], system = "", maxTokens = 4096 }) {
+async function callClaudeVision({ prompt, images = [], system = "", maxTokens = 12000, tools = null, toolChoice = "auto", reasoning = USE_THINKING ? { max_tokens: 6000 } : null }) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("No API key");
 
@@ -35,6 +39,15 @@ async function callClaudeVision({ prompt, images = [], system = "", maxTokens = 
   if (system) messages.push({ role: "system", content: system });
   messages.push({ role: "user", content });
 
+  const body = {
+    model: MODEL,
+    max_tokens: maxTokens,
+    messages,
+    provider: { order: ["Anthropic"], allow_fallbacks: false },
+  };
+  if (reasoning) { body.reasoning = reasoning; body.temperature = 1; }
+  if (tools) { body.tools = tools; body.tool_choice = toolChoice; }
+
   const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
     method: "POST",
     headers: {
@@ -43,12 +56,18 @@ async function callClaudeVision({ prompt, images = [], system = "", maxTokens = 
       "HTTP-Referer": "https://luxjd.com",
       "X-Title": "LuxJD Sheet Parser Test v2",
     },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, messages }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  const text = data.choices?.[0]?.message?.content || "";
+  const msg = data.choices?.[0]?.message;
+
+  if (tools && Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0) {
+    try { return JSON.parse(msg.tool_calls[0].function.arguments); } catch { return null; }
+  }
+
+  const text = msg?.content || "";
   const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try { return JSON.parse(jsonMatch[1] || jsonMatch[0]); } catch { return null; }

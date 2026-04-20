@@ -170,6 +170,45 @@ export function validateSheetOutput(result) {
   if (result.interior_grade && !VALID_INTERIOR_GRADES.includes(result.interior_grade)) {
     result.interior_grade = null;
   }
+  if (result.interior_aux_grade && !VALID_INTERIOR_GRADES.includes(result.interior_aux_grade)) {
+    result.interior_aux_grade = null;
+  }
+
+  // ── Shaken (車検) expiry: normalize to YYYY-MM ──
+  if (result.shaken_expiry != null) {
+    const s = String(result.shaken_expiry).trim();
+    if (!/^\d{4}-\d{2}$/.test(s)) {
+      // Try to salvage common formats: "R7-9", "令和7年9月", "2025/09", "2025.9"
+      const m = s.match(/(\d{4})[\/\.\-年](\d{1,2})/) || s.match(/^([RH])(\d+)[\/\.\-年](\d{1,2})/);
+      if (m) {
+        if (/^\d{4}$/.test(m[1])) {
+          result.shaken_expiry = `${m[1]}-${String(m[2]).padStart(2, "0")}`;
+        } else {
+          const base = m[1] === "R" ? 2018 : m[1] === "H" ? 1988 : null;
+          if (base) result.shaken_expiry = `${base + parseInt(m[2])}-${String(m[3]).padStart(2, "0")}`;
+          else result.shaken_expiry = null;
+        }
+      } else {
+        result.shaken_expiry = null;
+      }
+    }
+  }
+
+  // ── Registration plate: trim, null if empty ──
+  if (result.registration_plate != null) {
+    const p = String(result.registration_plate).trim();
+    result.registration_plate = p.length > 0 ? p : null;
+  }
+
+  // ── Dimensions: numeric, plausible range (1000–6500 mm) ──
+  if (result.dimensions && typeof result.dimensions === "object") {
+    for (const k of ["length_mm", "width_mm", "height_mm"]) {
+      const v = result.dimensions[k];
+      if (v == null) continue;
+      const n = parseInt(v);
+      result.dimensions[k] = (!isNaN(n) && n >= 1000 && n <= 6500) ? n : null;
+    }
+  }
 
   // ── Mileage validation ──
   if (result.mileage_reading != null) {
@@ -300,6 +339,129 @@ export function validateExtractionOutput(result) {
     extracted.accidentHistory = !!extracted.accidentHistory;
   }
 
+  // VIN: must be exactly 17 chars using A–H, J–N, P, R–Z, 0–9.
+  // Shorter values are almost always 型式 (model code) misread as chassis.
+  if (extracted.vin != null) {
+    const v = String(extracted.vin).replace(/[^A-HJ-NPR-Z0-9]/gi, "").toUpperCase();
+    extracted.vin = v.length === 17 ? v : null;
+  }
+
+  // Grade/edition: trim whitespace; null if empty
+  if (extracted.grade != null) {
+    const s = String(extracted.grade).trim();
+    extracted.grade = s.length > 0 ? s : null;
+  }
+
+  // Model code (型式): trim; null if empty
+  if (extracted.modelCode != null) {
+    const s = String(extracted.modelCode).trim();
+    extracted.modelCode = s.length > 0 ? s : null;
+  }
+
+  // Lot number: trim; coerce to string (some sheets print numeric)
+  if (extracted.lotNumber != null) {
+    const s = String(extracted.lotNumber).trim();
+    extracted.lotNumber = s.length > 0 ? s : null;
+  }
+
+  // Auction house: trim + uppercase
+  if (extracted.auctionHouse != null) {
+    const s = String(extracted.auctionHouse).trim();
+    extracted.auctionHouse = s.length > 0 ? s : null;
+  }
+
+  // Drivetrain: normalize 2WD / 4WD / AWD
+  if (extracted.drivetrain != null) {
+    const s = String(extracted.drivetrain).toUpperCase().replace(/\s+/g, "");
+    extracted.drivetrain = ["2WD", "4WD", "AWD", "FWD", "RWD"].includes(s) ? s : null;
+  }
+
+  // Body type: trim + lowercase
+  if (extracted.bodyType != null) {
+    const s = String(extracted.bodyType).trim();
+    extracted.bodyType = s.length > 0 ? s : null;
+  }
+
+  // Door count / seating capacity: coerce to integer in plausible range
+  if (extracted.doorCount != null) {
+    const n = parseInt(extracted.doorCount);
+    extracted.doorCount = (!isNaN(n) && n >= 1 && n <= 6) ? n : null;
+  }
+  if (extracted.seatingCapacity != null) {
+    const n = parseInt(extracted.seatingCapacity);
+    extracted.seatingCapacity = (!isNaN(n) && n >= 1 && n <= 10) ? n : null;
+  }
+
+  // Import type: pass through string (Dealer / Individual / Auction / etc.)
+  if (extracted.importType != null) {
+    const s = String(extracted.importType).trim();
+    extracted.importType = s.length > 0 ? s : null;
+  }
+
+  // Recycling deposit: coerce to integer JPY
+  if (extracted.recyclingDepositJpy != null) {
+    const n = parseInt(String(extracted.recyclingDepositJpy).replace(/[,\s¥]/g, ""));
+    extracted.recyclingDepositJpy = (!isNaN(n) && n >= 0 && n < 1_000_000) ? n : null;
+  }
+
+  // Color code: uppercase alphanumeric (2–5 chars)
+  if (extracted.colorCode != null) {
+    const s = String(extracted.colorCode).trim().toUpperCase();
+    extracted.colorCode = /^[A-Z0-9]{1,5}$/.test(s) ? s : null;
+  }
+
+  // Interior grades: A / B / C / D
+  const VALID_INT_GRADES = ["A", "B", "C", "D"];
+  if (extracted.interiorGrade != null) {
+    const s = String(extracted.interiorGrade).trim().toUpperCase();
+    extracted.interiorGrade = VALID_INT_GRADES.includes(s) ? s : null;
+  }
+  if (extracted.interiorAuxGrade != null) {
+    const s = String(extracted.interiorAuxGrade).trim().toUpperCase();
+    extracted.interiorAuxGrade = VALID_INT_GRADES.includes(s) ? s : null;
+  }
+
+  // colorChanged: boolean (tri-state null allowed)
+  if (extracted.colorChanged != null) {
+    extracted.colorChanged = !!extracted.colorChanged;
+  }
+
+  // shakenExpiry: YYYY-MM-DD or YYYY-MM. Accept both.
+  if (extracted.shakenExpiry != null) {
+    const s = String(extracted.shakenExpiry).trim();
+    if (/^\d{4}-\d{2}(-\d{2})?$/.test(s)) {
+      extracted.shakenExpiry = s;
+    } else {
+      // Salvage common formats: "R8/5/11", "令和8年5月11日", "2026/05/11"
+      const m1 = s.match(/^(\d{4})[\/\.\-年](\d{1,2})(?:[\/\.\-月](\d{1,2}))?/);
+      const m2 = s.match(/^([RH])(\d+)[\/\.\-年](\d{1,2})(?:[\/\.\-月](\d{1,2}))?/);
+      if (m1) {
+        extracted.shakenExpiry = m1[3]
+          ? `${m1[1]}-${String(m1[2]).padStart(2, "0")}-${String(m1[3]).padStart(2, "0")}`
+          : `${m1[1]}-${String(m1[2]).padStart(2, "0")}`;
+      } else if (m2) {
+        const base = m2[1] === "R" ? 2018 : 1988;
+        const yr = base + parseInt(m2[2]);
+        extracted.shakenExpiry = m2[4]
+          ? `${yr}-${String(m2[3]).padStart(2, "0")}-${String(m2[4]).padStart(2, "0")}`
+          : `${yr}-${String(m2[3]).padStart(2, "0")}`;
+      } else {
+        extracted.shakenExpiry = null;
+      }
+    }
+  }
+
+  // Array fields — ensure arrays; strip nulls and empty strings
+  for (const key of ["featureCodes", "salesPoints", "modifications", "cautionNotes", "inspectorNotes"]) {
+    if (extracted[key] == null) continue;
+    if (!Array.isArray(extracted[key])) {
+      extracted[key] = null;
+    } else {
+      extracted[key] = extracted[key].filter((s) => s != null && String(s).trim().length > 0).map((s) => String(s).trim());
+      if (extracted[key].length === 0) extracted[key] = null;
+    }
+  }
+
   // Normalize drive side
   if (extracted.driveSide && !VALID_DRIVE_SIDES.includes(extracted.driveSide)) {
     extracted.driveSide = null;
@@ -327,11 +489,29 @@ export function validateExtractionOutput(result) {
   ];
 
   const optionalFields = [
+    { key: "grade", label: "Grade / Edition", question: "What is the grade or edition? (e.g. S 130th Anniversary Edition, GT3 RS, Edition 1)" },
+    { key: "modelCode", label: "Model code (型式)", question: "What is the Japanese model code? (e.g. CBA-190378)" },
     { key: "interiorColor", label: "Interior color", question: "What is the interior color/material?" },
+    { key: "interiorGrade", label: "Interior grade (内装)", question: "What is the interior grade? (A/B/C/D)" },
+    { key: "interiorAuxGrade", label: "Interior aux grade (内装補助評価)", question: "What is the interior auxiliary grade? (A/B/C/D)" },
     { key: "transmission", label: "Transmission type", question: "What transmission does it have? (Automatic, Manual, DCT, PDK, SMG)" },
     { key: "fuelType", label: "Fuel type", question: "What fuel type? (Petrol, Diesel, Hybrid, Electric)" },
+    { key: "drivetrain", label: "Drivetrain (駆動)", question: "What drivetrain? (2WD / 4WD / AWD)" },
+    { key: "bodyType", label: "Body type", question: "What body type? (coupe, sedan, SUV, etc.)" },
+    { key: "doorCount", label: "Door count", question: "How many doors?" },
+    { key: "seatingCapacity", label: "Seating capacity (乗車定員)", question: "How many seats?" },
     { key: "auctionGrade", label: "Auction grade", question: "What is the auction inspection grade? (e.g. 3.5, 4, 4.5, 5)" },
     { key: "accidentHistory", label: "Accident history", question: "Does the vehicle have any accident/repair history?" },
+    { key: "importType", label: "Import type (輸入区分)", question: "How was it imported? (Dealer / Individual / Auction)" },
+    { key: "vin", label: "Chassis / VIN (車台No)", question: "What is the 17-character chassis number / VIN?" },
+    { key: "registrationPlate", label: "Registration plate (登録No)", question: "What is the Japanese registration plate?" },
+    { key: "shakenExpiry", label: "Shaken expiry (車検)", question: "When does the shaken expire? (YYYY-MM or YYYY-MM-DD)" },
+    { key: "lotNumber", label: "Lot number (出品番号)", question: "What is the auction lot number?" },
+    { key: "auctionHouse", label: "Auction house (会場)", question: "Which auction house? (USS / TAA / JU / HAA etc.)" },
+    { key: "recyclingDepositJpy", label: "Recycling deposit (リサイクル預託金)", question: "What is the recycling deposit in JPY?" },
+    { key: "colorCode", label: "Color code (カラーNo.)", question: "What is the manufacturer color code?" },
+    { key: "exteriorColorCatalog", label: "Color catalog name", question: "What is the manufacturer catalog name for the exterior color? (auto-filled from code lookup)" },
+    { key: "colorChanged", label: "Color changed / repainted", question: "Has the vehicle been repainted? (indicated by 色替 or → arrow)" },
     { key: "specificationNotes", label: "Notable specifications", question: "Any notable specifications or options? (e.g. carbon brakes, sport exhaust, special edition)" },
   ];
 

@@ -45,7 +45,9 @@ export function formatJpy(value, { dash = "—" } = {}) {
 export function formatKm(value, { dash = "—" } = {}) {
   const n = toFiniteNumber(value);
   if (n == null) return dash;
-  return EUR_GROUPING.format(Math.round(n));
+  // en-US grouping ("9,816 km") — visually unambiguous in the English UI.
+  // de-DE grouping would render "9.816 km" which reads like <10 km.
+  return PLAIN.format(Math.round(n));
 }
 
 // Stable plain-number formatting (en-US grouping). Use inside LLM prompts so

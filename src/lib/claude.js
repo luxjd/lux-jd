@@ -1,22 +1,37 @@
 /**
- * LLM client using OpenRouter API.
+ * LLM client using OpenRouter (OpenAI-compatible surface over Anthropic).
  *
- * OpenRouter provides access to Claude, GPT-4, Gemini, Llama, and many more
- * through a single API key with OpenAI-compatible format.
+ * OpenRouter forwards Claude requests to Anthropic while accepting the
+ * OpenAI chat-completions shape. Claude-specific features (extended
+ * thinking, tool-use, prompt caching, provider pinning) pass through
+ * via OpenRouter's unified-reasoning / cache_control / provider params.
  *
- * IMPORTANT: Vision MUST use Sonnet 4.6 — older models (Sonnet 4, Opus 4)
- * misread auction sheet digits and colors.
+ * Defaults target claude.ai-parity for the valuation auction-sheet flow:
+ *   - Opus 4.7 for vision + reasoning
+ *   - Extended thinking (budget_tokens 8000) available per-call
+ *   - Tool-use for schema-enforced structured output (no regex scraping)
+ *   - Prompt caching on the system prompt
+ *   - Provider pinned to Anthropic (no fallback reseller variance)
  *
  * Get your key at: https://openrouter.ai/keys
  */
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
-// Model mapping — Sonnet 4.6 is required for accurate auction sheet OCR
+// Model mapping — Opus 4.7 for vision/reasoning (auction sheet OCR needs it),
+// Haiku 4.5 for low-stakes fast calls.
 const MODELS = {
-  vision: process.env.OPENROUTER_MODEL_VISION || "anthropic/claude-sonnet-4-6",
-  reasoning: process.env.OPENROUTER_MODEL_REASONING || "anthropic/claude-sonnet-4-6",
-  fast: process.env.OPENROUTER_MODEL_FAST || "anthropic/claude-haiku-4.5",
+  vision:    process.env.OPENROUTER_MODEL_VISION    || "anthropic/claude-opus-4-7",
+  reasoning: process.env.OPENROUTER_MODEL_REASONING || "anthropic/claude-opus-4-7",
+  fast:      process.env.OPENROUTER_MODEL_FAST      || "anthropic/claude-haiku-4.5",
+};
+
+// Provider pin — keeps responses consistent by routing only to Anthropic
+// direct (not a third-party reseller behind OpenRouter). Set
+// OPENROUTER_ALLOW_FALLBACKS=1 to relax.
+const PROVIDER_PIN = {
+  order: ["Anthropic"],
+  allow_fallbacks: process.env.OPENROUTER_ALLOW_FALLBACKS === "1",
 };
 
 function getApiKey() {
@@ -28,119 +43,27 @@ export function isAIAvailable() {
 }
 
 /**
- * Call LLM with text prompt via OpenRouter. Returns parsed JSON or raw text.
+ * Parse the response body. Prefer tool_calls (when a tool was requested),
+ * fall back to regex-extracting JSON from free text. Returns:
+ *   - parsed object if tool_calls or JSON block found
+ *   - raw text if no JSON structure present
+ *   - null on hard parse failure
  */
-export async function callClaude({
-  prompt,
-  system = "",
-  model = null,
-  maxTokens = 4096,
-  jsonMode = true,
-}) {
-  const apiKey = getApiKey();
-  if (!apiKey) return null;
+function parseResponse(data, toolsRequested) {
+  const msg = data.choices?.[0]?.message;
+  if (!msg) return null;
 
-  const modelId = model || MODELS.reasoning;
-
-  const messages = [];
-  if (system) messages.push({ role: "system", content: system });
-  messages.push({ role: "user", content: prompt });
-
-  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://luxjd.com",
-      "X-Title": "LuxJD Valuation Agent",
-    },
-    body: JSON.stringify({
-      model: modelId,
-      max_tokens: maxTokens,
-      messages,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenRouter API error ${res.status}: ${err}`);
-  }
-
-  const data = await res.json();
-  const text = data.choices?.[0]?.message?.content || "";
-
-  if (jsonMode) {
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[1] || jsonMatch[0]);
-      } catch {
-        return null;
-      }
+  if (toolsRequested && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+    const args = msg.tool_calls[0]?.function?.arguments;
+    if (!args) return null;
+    try {
+      return typeof args === "string" ? JSON.parse(args) : args;
+    } catch {
+      return null;
     }
-    return null;
   }
 
-  return text;
-}
-
-/**
- * Call LLM Vision with images via OpenRouter.
- * images: [{ data: base64String, mediaType: "image/jpeg" }]
- */
-export async function callClaudeVision({
-  prompt,
-  images = [],
-  system = "",
-  model = null,
-  maxTokens = 4096,
-}) {
-  const apiKey = getApiKey();
-  if (!apiKey) return null;
-
-  const modelId = model || MODELS.vision;
-
-  // Build multimodal content array
-  const content = [];
-
-  for (const img of images) {
-    content.push({
-      type: "image_url",
-      image_url: {
-        url: `data:${img.mediaType || "image/jpeg"};base64,${img.data}`,
-      },
-    });
-  }
-
-  content.push({ type: "text", text: prompt });
-
-  const messages = [];
-  if (system) messages.push({ role: "system", content: system });
-  messages.push({ role: "user", content });
-
-  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://luxjd.com",
-      "X-Title": "LuxJD Valuation Agent",
-    },
-    body: JSON.stringify({
-      model: modelId,
-      max_tokens: maxTokens,
-      messages,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenRouter Vision API error ${res.status}: ${err}`);
-  }
-
-  const data = await res.json();
-  const text = data.choices?.[0]?.message?.content || "";
-
+  const text = msg.content || "";
   const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {
@@ -150,4 +73,167 @@ export async function callClaudeVision({
     }
   }
   return text;
+}
+
+function buildSystemMessage(system, cacheSystem) {
+  if (!system) return null;
+  if (!cacheSystem) return { role: "system", content: system };
+  // cache_control passes through to Anthropic prompt caching via OpenRouter.
+  return {
+    role: "system",
+    content: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+  };
+}
+
+/**
+ * Call LLM with text prompt. Returns parsed JSON, raw text, or null.
+ *
+ * @param {object} opts
+ * @param {string} opts.prompt
+ * @param {string} [opts.system]
+ * @param {string} [opts.model]
+ * @param {number} [opts.maxTokens=4096]
+ * @param {boolean} [opts.jsonMode=true]         Parse JSON from text response.
+ * @param {Array}   [opts.tools]                 Tool definitions (OpenAI shape).
+ * @param {string|object} [opts.toolChoice]      "auto" or {type:"function", function:{name}}.
+ * @param {object}  [opts.reasoning]             {max_tokens: N} enables extended thinking.
+ * @param {boolean} [opts.cacheSystem=false]     Prompt-cache the system message.
+ */
+export async function callClaude({
+  prompt,
+  system = "",
+  model = null,
+  maxTokens = 4096,
+  jsonMode = true,
+  tools = null,
+  toolChoice = "auto",
+  reasoning = null,
+  cacheSystem = false,
+}) {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const modelId = model || MODELS.reasoning;
+
+  const messages = [];
+  const sysMsg = buildSystemMessage(system, cacheSystem);
+  if (sysMsg) messages.push(sysMsg);
+  messages.push({ role: "user", content: prompt });
+
+  const body = {
+    model: modelId,
+    max_tokens: maxTokens,
+    messages,
+    provider: PROVIDER_PIN,
+  };
+  if (reasoning) {
+    body.reasoning = reasoning;
+    // Anthropic requires temperature=1 when thinking is enabled.
+    body.temperature = 1;
+  }
+  if (tools) {
+    body.tools = tools;
+    body.tool_choice = toolChoice;
+  }
+
+  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://luxjd.com",
+      "X-Title": "LuxJD Valuation Agent",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenRouter API error ${res.status}: ${err}`);
+  }
+
+  const data = await res.json();
+  const parsed = parseResponse(data, !!tools);
+
+  if (jsonMode && typeof parsed === "string") return null;
+  return parsed;
+}
+
+/**
+ * Call LLM Vision with images.
+ *
+ * @param {object} opts
+ * @param {string} opts.prompt
+ * @param {Array<{data:string, mediaType:string}>} opts.images
+ * @param {string} [opts.system]
+ * @param {string} [opts.model]
+ * @param {number} [opts.maxTokens=4096]         Bump to ≥8192 when reasoning is on.
+ * @param {Array}  [opts.tools]                  Tool definitions for structured output.
+ * @param {string|object} [opts.toolChoice="auto"]
+ * @param {object} [opts.reasoning]              {max_tokens: N} enables extended thinking.
+ * @param {boolean}[opts.cacheSystem=false]      Prompt-cache the system message.
+ */
+export async function callClaudeVision({
+  prompt,
+  images = [],
+  system = "",
+  model = null,
+  maxTokens = 4096,
+  tools = null,
+  toolChoice = "auto",
+  reasoning = null,
+  cacheSystem = false,
+}) {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const modelId = model || MODELS.vision;
+
+  const content = [];
+  for (const img of images) {
+    content.push({
+      type: "image_url",
+      image_url: { url: `data:${img.mediaType || "image/jpeg"};base64,${img.data}` },
+    });
+  }
+  content.push({ type: "text", text: prompt });
+
+  const messages = [];
+  const sysMsg = buildSystemMessage(system, cacheSystem);
+  if (sysMsg) messages.push(sysMsg);
+  messages.push({ role: "user", content });
+
+  const body = {
+    model: modelId,
+    max_tokens: maxTokens,
+    messages,
+    provider: PROVIDER_PIN,
+  };
+  if (reasoning) {
+    body.reasoning = reasoning;
+    body.temperature = 1;
+  }
+  if (tools) {
+    body.tools = tools;
+    body.tool_choice = toolChoice;
+  }
+
+  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://luxjd.com",
+      "X-Title": "LuxJD Valuation Agent",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenRouter Vision API error ${res.status}: ${err}`);
+  }
+
+  const data = await res.json();
+  return parseResponse(data, !!tools);
 }

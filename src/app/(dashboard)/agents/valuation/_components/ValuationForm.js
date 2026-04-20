@@ -11,27 +11,79 @@ const MAKES = [
 ];
 
 const FIELD_LABELS = {
+  // Identity
   make: "Make",
   model: "Model",
+  grade: "Grade / Edition",
+  modelCode: "Model Code (型式)",
   year: "Year",
+  lotNumber: "Lot Number",
+  auctionHouse: "Auction House",
+  // Specs
   mileageKm: "Mileage (km)",
   driveSide: "Drive Side",
-  askingPriceJpy: "Asking Price (JPY)",
-  exteriorColor: "Exterior Color",
-  interiorColor: "Interior Color",
+  drivetrain: "Drivetrain",
+  bodyType: "Body Type",
+  doorCount: "Doors",
+  seatingCapacity: "Seats",
   transmission: "Transmission",
   fuelType: "Fuel Type",
+  // Pricing
+  askingPriceJpy: "Asking Price (JPY)",
+  recyclingDepositJpy: "Recycling Deposit (JPY)",
+  // Color
+  exteriorColor: "Exterior Color",
+  exteriorColorJapanese: "Exterior Color (Japanese)",
+  exteriorColorCatalog: "Catalog Name",
+  colorCode: "Color Code",
+  colorChanged: "Repainted / Color Changed",
+  interiorColor: "Interior Color",
+  interiorGrade: "Interior Grade",
+  interiorAuxGrade: "Interior Aux Grade",
+  // Condition
   auctionGrade: "Auction Grade",
   accidentHistory: "Accident History",
-  specificationNotes: "Specifications",
+  importType: "Import Type",
+  // Registration
+  vin: "Chassis / VIN",
+  registrationPlate: "Registration Plate",
+  shakenExpiry: "Shaken Expiry",
+  dimensions: "Dimensions (L×W×H mm)",
+  // Notes
+  featureCodes: "Factory Equipment",
+  salesPoints: "Sales Points",
+  modifications: "Modifications / Aftermarket",
+  cautionNotes: "Caution Notes",
+  inspectorNotes: "Inspector Notes",
+  specificationNotes: "Other Specifications",
 };
 
 function formatValue(key, value) {
   if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim().length === 0) return null;
+
   if (key === "accidentHistory") return value ? "Yes" : "No";
-  if (key === "askingPriceJpy") return formatJpy(value);
+  if (key === "colorChanged") return value ? "Yes (repaint indicated)" : "No";
+  if (key === "askingPriceJpy" || key === "recyclingDepositJpy") return formatJpy(value);
   if (key === "mileageKm") return `${formatKm(value)} km`;
   if (key === "auctionGrade") return String(value);
+  if (key === "doorCount") return `${value}-door`;
+  if (key === "seatingCapacity") return `${value} seats`;
+
+  if (key === "dimensions" && value && typeof value === "object") {
+    const { length_mm, width_mm, height_mm } = value;
+    const parts = [length_mm, width_mm, height_mm].map((n) => (n == null ? "?" : n));
+    if (parts.every((p) => p === "?")) return null;
+    return `${parts[0]} × ${parts[1]} × ${parts[2]} mm`;
+  }
+
+  // Array fields — render as comma-separated list, capped so the card stays readable
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    return value.join(", ");
+  }
+
+  if (value && typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
 
@@ -317,10 +369,15 @@ export default function ValuationForm({ onSubmit, loading }) {
   // PHASE 3: REVIEW — extracted data + Q&A
   // ══════════════════════════════════════
 
-  // Build list of extracted fields that have values
-  const extractedEntries = Object.entries(extractedData).filter(
-    ([, v]) => v !== null && v !== undefined && v !== ""
-  );
+  // Build list of extracted fields that have values (after formatting).
+  // Filter on the FORMATTED string so empty arrays / empty dimensions /
+  // blank strings disappear instead of rendering an empty card.
+  const extractedEntries = Object.entries(extractedData)
+    .filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .filter(([k, v]) => {
+      const f = formatValue(k, v);
+      return f !== null && f !== undefined && f !== "";
+    });
 
   const allRequiredAnswered = missingRequired.every(f => {
     const a = answers[f.key];

@@ -231,6 +231,36 @@ export const EQUIPMENT_CODES = {
   "ベンチレーション": "Ventilated Seats", "マッサージ": "Massage Seats",
 };
 
+/**
+ * Japanese inspector-comment glossary. Auction sheets use terse abbreviations
+ * in 注意事項 / 内外装備考 / 指摘事項 fields that OCR+translate frequently
+ * gets wrong (e.g. スレ is commonly confused with ガタ). Used for both
+ * prompt-level instruction and post-processing verification.
+ */
+export const INSPECTOR_GLOSSARY = {
+  // Defect types
+  "スレ": "scuff", "擦れ": "scuff",
+  "キズ": "scratch", "傷": "scratch",
+  "ヘコミ": "dent", "凹み": "dent", "凹": "dent",
+  "ガタ": "looseness", "ぐらつき": "wobble",
+  "サビ": "rust", "錆": "rust", "腐食": "corrosion",
+  "ヒビ": "crack", "亀裂": "crack", "割れ": "broken",
+  "剥がれ": "peeling", "色あせ": "fading", "褪色": "fading",
+  "シミ": "stain", "汚れ": "dirt",
+  "破れ": "tear", "穴": "hole", "欠け": "chip",
+  "曇り": "hazing", "白濁": "cloudiness",
+  // Size / severity modifiers
+  "小": "minor", "中": "moderate", "大": "major",
+  "極小": "very minor", "軽度": "light", "重度": "heavy",
+  // Common body-part hints (helps localize the defect in translation)
+  "シート": "seat", "ハンドル": "steering wheel", "ステアリング": "steering wheel",
+  "天井": "ceiling", "ドア": "door", "バンパー": "bumper",
+  "フロント": "front", "リア": "rear", "サイド": "side",
+  "ボンネット": "hood", "トランク": "trunk",
+  "ホイール": "wheel", "タイヤ": "tyre",
+  "ガラス": "glass", "ミラー": "mirror",
+};
+
 /** Brand katakana → English mapping */
 export const BRAND_KATAKANA = {
   "メルセデスベンツ": "Mercedes-Benz", "メルセデス ベンツ": "Mercedes-Benz",
@@ -276,7 +306,7 @@ export const MANUFACTURER_COLOR_CODES = {
     "359": "Tanzanite Blue Metallic", "489": "Selenite Grey Metallic",
     "590": "Selenite Grey Metallic", "662": "Mojave Silver Metallic",
     "696": "Brilliant Blue Metallic", "775": "Iridium Silver Metallic",
-    "787": "Mountain Grey Metallic", "799": "Diamond Silver Metallic",
+    "787": "Mountain Grey Metallic", "799": "Diamond White Bright",
     "890": "Cavansite Blue Metallic", "891": "Cavansite Blue Metallic",
     "896": "Brilliant Blue Metallic", "897": "Designo Diamond White",
     "988": "Diamond White Bright", "992": "Selenite Grey Metallic",
@@ -300,6 +330,28 @@ export const MANUFACTURER_COLOR_CODES = {
     "668": "Jet Black", "A90": "Frozen Dark Grey", "C1M": "Frozen Portimao Blue",
   },
 };
+
+/**
+ * Coarse color family classifier — used to sanity-check that the Japanese
+ * color text printed on the sheet is consistent with the result of a
+ * manufacturer-code lookup. Returns one of: WHITE / BLACK / SILVER / GREY /
+ * RED / BLUE / GREEN / YELLOW / BROWN / ORANGE / null.
+ */
+function colorFamily(text) {
+  if (!text || typeof text !== "string") return null;
+  const t = text.toLowerCase();
+  if (/パール|真珠|白|ホワイト|white|bianco|blanc|polar|diamond.*white|cirrus|ivory|chalk|crayon/.test(t)) return "WHITE";
+  if (/黒|ブラック|black|nero|obsidian|magnetite|jet.*black/.test(t)) return "BLACK";
+  if (/シルバー|銀|silver|argent|iridium|gt.*silver|mojave/.test(t)) return "SILVER";
+  if (/グレー|グレイ|灰|grey|gray|grigio|selenite|tenorite|indium|gunmetal|agate/.test(t)) return "GREY";
+  if (/赤|レッド|red|rosso|guards.*red|scuderia|corsa|fiorano/.test(t)) return "RED";
+  if (/青|ブルー|blue|blu|cavansite|brilliant.*blue|miami.*blue|gentian|lunar|tour.*de.*france|pozzi/.test(t)) return "BLUE";
+  if (/緑|グリーン|green|verde|british.*racing/.test(t)) return "GREEN";
+  if (/黄|イエロー|yellow|giallo|racing.*yellow|modena/.test(t)) return "YELLOW";
+  if (/茶|ブラウン|brown|bronze|marron/.test(t)) return "BROWN";
+  if (/オレンジ|orange|arancio/.test(t)) return "ORANGE";
+  return null;
+}
 
 /**
  * Look up color name from manufacturer color code.
@@ -346,6 +398,85 @@ const STRUCTURAL_PANELS = [
 // PASS 1: FULL COMPREHENSIVE EXTRACTION
 // ══════════════════════════════════════════════════════════════
 
+/**
+ * Tool schema for Pass 1 — schema-enforced structured output via OpenRouter
+ * tool-use. Eliminates the regex-from-free-text parsing that silently
+ * returns null when the model hedges. Field names match the flat schema
+ * that normalizePass1Output expects, so the model's tool_call output
+ * flows straight through validation.
+ */
+export const AUCTION_SHEET_TOOL = {
+  type: "function",
+  function: {
+    name: "record_auction_sheet",
+    description: "Record all fields extracted from a Japanese vehicle auction inspection sheet. Every field is optional — use null when unreadable — but fill in as many as the sheet contains.",
+    parameters: {
+      type: "object",
+      properties: {
+        auction_house:           { type: ["string", "null"], description: "USS / TAA / JU / HAA / CAA / AUCNET / etc." },
+        lot_number:              { type: ["string", "null"] },
+        make:                    { type: ["string", "null"], description: "English brand. Use 'Mercedes-Benz' (not 'Mercedes-AMG' unless it's a dedicated AMG model like AMG GT)." },
+        model:                   { type: ["string", "null"], description: "Base model name only — e.g. 'GT', 'G63', '488 GTB', '911 Turbo S'. Do NOT include grade/edition here — that goes in 'grade'." },
+        grade:                   { type: ["string", "null"], description: "Trim + edition from the グレード field, e.g. 'S 130th Anniversary Edition', 'GT3 RS', 'Edition 1'. PRESERVE multi-digit anniversary numerals verbatim — '130th Anniversary' must NOT be shortened to '10th' or '30th'." },
+        model_code:              { type: ["string", "null"], description: "型式 / chassis-code (typically prefixed CBA-/DBA-/ABA-/LDA-, 6–10 chars). DIFFERENT from VIN." },
+        vin:                     { type: ["string", "null"], description: "車台No. / VIN — EXACTLY 17 characters. This is DIFFERENT from 型式 (model code, 6–10 chars prefixed CBA-/DBA-). Brand WMI: Mercedes=WDB/WDC/WDD/WDF, Porsche=WP0/WP1, Ferrari=ZFF, Bentley=SCB, Aston Martin=SCF, BMW=WBS/WBA/WBY. Never return the model code here." },
+        year:                    { type: ["integer", "null"], description: "Western 4-digit year (H24 = 2012, R5 = 2023)." },
+        year_era:                { type: ["string", "null"], description: "Japanese era shorthand, e.g. 'H24' or 'R5'." },
+        year_calculation:        { type: ["string", "null"], description: "Calculation used, e.g. 'H24 + 1988 = 2012'." },
+        displacement_cc:         { type: ["integer", "null"] },
+        mileage_reading:         { type: ["integer", "null"], description: "Read ALL digit boxes left-to-right. Do not assume km vs miles — flag if unclear." },
+        mileage_digits:          { type: ["string", "null"] },
+        transmission:            { type: ["string", "null"], enum: [null, "AUTOMATIC", "MANUAL", "DCT", "PDK", "SMG"] },
+        fuel_type:               { type: ["string", "null"], enum: [null, "PETROL", "DIESEL", "HYBRID", "ELECTRIC", "LPG", "CNG"] },
+        drive_side:              { type: ["string", "null"], enum: [null, "LHD", "RHD"] },
+        exterior_color:          { type: ["string", "null"], description: "English translation of exterior color." },
+        exterior_color_japanese: { type: ["string", "null"], description: "Exact Japanese text from the 外色 field, verbatim (e.g. 'パール', 'ダイヤモンドホワイト'). Do NOT translate." },
+        color_code:              { type: ["string", "null"], description: "Manufacturer color code (カラーNo.), typically 3 digits." },
+        interior_color:          { type: ["string", "null"], description: "Interior color. PRESERVE two-tone with '/' separator — 'ブラック/ホワイト' → 'Black/White'. Never collapse to a single color." },
+        overall_grade:           { type: ["number", "null"], description: "Auction grade. S/6 (best) → 1. R/RA = accident history." },
+        interior_grade:          { type: ["string", "null"], enum: [null, "A", "B", "C", "D"] },
+        interior_aux_grade:      { type: ["string", "null"], enum: [null, "A", "B", "C", "D"], description: "内装補助評価 (optional)." },
+        import_type:             { type: ["string", "null"] },
+        accident_history:        { type: ["boolean", "null"] },
+        service_book_present:    { type: ["boolean", "null"] },
+        shaken_expiry:           { type: ["string", "null"], description: "車検 expiry as 'YYYY-MM'." },
+        registration_plate:      { type: ["string", "null"], description: "登録No. / Japanese plate." },
+        dimensions: {
+          type: ["object", "null"],
+          properties: {
+            length_mm: { type: ["integer", "null"] },
+            width_mm:  { type: ["integer", "null"] },
+            height_mm: { type: ["integer", "null"] },
+          },
+        },
+        damage_codes: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              location: { type: "string" },
+              code:     { type: "string" },
+              meaning:  { type: ["string", "null"] },
+              severity: { type: "string", enum: ["MINOR", "MODERATE", "MAJOR"] },
+            },
+            required: ["location", "code", "severity"],
+          },
+        },
+        equipment_translated:    { type: "array", items: { type: "string" } },
+        sales_points:            { type: "array", items: { type: "string" } },
+        caution_notes:           { type: "array", items: { type: "string" }, description: "注意事項 — translated to English. Apply glossary: スレ=scuff, ガタ=looseness, キズ=scratch, ヘコミ/凹み=dent, サビ=rust, 小/中/大=minor/moderate/major." },
+        inspector_notes:         { type: "array", items: { type: "string" } },
+        mechanical_notes:        { type: "array", items: { type: "string" } },
+        modification_notes:      { type: "array", items: { type: "string" } },
+        recycling_deposit_jpy:   { type: ["integer", "null"] },
+        overall_assessment:      { type: ["string", "null"] },
+        confidence:              { type: "number", minimum: 0, maximum: 1 },
+      },
+      required: ["make", "model", "confidence"],
+    },
+  },
+};
+
 // Clean, proven system prompt — short = more attention on the image
 const PASS1_SYSTEM = `You are an expert at reading and extracting data from Japanese vehicle auction sheets (USS, TAA, JU, HAA, etc.).`;
 
@@ -365,21 +496,29 @@ RULES:
 3. Auction grades: S/6 (best) → 1 (worst). R/RA = accident history.
 4. Interior grades: A (best) → D (worst).
 5. Map damage diagram codes to English panel names.
-6. If a field is unreadable, use null.
+6. model vs grade: "model" is the base model name ONLY (e.g. "GT", "G63", "488 GTB", "911 Turbo S"). "grade" is the trim + edition from the グレード field (e.g. "S 130th Anniversary Edition"). Split them into the two fields — do NOT merge them into one. Preserve multi-digit numerals in grade VERBATIM. "130th Anniversary Edition" must NOT be truncated to "10th" or "30th". Do not drop leading digits from 100th / 110th / 120th / 130th / 140th / 150th. Read the full number left-to-right.
+7. 内装色 (interior_color): preserve two-tone strings with the separator intact. "ブラック/ホワイト" → "Black/White". Never collapse a two-tone interior to a single color.
+8. exterior_color_japanese: copy the exact Japanese characters printed on the sheet verbatim (e.g. "パール", "ダイヤモンドホワイト"). Do not translate this field.
+9. Inspector abbreviations (注意事項 / 内外装備考): スレ = scuff, ガタ = looseness, キズ = scratch, ヘコミ/凹み = dent, サビ = rust, ヒビ/亀裂 = crack, 小 = minor, 中 = moderate, 大 = major. Example: "シートハンドル小スレ" = "minor scuff on seat handle" (NOT "looseness").
+10. 車台No. (VIN / chassis number) is EXACTLY 17 characters. It is DIFFERENT from 型式 (model code, typically 6–10 chars prefixed CBA-/DBA-/ABA-/LDA-). Do NOT confuse them. Brand WMI prefixes: Mercedes=WDB/WDC/WDD/WDF, Porsche=WP0/WP1, Ferrari=ZFF, Lamborghini=ZHW, Bentley=SCB, Aston Martin=SCF, Rolls-Royce=SCA, BMW=WBS/WBA/WBY, Audi=WAU, Jaguar=SAJ, Range Rover=SAL. If you can only read part of the VIN, still attempt the full 17 chars — do NOT return the model code as VIN.
+11. If a field is unreadable or not present, use null.
 
 Return this JSON structure:
 {
   "auction_house": null, "lot_number": null,
-  "make": "", "model": "", "model_code": "", "vin": "",
+  "make": "", "model": "", "grade": "", "model_code": "", "vin": "",
   "year": null, "year_era": "", "year_calculation": "",
   "displacement_cc": null,
   "mileage_reading": null, "mileage_digits": "",
   "transmission": "", "fuel_type": "", "drive_side": "",
   "exterior_color": "", "exterior_color_japanese": "", "color_code": "",
   "interior_color": "",
-  "overall_grade": null, "interior_grade": "",
+  "overall_grade": null, "interior_grade": "", "interior_aux_grade": "",
   "import_type": "", "accident_history": null,
   "service_book_present": null,
+  "shaken_expiry": null,
+  "registration_plate": null,
+  "dimensions": {"length_mm": null, "width_mm": null, "height_mm": null},
   "panel_conditions": {},
   "damage_codes": [{"location":"","code":"","meaning":"","severity":"MINOR|MODERATE|MAJOR"}],
   "equipment_translated": [],
@@ -406,6 +545,8 @@ const VERIFY_MILEAGE_PROMPT = `What is the exact mileage (走行) shown on this 
 const VERIFY_YEAR_PROMPT = `What year was this vehicle first registered? Read the 年式 or 初度登録年月 field. Convert Japanese era: H(平成)+1988, R(令和)+2018. Example: H24=2012. Return JSON: {"era": "<e.g. H24>", "western_year": <number>, "confidence": <0.0-1.0>}`;
 
 const VERIFY_COLOR_PROMPT = `What is the exterior color (外色) and color code number (カラーNo.) on this auction sheet? Return JSON: {"japanese_text": "<exact Japanese text>", "color_english": "<English>", "color_code": "<3-digit number or null>", "confidence": <0.0-1.0>}`;
+
+const VERIFY_VIN_PROMPT = `Find the chassis number (車台No.) on this Japanese auction sheet. This is the full 17-character VIN — NOT the shorter model code (型式, typically prefixed CBA-/DBA-/ABA-/LDA-). A valid VIN has exactly 17 characters using A–H, J–N, P, R–Z, 0–9. Read every character — do not stop early. Common prefixes: Mercedes=WDB/WDC/WDD/WDF, Porsche=WP0/WP1, Ferrari=ZFF, Lamborghini=ZHW, Bentley=SCB, Aston Martin=SCF, Rolls-Royce=SCA, McLaren=SBM, Jaguar=SAJ, Range Rover=SAL, BMW=WBS/WBA/WBY, Audi=WAU. Return JSON: {"vin": "<exactly 17 characters>", "model_code": "<型式 separately if visible>", "confidence": <0.0-1.0>}`;
 
 // ══════════════════════════════════════════════════════════════
 // PASS 3: DEEP DAMAGE MAP ANALYSIS
@@ -499,8 +640,9 @@ function normalizePass1Output(raw) {
     auction_date: ai.auction_date || null,
 
     make: vb.make || null,
-    model: vb.model || vb.grade_trim || null,
-    model_code: vb.chassis_code || null,
+    model: vb.model || null,
+    grade: vb.grade_trim || vb.grade || null,
+    model_code: vb.chassis_code || vb.model_code || null,
     vin: reg.chassis_number || null,
     displacement_cc: vb.displacement_cc ? parseInt(vb.displacement_cc) : null,
     displacement_liters: vb.displacement_cc ? `${(parseInt(vb.displacement_cc) / 1000).toFixed(1)}L` : null,
@@ -517,19 +659,26 @@ function normalizePass1Output(raw) {
     drive_side: vb.steering === "Left" ? "LHD" : vb.steering === "Right" ? "RHD" : (vb.steering || null),
 
     exterior_color: cond.exterior_color || null,
+    exterior_color_japanese: cond.exterior_color_japanese || null,
     color_code: cond.color_code || null,
     interior_color: cond.interior_color || null,
     color_changed: false,
 
     overall_grade: cond.auction_grade ? parseFloat(cond.auction_grade) : null,
     interior_grade: cond.interior_grade || null,
+    interior_aux_grade: cond.interior_aux_grade || null,
     import_type: reg.import_type || null,
-    inspection_expiry: reg.inspection_expiry_year ? `${reg.inspection_expiry_year}-${String(reg.inspection_expiry_month || 1).padStart(2, "0")}` : null,
+    shaken_expiry: reg.inspection_expiry_year ? `${reg.inspection_expiry_year}-${String(reg.inspection_expiry_month || 1).padStart(2, "0")}` : null,
 
     accident_history: cond.auction_grade === "R" || cond.auction_grade === "RA" ? true : null,
     service_book_present: null,
     one_owner: null,
     registration_plate: reg.registration_plate || null,
+    dimensions: (dim.length_cm || dim.width_cm || dim.height_cm) ? {
+      length_mm: dim.length_cm ? parseInt(dim.length_cm) * 10 : (dim.length_mm ? parseInt(dim.length_mm) : null),
+      width_mm:  dim.width_cm  ? parseInt(dim.width_cm)  * 10 : (dim.width_mm  ? parseInt(dim.width_mm)  : null),
+      height_mm: dim.height_cm ? parseInt(dim.height_cm) * 10 : (dim.height_mm ? parseInt(dim.height_mm) : null),
+    } : null,
 
     // Panel conditions from damage diagram
     panel_conditions: null,
@@ -574,17 +723,72 @@ function majorityVote(readings) {
 }
 
 /**
- * Validate Mercedes-Benz VIN pattern. Mercedes VINs start with WDB, WDD, WDC, WDF, etc.
+ * World Manufacturer Identifier (WMI) — first 3 chars of every 17-char VIN.
+ * Used to distinguish 車台No. (VIN, 17 chars, starts with a brand WMI) from
+ * 型式 (model code, typically 6–10 chars prefixed CBA-/DBA-/ABA-).
  */
-function validateMercedesVin(vin) {
+export const VIN_WMI_PATTERNS = {
+  "Mercedes-Benz": /^WD[BCDF]/,
+  "Mercedes-AMG":  /^WD[BCDF]/,
+  Porsche:         /^WP[01]/,
+  Ferrari:         /^ZFF/,
+  Lamborghini:     /^ZHW/,
+  Bentley:         /^SCB/,
+  "Aston Martin":  /^SCF/,
+  "Rolls-Royce":   /^SCA/,
+  McLaren:         /^SBM/,
+  Maserati:        /^ZAM/,
+  "Alfa Romeo":    /^ZAR/,
+  Jaguar:          /^SAJ/,
+  "Range Rover":   /^SAL/,
+  "Land Rover":    /^SAL/,
+  BMW:             /^WB[ASY4]/,
+  "BMW M":         /^WB[SY]/,
+  Audi:            /^WAU/,
+  Bugatti:         /^VF9/,
+  Lotus:           /^SCC/,
+};
+
+/**
+ * Validate a VIN/chassis number against expected brand patterns.
+ *
+ * A valid VIN is always exactly 17 characters using A–H, J–N, P, R–Z, 0–9
+ * (I, O, Q are excluded to avoid digit confusion). Anything shorter is
+ * almost certainly the 型式 (model code) being misread as the chassis No.
+ *
+ * Returns { valid, clean, reason }.
+ *   - valid=true + clean=<17-char VIN> if it matches
+ *   - valid=false + reason=<why> if it doesn't
+ *   - null if input is empty
+ */
+export function validateVin(vin, make) {
   if (!vin || typeof vin !== "string") return null;
   const clean = vin.replace(/[^A-HJ-NPR-Z0-9]/gi, "").toUpperCase();
-  // Mercedes WMI codes: WDB (pre-2014), WDD (2014+), WDC (SUV), WDF (commercial)
-  if (/^WD[BCDF]/.test(clean) && clean.length === 17) return clean;
-  // Try common OCR corrections: B↔D, 0↔O, 1↔I
-  const corrected = clean.replace(/^WDB/, "WDD").replace(/^WDD/, "WDD");
-  if (/^WD[BCDF]/.test(corrected) && corrected.length === 17) return corrected;
-  return clean; // return as-is if can't validate
+
+  if (clean.length !== 17) {
+    return {
+      valid: false,
+      clean,
+      reason: `VIN must be exactly 17 chars, got ${clean.length} ("${clean}"). This is almost certainly the 型式 (model code) being mis-read as the 車台No. (chassis number).`,
+    };
+  }
+
+  if (make) {
+    for (const [brand, pattern] of Object.entries(VIN_WMI_PATTERNS)) {
+      if (make === brand || make.includes(brand.split("-")[0]) || brand.includes(make.split("-")[0])) {
+        if (!pattern.test(clean)) {
+          return {
+            valid: false,
+            clean,
+            reason: `VIN prefix "${clean.substring(0, 3)}" does not match ${make} WMI pattern ${pattern}.`,
+          };
+        }
+        return { valid: true, clean };
+      }
+    }
+  }
+
+  return { valid: true, clean };
 }
 
 /**
@@ -592,7 +796,7 @@ function validateMercedesVin(vin) {
  * Uses MAJORITY VOTE (2-of-3 or 3-of-3) instead of blind trust.
  * Returns merged result with per-field confidence and anomaly flags.
  */
-function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color, pass2ColorB, pass3Damage) {
+function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color, pass2ColorB, pass2Vin, pass3Damage) {
   const anomalies = [];
   const fieldConfidence = {};
 
@@ -705,72 +909,107 @@ function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color
     fieldConfidence.year = pass1?.year ? 0.75 : 0.0;
   }
 
-  // ── Color cross-check: MANUFACTURER CODE LOOKUP + MAJORITY VOTE ──
-  // PRIORITY ORDER:
-  // 1. Manufacturer color code database lookup (highest authority)
-  // 2. Majority vote from OCR readings (medium authority)
-  // 3. Single OCR reading (lowest authority)
+  // ── Color cross-check: SHEET TEXT WINS, code lookup is reference ──
+  // PRIORITY ORDER (reversed from earlier behaviour):
+  // 1. What the sheet literally says — if the sheet prints "パール"
+  //    (Pearl), exterior_color = "Pearl". This matches both ChatGPT and
+  //    claude.ai reference extractions, and is a more faithful
+  //    rendering than substituting the manufacturer marketing name.
+  // 2. Manufacturer code lookup is exposed separately as
+  //    exterior_color_catalog (e.g. code 799 → "Diamond White Bright").
+  //    Useful reference, but not a replacement for the sheet reading.
+  // 3. If the sheet reading disagrees with the catalog on COLOR FAMILY
+  //    (white vs silver vs grey), raise a CODE_COLOR_MISMATCH anomaly so
+  //    the operator can check — without silently overwriting anything.
+  // 4. If no sheet reading is available at all, fall back to the catalog.
 
   const colorCode = pass1?.color_code || pass2Color?.color_code || pass2ColorB?.color_code;
-  const codeLookup = lookupColorByCode(pass1?.make, colorCode);
+  const catalogName = lookupColorByCode(pass1?.make, colorCode);
+  const jpText = pass1?.exterior_color_japanese
+    || pass2Color?.japanese_text
+    || pass2ColorB?.japanese_text
+    || null;
 
-  if (codeLookup) {
-    // COLOR CODE DATABASE HIT — this is the most reliable source
-    const ocrColor = pass1?.exterior_color;
-    const normalizeColor = (c) => c?.toLowerCase().replace(/[\s\-_]|metallic/g, "").trim() || "";
+  // Always expose the catalog name as a reference field.
+  if (catalogName) pass1.exterior_color_catalog = catalogName;
+  if (colorCode) pass1.color_code = colorCode;
 
-    if (normalizeColor(ocrColor) !== normalizeColor(codeLookup)) {
+  const colorReadings = [
+    pass1?.exterior_color,
+    pass2Color?.color_english,
+    pass2ColorB?.color_english,
+  ].filter(Boolean);
+  const normalizeColor = (c) => c?.toLowerCase().replace(/[\s\-_]/g, "") || "";
+
+  // Step 1: determine the sheet's color via majority vote if we have ≥2 reads.
+  let sheetColor = null;
+  if (colorReadings.length >= 2) {
+    const colorGroups = {};
+    for (const c of colorReadings) {
+      const norm = normalizeColor(c);
+      if (!colorGroups[norm]) colorGroups[norm] = { original: c, count: 0 };
+      colorGroups[norm].count++;
+    }
+    const sorted = Object.values(colorGroups).sort((a, b) => b.count - a.count);
+    const winner = sorted[0];
+    if (winner.count >= 2) {
+      sheetColor = winner.original;
+      fieldConfidence.color = winner.count === colorReadings.length ? 0.92 : 0.80;
+    } else {
+      // No majority — still take pass1 but flag low confidence
+      sheetColor = pass1?.exterior_color || winner.original;
+      fieldConfidence.color = 0.55;
       anomalies.push({
         field: "exterior_color",
-        type: "CODE_LOOKUP_OVERRIDE",
-        ocrReading: ocrColor,
-        colorCode: colorCode,
-        codeLookupResult: codeLookup,
-        resolution: `Color code ${colorCode} = "${codeLookup}" in manufacturer database. OCR read "${ocrColor}" — overriding with database value.`,
+        type: "NO_CONSENSUS",
+        readings: colorReadings,
+        resolution: "No majority among color reads — using Pass 1 reading, verify manually.",
       });
     }
-    pass1.exterior_color = codeLookup;
-    pass1.color_code = colorCode;
-    fieldConfidence.color = 0.97; // Manufacturer code lookup is authoritative
-  } else {
-    // No code lookup — fall back to majority vote
-    const colorReadings = [
-      pass1?.exterior_color,
-      pass2Color?.color_english,
-      pass2ColorB?.color_english,
-    ].filter(Boolean);
-
-    const normalizeColor = (c) => c?.toLowerCase().replace(/[\s\-_]/g, "") || "";
-
-    if (colorReadings.length >= 2) {
-      const colorGroups = {};
-      for (const c of colorReadings) {
-        const norm = normalizeColor(c);
-        if (!colorGroups[norm]) colorGroups[norm] = { original: c, count: 0 };
-        colorGroups[norm].count++;
-      }
-      const sorted = Object.values(colorGroups).sort((a, b) => b.count - a.count);
-      const winner = sorted[0];
-
-      if (winner.count >= 2) {
-        fieldConfidence.color = winner.count === colorReadings.length ? 0.85 : 0.70;
-        pass1.exterior_color = winner.original;
-      } else {
-        fieldConfidence.color = 0.45;
-        anomalies.push({
-          field: "exterior_color",
-          type: "NO_CONSENSUS",
-          readings: colorReadings,
-          resolution: "No majority — color reading uncertain",
-        });
-      }
-    } else {
-      fieldConfidence.color = pass1?.exterior_color ? 0.50 : 0.0;
-    }
+  } else if (colorReadings.length === 1) {
+    sheetColor = colorReadings[0];
+    fieldConfidence.color = 0.65;
   }
 
-  // Enrich with color code from verification passes
-  if (colorCode && !pass1.color_code) pass1.color_code = colorCode;
+  // Step 2: commit the sheet's reading as the primary color.
+  if (sheetColor) {
+    pass1.exterior_color = sheetColor;
+
+    // Step 3: cross-check against the catalog — raise anomaly on family mismatch,
+    // but DO NOT overwrite the sheet text.
+    if (catalogName) {
+      const sheetFamily = colorFamily(jpText) || colorFamily(sheetColor);
+      const catalogFamily = colorFamily(catalogName);
+      if (sheetFamily && catalogFamily && sheetFamily !== catalogFamily) {
+        anomalies.push({
+          field: "exterior_color",
+          type: "CODE_COLOR_MISMATCH",
+          sheetColor,
+          sheetJapanese: jpText,
+          sheetFamily,
+          colorCode,
+          catalogName,
+          catalogFamily,
+          resolution: `Sheet says ${sheetFamily} ("${jpText || sheetColor}") but code ${colorCode} = ${catalogFamily} ("${catalogName}"). Sheet reading retained; verify whether code digits or reference table is wrong.`,
+          humanVerificationRequired: true,
+        });
+        fieldConfidence.color = Math.min(fieldConfidence.color ?? 0.55, 0.55);
+      }
+    }
+  } else if (catalogName) {
+    // No sheet reading at all — fall back to the manufacturer catalog.
+    pass1.exterior_color = catalogName;
+    fieldConfidence.color = 0.70;
+    anomalies.push({
+      field: "exterior_color",
+      type: "CATALOG_FALLBACK",
+      colorCode,
+      catalogName,
+      resolution: `Sheet color text unreadable — used catalog lookup (code ${colorCode} = "${catalogName}"). Verify against photos if possible.`,
+    });
+  } else {
+    fieldConfidence.color = pass1?.exterior_color ? 0.55 : 0.0;
+  }
 
   const colorChanged = pass2Color?.color_changed || pass2ColorB?.color_changed;
   if (colorChanged) {
@@ -780,19 +1019,48 @@ function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color
 
   // ── VIN validation (Mercedes-specific pattern check) ──
   if (pass1?.vin && pass1?.make) {
-    const isMercedes = /mercedes|benz/i.test(pass1.make);
-    if (isMercedes) {
-      const validated = validateMercedesVin(pass1.vin);
-      if (validated && validated !== pass1.vin) {
+    const result = validateVin(pass1.vin, pass1.make);
+    if (result) {
+      if (!result.valid) {
+        // Most common failure: agent returned the 型式 (model code, 6–10
+        // chars) instead of the 17-char chassis number. Clear the field
+        // so downstream code (missing-fields UI, verification pass) can
+        // recover it.
+        const verifyVin = pass2Vin?.vin && pass2Vin.vin !== pass1.vin;
+        anomalies.push({
+          field: "vin",
+          type: "INVALID_VIN",
+          original: pass1.vin,
+          cleaned: result.clean,
+          make: pass1.make,
+          reason: result.reason,
+          resolution: verifyVin
+            ? `Replacing with VERIFY_VIN pass result "${pass2Vin.vin}".`
+            : "Cleared — requires HUMAN VERIFICATION. VIN must be exactly 17 chars starting with the brand's WMI.",
+          humanVerificationRequired: !verifyVin,
+        });
+        pass1.vin = verifyVin ? pass2Vin.vin : null;
+        fieldConfidence.vin = verifyVin ? 0.75 : 0.0;
+      } else if (result.clean !== pass1.vin) {
         anomalies.push({
           field: "vin",
           type: "FORMAT_CORRECTION",
           original: pass1.vin,
-          corrected: validated,
-          resolution: "VIN corrected using Mercedes-Benz pattern validation",
+          corrected: result.clean,
+          resolution: `VIN cleaned (stripped invalid chars / case-normalized) and validated against ${pass1.make} WMI pattern.`,
         });
-        pass1.vin = validated;
+        pass1.vin = result.clean;
+        fieldConfidence.vin = 0.95;
+      } else {
+        fieldConfidence.vin = 0.95;
       }
+    }
+  } else if (pass2Vin?.vin) {
+    // Pass 1 didn't catch a VIN but the verification pass did
+    const result = validateVin(pass2Vin.vin, pass1?.make);
+    if (result && result.valid) {
+      pass1.vin = result.clean;
+      fieldConfidence.vin = 0.85;
     }
   }
 
@@ -935,11 +1203,18 @@ export async function parseAuctionSheet(image, opts = {}) {
   const { skipVerification = false, skipDamageDeep = false, quickMode = false } = opts;
 
   // ── Pass 1: Full comprehensive extraction ──
+  // Tool-use enforces the schema (no regex-from-text parsing), extended
+  // thinking gives the model room to reason through ambiguous OCR, and
+  // prompt caching makes the system prompt cheap on subsequent calls.
   const pass1 = await callClaudeVision({
     prompt: PASS1_PROMPT,
     images: [image],
     system: PASS1_SYSTEM,
-    maxTokens: 6144,
+    tools: [AUCTION_SHEET_TOOL],
+    toolChoice: { type: "function", function: { name: "record_auction_sheet" } },
+    reasoning: { max_tokens: 8000 },
+    maxTokens: 16000,
+    cacheSystem: true,
   });
 
   if (!pass1 || typeof pass1 !== "object") return null;
@@ -955,22 +1230,25 @@ export async function parseAuctionSheet(image, opts = {}) {
     return validateSheetOutput(normalized);
   }
 
-  // ── Pass 2: Blind verification — TRIPLE mileage read + DUAL color read (all parallel) ──
+  // ── Pass 2: Blind verification — TRIPLE mileage read + DUAL color read + VIN (all parallel) ──
   let pass2Mileage = null, pass2MileageB = null;
   let pass2Year = null;
   let pass2Color = null, pass2ColorB = null;
+  let pass2Vin = null;
 
   if (!skipVerification) {
-    // Run 5 verification calls in parallel:
+    // Run 6 verification calls in parallel:
     // - 2x mileage (for triple read with Pass 1 = 3 total readings)
     // - 1x year
     // - 2x color (for triple read with Pass 1 = 3 total readings)
+    // - 1x VIN (strict 17-char read, separated from 型式 model code)
     const verifyPromises = await Promise.allSettled([
       callClaudeVision({ prompt: VERIFY_MILEAGE_PROMPT, images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
       callClaudeVision({ prompt: "Read the mileage number (走行) from this auction sheet. What number is shown in the digit boxes? Return JSON: {\"mileageKm\": <number>}", images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
       callClaudeVision({ prompt: VERIFY_YEAR_PROMPT, images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
       callClaudeVision({ prompt: VERIFY_COLOR_PROMPT, images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
       callClaudeVision({ prompt: "What color (外色) is this vehicle? Also read the color code number (カラーNo.). Return JSON: {\"color_english\": \"<color>\", \"color_code\": \"<3-digit code>\"}", images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
+      callClaudeVision({ prompt: VERIFY_VIN_PROMPT, images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
     ]);
 
     pass2Mileage = verifyPromises[0].status === "fulfilled" ? verifyPromises[0].value : null;
@@ -978,6 +1256,7 @@ export async function parseAuctionSheet(image, opts = {}) {
     pass2Year = verifyPromises[2].status === "fulfilled" ? verifyPromises[2].value : null;
     pass2Color = verifyPromises[3].status === "fulfilled" ? verifyPromises[3].value : null;
     pass2ColorB = verifyPromises[4].status === "fulfilled" ? verifyPromises[4].value : null;
+    pass2Vin = verifyPromises[5].status === "fulfilled" ? verifyPromises[5].value : null;
   }
 
   // ── Pass 3: Deep damage map analysis ──
@@ -989,7 +1268,9 @@ export async function parseAuctionSheet(image, opts = {}) {
         prompt: PASS3_PROMPT,
         images: [image],
         system: PASS3_SYSTEM,
-        maxTokens: 4096,
+        reasoning: { max_tokens: 6000 },
+        maxTokens: 12000,
+        cacheSystem: true,
       });
     } catch (e) {
       console.warn("Pass 3 (damage deep) failed:", e.message);
@@ -998,7 +1279,7 @@ export async function parseAuctionSheet(image, opts = {}) {
 
   // ── Cross-validation & merge (majority vote) ──
   const { merged, anomalies, fieldConfidence } = crossValidate(
-    normalized, pass2Mileage, pass2MileageB, pass2Year, pass2Color, pass2ColorB, pass3Damage
+    normalized, pass2Mileage, pass2MileageB, pass2Year, pass2Color, pass2ColorB, pass2Vin, pass3Damage
   );
 
   // Enrich damage codes with reference database
@@ -1068,37 +1349,82 @@ BRAND NAMES (車名 in katakana):
 アルファロメオ = Alfa Romeo, BMW = BMW
 
 FIELDS TO FIND:
-- 車名 = brand, グレード = model, 排気量 = displacement cc, 型式 = chassis code
-- 走行 = mileage km (digit boxes — read ALL digits left to right), シフト = transmission (AT=AUTOMATIC, MT=MANUAL)
-- 外色/色 = exterior color in Japanese (translate), カラーNo. = color code
+- 車名 = brand (make), モデル / model-name = base model (e.g. "GT"), グレード = trim + edition (e.g. "S 130th Anniversary Edition")
+- 出品番号 / Lot No. = lotNumber, 開催場 / 会場 = auctionHouse (USS/TAA/JU/HAA/CAA/AUCNET/etc.)
+- 排気量 = displacement cc, 型式 = model code (chassis code, NOT VIN)
+- 走行 = mileage km (digit boxes — read ALL digits left to right)
+- シフト = transmission (AT=AUTOMATIC, MT=MANUAL, CVT, DCT, PDK, SMG)
+- 駆動 / 駆動方式 = drivetrain (2WD / 4WD / AWD)
+- ドア / 形状 = doorCount + bodyType (e.g. "3D" = 3-door, "2D" = 2-door, "coupe"/"sedan"/"SUV")
+- 乗車定員 / 定員 = seatingCapacity (integer)
+- 外色/色 = exterior color in Japanese (preserve verbatim; translate for exteriorColor), カラーNo. = color code
+- 色替 / 色変 / arrow (→) next to color = colorChanged (true if repainted)
 - 燃料 = fuel (ガソリン=PETROL), ハンドル = steering (左=LHD, 右=RHD)
-- 評価点 = grade number, 内装 = interior grade LETTER (A/B/C/D, NOT color)
+- 評価点 = grade number (1-6, S), 内装 = interior grade LETTER (A/B/C/D, NOT color)
+- 内装補助 = interior aux grade (A/B/C/D, optional)
 - 修復歴 = accident (有=Yes, 無=No)
-- 装備 = equipment, セールスポイント = sales points, 注意事項 = caution notes
+- 輸入 / 輸入区分 = importType (Dealer / Individual / Auction / etc.)
+- 車台No. = chassis/VIN (17 chars), 登録No. = registration plate (e.g. "杉並 300 た 8546"), 車検 = shaken expiry (YYYY-MM-DD when day present)
+- 長さ/幅/高さ = length/width/height (mm; sheets may print cm — convert ×10)
+- リサイクル預託金 = recycling deposit (JPY)
+- 装備 = equipment codes (array: SR, AW, PS, PW, AB, TV, ナビ, etc.)
+- セールスポイント = sales points (array, translated)
+- 注意事項 = caution/modification notes (array, translated with inspector glossary)
+- 検査員 / 車両状態 / inspector remarks = inspector notes (array, translated)
 
 CRITICAL RULES:
-1. Read 排気量 EXACTLY from sheet, do NOT guess from model
+1. Read 排気量 EXACTLY from sheet, do NOT guess from model.
 2. H24 = 2012 (NOT 2024). Use H + 1988. R + 2018.
-3. Translate ALL Japanese text to English
-4. 内装 grade (A/B/C/D) is condition, NOT color
-5. Use Mercedes-Benz (not Mercedes-AMG unless dedicated AMG model like AMG GT)
+3. Translate ALL Japanese text to English.
+4. 内装 grade (A/B/C/D) is condition, NOT color.
+5. Use Mercedes-Benz (not Mercedes-AMG unless dedicated AMG model like AMG GT).
+6. グレード / edition: preserve multi-digit anniversary numerals. "130th Anniversary" must NOT be shortened to "10th" or "30th". Read the full number.
+7. Interior color: preserve two-tone strings with "/" separator. "ブラック/ホワイト" → "Black/White". Never collapse a two-tone interior to a single color.
+8. Inspector abbreviations: スレ = scuff, ガタ = looseness, キズ = scratch, ヘコミ/凹み = dent, サビ = rust, 小/中/大 = minor/moderate/major. "シートハンドル小スレ" = "minor scuff on seat handle" (NOT "looseness").
+9. 車台No. (VIN) is EXACTLY 17 characters using A–H, J–N, P, R–Z, 0–9 — never return anything shorter. It is DIFFERENT from 型式 (model code, 6–10 chars prefixed CBA-/DBA-/ABA-/LDA-). Brand WMI prefixes: Mercedes=WDB/WDC/WDD/WDF, Porsche=WP0/WP1, Ferrari=ZFF, Lamborghini=ZHW, Bentley=SCB, Aston Martin=SCF, BMW=WBS/WBA/WBY, Audi=WAU, Jaguar=SAJ, Range Rover=SAL. If unsure, scan every row labelled 車台 and copy the full 17-character string.
+10. Exterior color: return what the SHEET literally says in "exteriorColor" (e.g. if it says パール, put "Pearl" — do NOT substitute the manufacturer catalog name like "Diamond White Bright"). Put the verbatim Japanese text in exteriorColorJapanese.
+11. Grade vs model: "model" is the base model name (e.g. "GT"). "grade" is the trim + edition (e.g. "S 130th Anniversary Edition"). Split them — do NOT merge "model" and "grade" into one field.
 
 Return ONLY valid JSON:
 {
   "extracted": {
     "make": "<brand or null>",
-    "model": "<model/grade or null>",
+    "model": "<base model name, e.g. 'GT' — NOT the grade/edition. null if unreadable>",
+    "grade": "<trim + edition, e.g. 'S 130th Anniversary Edition'. Preserve full anniversary numerals. null if absent>",
+    "modelCode": "<型式, e.g. 'CBA-190378'. null if absent>",
     "year": <4-digit year or null>,
     "mileageKm": <integer or null>,
     "driveSide": "<LHD/RHD or null>",
+    "drivetrain": "<2WD|4WD|AWD or null>",
+    "bodyType": "<coupe|sedan|SUV|wagon|hatchback|convertible|etc., or null>",
+    "doorCount": <integer or null>,
+    "seatingCapacity": <integer or null>,
     "askingPriceJpy": <JPY integer or null>,
-    "exteriorColor": "<English color or null>",
-    "interiorColor": "<interior color/material or null>",
+    "exteriorColor": "<English color matching what the SHEET says, e.g. 'Pearl' if sheet says パール. Do NOT substitute catalog name. null if unreadable>",
+    "exteriorColorJapanese": "<exact Japanese characters from sheet, verbatim, or null>",
+    "colorCode": "<3-digit / alphanumeric color code or null>",
+    "colorChanged": <true if 色替/色変/→ arrow next to color indicates repaint, else false, else null>,
+    "interiorColor": "<interior color/material, PRESERVE '/' for two-tone (e.g. 'Black/White'), or null>",
+    "interiorGrade": "<A|B|C|D or null>",
+    "interiorAuxGrade": "<A|B|C|D or null>",
     "transmission": "<AUTOMATIC|MANUAL|DCT|PDK|SMG or null>",
     "fuelType": "<PETROL|DIESEL|HYBRID|ELECTRIC or null>",
-    "auctionGrade": <grade number or null>,
+    "auctionGrade": <grade number 1-6, or S=6, or null>,
     "accidentHistory": <true/false/null>,
-    "specificationNotes": "<displacement, equipment, sales points, notes — translated, comma-separated>"
+    "importType": "<Dealer|Individual|Auction|etc., or null>",
+    "vin": "<17-character chassis/VIN. null if cannot read full 17 chars — do NOT return the model code here>",
+    "registrationPlate": "<登録No., verbatim with kanji (e.g. '杉並 300 た 8546'), or null>",
+    "shakenExpiry": "<YYYY-MM-DD if day is visible, else YYYY-MM, or null>",
+    "dimensions": {"length_mm": <integer or null>, "width_mm": <integer or null>, "height_mm": <integer or null>},
+    "lotNumber": "<auction lot number, or null>",
+    "auctionHouse": "<USS|TAA|JU|HAA|CAA|AUCNET|etc., or null>",
+    "recyclingDepositJpy": <integer or null>,
+    "featureCodes": ["<equipment codes translated, e.g. 'Sunroof', 'Alloy Wheels', 'Navigation', 'Leather Seats', 'Airbag'>"],
+    "salesPoints": ["<each セールスポイント bullet, translated, as a separate array entry>"],
+    "modifications": ["<each aftermarket/modification note, translated>"],
+    "cautionNotes": ["<each 注意事項 item, translated with inspector glossary applied>"],
+    "inspectorNotes": ["<free-form inspector remarks, translated>"],
+    "specificationNotes": "<short catch-all for anything not covered above; can be empty>"
   },
   "summary": "<2-3 sentence description>"
 }`;
@@ -1120,7 +1446,9 @@ export async function extractVehicleData(images) {
     prompt: EXTRACTION_PROMPT,
     images,
     system: PASS1_SYSTEM,
-    maxTokens: 4096,
+    reasoning: { max_tokens: 6000 },
+    maxTokens: 12000,
+    cacheSystem: true,
   });
 
   if (!result || typeof result !== "object" || !result.extracted) {
@@ -1133,10 +1461,11 @@ export async function extractVehicleData(images) {
   const hasAuctionSheet = extracted.mileageKm || extracted.auctionGrade || extracted.year;
 
   if (hasAuctionSheet) {
-    const [mileageV, colorV, yearV] = await Promise.allSettled([
+    const [mileageV, colorV, yearV, vinV] = await Promise.allSettled([
       callClaudeVision({ prompt: VERIFY_MILEAGE_PROMPT, images, system: VERIFY_SYSTEM, maxTokens: 1024 }),
       callClaudeVision({ prompt: VERIFY_COLOR_PROMPT, images, system: VERIFY_SYSTEM, maxTokens: 1024 }),
       callClaudeVision({ prompt: VERIFY_YEAR_PROMPT, images, system: VERIFY_SYSTEM, maxTokens: 1024 }),
+      callClaudeVision({ prompt: VERIFY_VIN_PROMPT, images, system: VERIFY_SYSTEM, maxTokens: 1024 }),
     ]);
 
     // Apply mileage correction
@@ -1182,6 +1511,41 @@ export async function extractVehicleData(images) {
         }
       }
     }
+
+    // Apply VIN correction — a 17-char VIN from the verification pass
+    // ALWAYS beats a shorter value from Pass 1 (the most common Pass-1
+    // failure is returning the 型式 / model code in place of the VIN).
+    if (vinV.status === "fulfilled" && vinV.value?.vin) {
+      const verifiedVin = String(vinV.value.vin).replace(/[^A-HJ-NPR-Z0-9]/gi, "").toUpperCase();
+      const current = extracted.vin ? String(extracted.vin).replace(/[^A-HJ-NPR-Z0-9]/gi, "").toUpperCase() : "";
+      const verifyIs17 = verifiedVin.length === 17;
+      const currentIs17 = current.length === 17;
+      if (verifyIs17 && !currentIs17) {
+        console.log(`VIN CORRECTED: "${extracted.vin || "(empty)"}" → "${verifiedVin}"`);
+        extracted.vin = verifiedVin;
+      } else if (verifyIs17 && currentIs17 && verifiedVin !== current) {
+        console.log(`VIN CONFLICT: pass1="${current}", verify="${verifiedVin}" — keeping verification (more careful read)`);
+        extracted.vin = verifiedVin;
+      } else if (verifyIs17) {
+        extracted.vin = verifiedVin;
+      }
+      // If the verification separately read the model code, surface it
+      if (vinV.value.model_code && !extracted.modelCode) {
+        extracted.modelCode = String(vinV.value.model_code).trim();
+      }
+    }
+
+    // Post-verification VIN validation: if after all corrections we still
+    // have a non-17-char value, clear it so missing-fields UI recovers it
+    if (extracted.vin) {
+      const v = String(extracted.vin).replace(/[^A-HJ-NPR-Z0-9]/gi, "").toUpperCase();
+      if (v.length !== 17) {
+        console.log(`VIN REJECTED: "${extracted.vin}" is ${v.length} chars, not 17 — cleared for human verification`);
+        extracted.vin = null;
+      } else {
+        extracted.vin = v;
+      }
+    }
   }
 
   // Normalize auction grade
@@ -1191,14 +1555,21 @@ export async function extractVehicleData(images) {
     else extracted.auctionGrade = parseFloat(g) || null;
   }
 
-  // Apply manufacturer color code lookup if available
-  const specNotes = extracted.specificationNotes || "";
-  const codeMatch = specNotes.match(/Color code:\s*(\d{2,4})/i);
-  if (codeMatch && extracted.make) {
-    const codeLookup = lookupColorByCode(extracted.make, codeMatch[1]);
-    if (codeLookup) {
-      console.log(`COLOR CODE OVERRIDE: ${codeMatch[1]} = "${codeLookup}" (manufacturer database)`);
-      extracted.exteriorColor = codeLookup;
+  // Manufacturer catalog-name lookup — kept as REFERENCE only. The sheet's
+  // own text (e.g. "Pearl" from パール) is authoritative in exteriorColor.
+  // The catalog name goes into exteriorColorCatalog for cross-reference.
+  const codeForLookup = extracted.colorCode
+    || (extracted.specificationNotes || "").match(/Color code:\s*([A-Za-z0-9]{2,4})/i)?.[1]
+    || null;
+  if (codeForLookup && extracted.make) {
+    const catalogName = lookupColorByCode(extracted.make, codeForLookup);
+    if (catalogName) {
+      extracted.exteriorColorCatalog = catalogName;
+      // If the sheet reading is totally missing, fall back to the catalog name.
+      if (!extracted.exteriorColor) {
+        console.log(`COLOR CATALOG FALLBACK: ${codeForLookup} = "${catalogName}"`);
+        extracted.exteriorColor = catalogName;
+      }
     }
   }
 
