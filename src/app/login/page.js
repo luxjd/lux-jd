@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = searchParams.get("next");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -26,7 +28,8 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok) {
-        router.push("/dashboard");
+        const dest = nextPath && nextPath.startsWith("/") ? nextPath : "/dashboard";
+        router.push(dest);
       } else {
         setError(data.error || "Login failed");
       }
@@ -83,8 +86,9 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@luxjd.com"
+                  placeholder="you@luxjd.com"
                   required
+                  autoComplete="email"
                   className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(248,113,113,0.15)] transition-all"
                 />
               </div>
@@ -104,6 +108,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   required
+                  autoComplete="current-password"
                   className="w-full pl-11 pr-11 py-3 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_10px_rgba(248,113,113,0.15)] transition-all"
                 />
                 <button
@@ -127,9 +132,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-xs text-on-surface-variant mt-6">
-            Demo credentials: admin@luxjd.com / admin123
-          </p>
         </div>
 
         {/* Back to home */}
@@ -143,5 +145,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }
