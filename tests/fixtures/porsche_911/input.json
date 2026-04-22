@@ -1,0 +1,16 @@
+{
+  "make": "Porsche",
+  "model": "911 Carrera S",
+  "year": 2015,
+  "mileageKm": 75000,
+  "driveSide": "RHD",
+  "askingPriceJpy": 9500000,
+  "exteriorColor": "Guards Red",
+  "interiorColor": "Black",
+  "transmission": "PDK",
+  "fuelType": "PETROL",
+  "serviceHistory": "UNKNOWN",
+  "accidentHistory": true,
+  "auctionGrade": 3.5,
+  "specificationNotes": "Standard spec"
+}

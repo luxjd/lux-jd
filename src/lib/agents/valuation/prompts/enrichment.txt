@@ -1,0 +1,21 @@
+Vehicle: {{make}} {{model}} {{year}}.
+Transmission provided: {{transmission}}
+Fuel type provided: {{fuelType}}
+Specification notes: {{specificationNotes}}
+
+Return ONLY valid JSON with these fields. Be precise — this data is used for financial decisions:
+{
+  "engine_spec": "exact engine specification e.g. '3.9L Twin-Turbo V8, 670 PS' — include displacement, configuration, forced induction, and power output",
+  "original_msrp_eur": <integer — original MSRP when new in EUR, be accurate for the specific variant>,
+  "production_years": "e.g. 2015-2019 — exact production run for this specific model variant",
+  "full_model_name": "e.g. Ferrari 488 GTB (F142M) — include internal designation/chassis code if known",
+  "transmission_type": "AUTOMATIC/MANUAL/DCT/PDK/SMG — only if not already provided, otherwise echo provided value",
+  "fuel_type": "PETROL/DIESEL/HYBRID/ELECTRIC — only if not already provided",
+  "notable_options": [
+    {"option": "Carbon ceramic brakes (CCB/PCCB)", "estimated_premium_eur": 5000},
+    {"option": "Sport exhaust system", "estimated_premium_eur": 3000}
+  ],
+  "known_issues": ["common problems/failure points for this model that a buyer should be aware of"],
+  "depreciation_profile": "SLOW/MODERATE/FAST — how this model typically depreciates"
+}
+IMPORTANT for notable_options: Identify factory options from the specification_notes provided. For each option, estimate the resale premium it adds in EUR on the German market. Include standard standout features of this variant too (e.g. if it's a Performance/Competition/Pista variant). Return empty array if no notable options are identifiable.

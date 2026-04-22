@@ -35,6 +35,11 @@ export async function POST(request) {
       accidentHistory: formData.get("accidentHistory") === "true",
       auctionGrade: formData.get("auctionGrade") ? parseFloat(formData.get("auctionGrade")) : null,
       specificationNotes: formData.get("specificationNotes") || "",
+      // Spec §2.1: askingPriceJpy is required; guidanceMode is the opt-in
+      // escape hatch that returns a max-bid ceiling instead. Default guidance
+      // ON when the price field is empty so the UI's "I don't have a price
+      // yet" flow still works without changes.
+      guidanceMode: formData.get("guidanceMode") === "true" || !rawAskingPrice,
     };
 
     const photoFiles = formData.getAll("photos");

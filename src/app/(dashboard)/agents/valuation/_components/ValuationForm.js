@@ -95,6 +95,12 @@ export default function ValuationForm({ onSubmit, loading }) {
   const [summary, setSummary] = useState("");
   const [missingRequired, setMissingRequired] = useState([]);
   const [missingOptional, setMissingOptional] = useState([]);
+  // New: sheet-derivable vs external split. After the focused-retry pass,
+  // `missingSheetFields` = agent tried and failed → ask user to verify.
+  // `missingExternal` = never on the sheet to begin with → ask user.
+  const [missingSheetFields, setMissingSheetFields] = useState([]);
+  const [missingExternal, setMissingExternal] = useState([]);
+  const [retryAudit, setRetryAudit] = useState(null);
   const [answers, setAnswers] = useState({});
   const [extractError, setExtractError] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -147,6 +153,9 @@ export default function ValuationForm({ onSubmit, loading }) {
       setSummary(data.summary || "");
       setMissingRequired(data.missingRequired || []);
       setMissingOptional(data.missingOptional || []);
+      setMissingSheetFields(data.missingSheetFields || []);
+      setMissingExternal(data.missingExternal || []);
+      setRetryAudit(data._retryAudit || null);
       setAnswers({});
       setPhase("review");
     } catch (err) {
@@ -433,6 +442,29 @@ export default function ValuationForm({ onSubmit, loading }) {
         )}
       </div>
 
+      {/* Retry-recovery audit: show what the agent recovered via focused retry */}
+      {retryAudit && (retryAudit.recovered?.length > 0 || retryAudit.stillMissing?.length > 0) && (
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <span className="material-symbols-outlined text-secondary mt-0.5">autorenew</span>
+            <div className="flex-1 text-sm">
+              <p className="font-medium text-on-surface mb-1">Focused retry on missing fields</p>
+              {retryAudit.recovered?.length > 0 && (
+                <p className="text-on-surface-variant">
+                  Recovered <span className="text-emerald-400 font-medium">{retryAudit.recovered.length}</span> field{retryAudit.recovered.length !== 1 ? "s" : ""} on second pass:{" "}
+                  {retryAudit.recovered.map((r) => (FIELD_LABELS[r.key] || r.key)).join(", ")}
+                </p>
+              )}
+              {retryAudit.stillMissing?.length > 0 && (
+                <p className="text-on-surface-variant mt-1">
+                  Could not read <span className="text-amber-400 font-medium">{retryAudit.stillMissing.length}</span> field{retryAudit.stillMissing.length !== 1 ? "s" : ""} — asking below.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Missing Required Fields — Q&A */}
       {missingRequired.length > 0 && (
         <div className="bg-surface-container rounded-2xl border border-primary/20 p-4 sm:p-6">
@@ -441,7 +473,16 @@ export default function ValuationForm({ onSubmit, loading }) {
             Required Information
           </h3>
           <p className="text-sm text-on-surface-variant mb-4">
-            These details are needed for an accurate valuation. Please provide them below.
+            {(() => {
+              const sheetCount = missingRequired.filter((f) => f.origin === "sheet" || f.origin === "either").length;
+              const extCount = missingRequired.filter((f) => f.origin === "external").length;
+              if (sheetCount > 0 && extCount > 0) {
+                return `${extCount} field${extCount !== 1 ? "s" : ""} not on the auction sheet + ${sheetCount} field${sheetCount !== 1 ? "s" : ""} the agent couldn't read — please provide.`;
+              }
+              if (sheetCount > 0) return "The agent couldn't read these from the auction sheet. Please confirm or correct.";
+              if (extCount > 0) return "These details aren't on the auction sheet — please provide.";
+              return "These details are needed for an accurate valuation.";
+            })()}
           </p>
 
           <div className="space-y-4">
@@ -456,11 +497,28 @@ export default function ValuationForm({ onSubmit, loading }) {
                   answered ? "bg-emerald-400/5 border-emerald-400/20" :
                   "bg-surface-container-high border-outline-variant/15"
                 }`}>
-                  <p className="text-sm font-medium text-on-surface mb-2 flex items-center gap-2">
-                    {answered && <span className="material-symbols-outlined text-emerald-400 text-sm">check_circle</span>}
-                    {skipped && canDelegate && <span className="material-symbols-outlined text-primary text-sm">auto_awesome</span>}
-                    {field.question}
-                  </p>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <p className="text-sm font-medium text-on-surface flex items-center gap-2">
+                      {answered && <span className="material-symbols-outlined text-emerald-400 text-sm">check_circle</span>}
+                      {skipped && canDelegate && <span className="material-symbols-outlined text-primary text-sm">auto_awesome</span>}
+                      {field.question}
+                    </p>
+                    {field.origin === "sheet" && (
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400 border border-amber-400/20 whitespace-nowrap">
+                        Couldn&apos;t read
+                      </span>
+                    )}
+                    {field.origin === "external" && (
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 whitespace-nowrap">
+                        Not on sheet
+                      </span>
+                    )}
+                    {field.origin === "either" && (
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-on-surface-variant/10 text-on-surface-variant border border-outline-variant/15 whitespace-nowrap">
+                        Optional
+                      </span>
+                    )}
+                  </div>
                   {skipped && canDelegate ? (
                     <div className="flex items-center justify-between gap-3 mt-1">
                       <p className="text-xs text-on-surface-variant">
@@ -557,11 +615,18 @@ export default function ValuationForm({ onSubmit, loading }) {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-on-surface mb-2 flex items-center gap-2">
-                        {answered && <span className="material-symbols-outlined text-emerald-400 text-sm">check_circle</span>}
-                        {skipped && <span className="material-symbols-outlined text-on-surface-variant text-sm">do_not_disturb_on</span>}
-                        {field.question}
-                      </p>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <p className="text-sm font-medium text-on-surface flex items-center gap-2">
+                          {answered && <span className="material-symbols-outlined text-emerald-400 text-sm">check_circle</span>}
+                          {skipped && <span className="material-symbols-outlined text-on-surface-variant text-sm">do_not_disturb_on</span>}
+                          {field.question}
+                        </p>
+                        {field.origin === "sheet" && (
+                          <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400 border border-amber-400/20 whitespace-nowrap">
+                            Couldn&apos;t read
+                          </span>
+                        )}
+                      </div>
                       {!skipped && (
                         field.key === "accidentHistory" ? (
                           <div className="flex gap-2">

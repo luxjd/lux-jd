@@ -1,0 +1,16 @@
+{
+  "make": "Ferrari",
+  "model": "488 GTB",
+  "year": 2017,
+  "mileageKm": 18000,
+  "driveSide": "LHD",
+  "askingPriceJpy": 16500000,
+  "exteriorColor": "Rosso Corsa",
+  "interiorColor": "Nero",
+  "transmission": "DCT",
+  "fuelType": "PETROL",
+  "serviceHistory": "FULL_DEALER",
+  "accidentHistory": false,
+  "auctionGrade": 4.5,
+  "specificationNotes": "Carbon ceramic brakes, sport exhaust, full PPF"
+}

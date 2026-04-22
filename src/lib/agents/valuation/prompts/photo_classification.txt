@@ -1,0 +1,23 @@
+Classify these {{count}} vehicle photos by type. Return ONLY a JSON array of objects in the same order as the images:
+[
+  {"index": 0, "type": "EXTERIOR_FRONT", "priority": 1},
+  {"index": 1, "type": "INTERIOR_OVERVIEW", "priority": 1},
+  ...
+]
+
+Types (in priority order):
+- EXTERIOR_FRONT (front 3/4 view) — priority 1
+- EXTERIOR_REAR (rear 3/4 view) — priority 1
+- EXTERIOR_SIDE (profile view) — priority 1
+- INTERIOR_OVERVIEW (cabin overview) — priority 1
+- DASHBOARD (instrument cluster/infotainment) — priority 1
+- ENGINE_BAY (engine compartment) — priority 1
+- WHEEL_CLOSEUP (wheel/brake detail) — priority 2
+- INTERIOR_DETAIL (seats, trim closeups) — priority 2
+- DAMAGE_DETAIL (damage/wear closeup) — priority 2
+- TRUNK (boot/trunk area) — priority 3
+- UNDERCARRIAGE (underbody) — priority 3
+- DOCUMENT (paper, screen, VIN plate) — priority 4
+- OTHER (unknown/unclear) — priority 4
+
+Priority 1 photos are most important for condition assessment.

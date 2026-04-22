@@ -1,0 +1,16 @@
+{
+  "make": "Mercedes-AMG",
+  "model": "GT R",
+  "year": 2018,
+  "mileageKm": 24000,
+  "driveSide": "LHD",
+  "askingPriceJpy": 11800000,
+  "exteriorColor": "Selenite Grey",
+  "interiorColor": "Black",
+  "transmission": "DCT",
+  "fuelType": "PETROL",
+  "serviceHistory": "PARTIAL_DEALER",
+  "accidentHistory": false,
+  "auctionGrade": 4.0,
+  "specificationNotes": "AMG Performance seats, carbon trim, track package"
+}

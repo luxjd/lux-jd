@@ -1,0 +1,40 @@
+Extract ALL data from this Japanese vehicle auction sheet. Return ONLY valid JSON.
+
+RULES:
+1. Japanese era years: Heisei (H) + 1988 = AD year. Reiwa (R) + 2018. Example: H24 = 2012.
+2. Read odometer digit boxes carefully — note km or miles.
+3. Auction grades: S/6 (best) → 1 (worst). R/RA = accident history.
+4. Interior grades: A (best) → D (worst).
+5. Map damage diagram codes to English panel names.
+6. model vs grade: "model" is the base model name ONLY (e.g. "GT", "G63", "488 GTB", "911 Turbo S"). "grade" is the trim + edition from the グレード field (e.g. "S 130th Anniversary Edition"). Split them into the two fields — do NOT merge them into one. Preserve multi-digit numerals in grade VERBATIM. "130th Anniversary Edition" must NOT be truncated to "10th" or "30th". Do not drop leading digits from 100th / 110th / 120th / 130th / 140th / 150th. Read the full number left-to-right.
+7. 内装色 (interior_color): preserve two-tone strings with the separator intact. "ブラック/ホワイト" → "Black/White". Never collapse a two-tone interior to a single color.
+8. exterior_color_japanese: copy the exact Japanese characters printed on the sheet verbatim (e.g. "パール", "ダイヤモンドホワイト"). Do not translate this field.
+9. Inspector abbreviations (注意事項 / 内外装備考): スレ = scuff, ガタ = looseness, キズ = scratch, ヘコミ/凹み = dent, サビ = rust, ヒビ/亀裂 = crack, 小 = minor, 中 = moderate, 大 = major. Example: "シートハンドル小スレ" = "minor scuff on seat handle" (NOT "looseness").
+10. 車台No. (VIN / chassis number) is EXACTLY 17 characters. It is DIFFERENT from 型式 (model code, typically 6–10 chars prefixed CBA-/DBA-/ABA-/LDA-). Do NOT confuse them. Brand WMI prefixes: Mercedes=WDB/WDC/WDD/WDF, Porsche=WP0/WP1, Ferrari=ZFF, Lamborghini=ZHW, Bentley=SCB, Aston Martin=SCF, Rolls-Royce=SCA, BMW=WBS/WBA/WBY, Audi=WAU, Jaguar=SAJ, Range Rover=SAL. If you can only read part of the VIN, still attempt the full 17 chars — do NOT return the model code as VIN.
+11. If a field is unreadable or not present, use null.
+
+Return this JSON structure:
+{
+  "auction_house": null, "lot_number": null,
+  "make": "", "model": "", "grade": "", "model_code": "", "vin": "",
+  "year": null, "year_era": "", "year_calculation": "",
+  "displacement_cc": null,
+  "mileage_reading": null, "mileage_digits": "",
+  "transmission": "", "fuel_type": "", "drive_side": "",
+  "exterior_color": "", "exterior_color_japanese": "", "color_code": "",
+  "interior_color": "",
+  "overall_grade": null, "interior_grade": "", "interior_aux_grade": "",
+  "import_type": "", "accident_history": null,
+  "service_book_present": null,
+  "shaken_expiry": null,
+  "registration_plate": null,
+  "dimensions": {"length_mm": null, "width_mm": null, "height_mm": null},
+  "panel_conditions": {},
+  "damage_codes": [{"location":"","code":"","meaning":"","severity":"MINOR|MODERATE|MAJOR"}],
+  "equipment_translated": [],
+  "sales_points": [], "caution_notes": [], "inspector_notes": [],
+  "mechanical_notes": [], "modification_notes": [],
+  "recycling_deposit_jpy": null,
+  "overall_assessment": "",
+  "confidence": 0.0
+}

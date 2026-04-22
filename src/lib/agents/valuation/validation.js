@@ -35,13 +35,29 @@ export function validateInput(input) {
   if (!input.year || input.year < 1990 || input.year > new Date().getFullYear() + 1) errors.push(`year must be 1990-${new Date().getFullYear() + 1}`);
   if (input.mileageKm == null || input.mileageKm < 0 || input.mileageKm > 999999) errors.push("mileageKm must be 0-999999");
   if (!VALID_DRIVE_SIDES.includes(input.driveSide)) errors.push("driveSide must be LHD or RHD");
-  if (input.askingPriceJpy != null && input.askingPriceJpy !== "" && (input.askingPriceJpy <= 0 || input.askingPriceJpy > 500000000)) errors.push("askingPriceJpy must be 1-500000000 when provided");
+  // Spec §2.1: asking_price_jpy is REQUIRED. We support an explicit opt-in
+  // "guidance" mode where the caller asks the agent to derive a max bid
+  // without specifying a price — set guidanceMode: true to enable.
+  const hasPrice = input.askingPriceJpy != null && input.askingPriceJpy !== "";
+  if (!hasPrice && !input.guidanceMode) {
+    errors.push("askingPriceJpy is required (or pass guidanceMode: true to derive a max-bid ceiling)");
+  }
+  if (hasPrice && (input.askingPriceJpy <= 0 || input.askingPriceJpy > 500000000)) {
+    errors.push("askingPriceJpy must be 1-500000000");
+  }
   if (!input.exteriorColor || typeof input.exteriorColor !== "string") errors.push("exteriorColor is required");
 
   // Optional field sanitization
+  // Spec §2.1: auction_grade float 1.0–6.0 (S = 6.5). The S grade is a discrete
+  // top-tier mark from Japanese auctions; all other grades fall on the 1.0–6.0
+  // continuous scale, typically in 0.5 increments.
   if (input.auctionGrade != null && input.auctionGrade !== "") {
     const g = parseFloat(input.auctionGrade);
-    if (isNaN(g) || g < 1.0 || g > 6.5) errors.push("auctionGrade must be 1.0-6.5");
+    const inRange = g >= 1.0 && g <= 6.0;
+    const isSGrade = g === 6.5;
+    if (isNaN(g) || !(inRange || isSGrade)) {
+      errors.push("auctionGrade must be a number in 1.0-6.0 (or 6.5 for S grade)");
+    }
   }
   if (input.transmission && !VALID_TRANSMISSIONS.includes(input.transmission)) {
     errors.push(`transmission must be one of: ${VALID_TRANSMISSIONS.filter(Boolean).join(", ")}`);
@@ -477,52 +493,74 @@ export function validateExtractionOutput(result) {
     extracted.fuelType = null;
   }
 
-  // Identify missing required fields
+  // Field classification (spec-aware).
+  //   origin = "sheet"     — typically printed on a Japanese inspection sheet
+  //                          (USS/TAA/HAA/JU/CAA etc.). If missing, we retry
+  //                          with a focused prompt before asking the user.
+  //   origin = "external"  — NEVER on inspection sheets (the inspection sheet
+  //                          is the condition report; the asking price and
+  //                          buyer-side details come from elsewhere). Always
+  //                          ask the user.
+  //   origin = "either"    — some sheets have it, some don't. Retry; if the
+  //                          retry comes back empty, ask.
   const requiredFields = [
-    { key: "make", label: "Vehicle brand/make", question: "What is the vehicle brand? (e.g. Ferrari, Porsche, Mercedes-Benz)" },
-    { key: "model", label: "Model name", question: "What is the exact model name? (e.g. 488 GTB, 911 Turbo S, SL550)" },
-    { key: "year", label: "Year of manufacture", question: "What year was the vehicle manufactured?" },
-    { key: "mileageKm", label: "Mileage in km", question: "What is the current mileage in kilometers?" },
-    { key: "driveSide", label: "Drive side", question: "Is the vehicle LHD (left-hand drive) or RHD (right-hand drive)?" },
-    { key: "askingPriceJpy", label: "Asking price in JPY", question: "What is the asking price in Japanese Yen (JPY)?" },
-    { key: "exteriorColor", label: "Exterior color", question: "What is the exterior color of the vehicle?" },
+    { key: "make", label: "Vehicle brand/make", origin: "sheet", question: "What is the vehicle brand? (e.g. Ferrari, Porsche, Mercedes-Benz)" },
+    { key: "model", label: "Model name", origin: "sheet", question: "What is the exact model name? (e.g. 488 GTB, 911 Turbo S, SL550)" },
+    { key: "year", label: "Year of manufacture", origin: "sheet", question: "What year was the vehicle manufactured?" },
+    { key: "mileageKm", label: "Mileage in km", origin: "sheet", question: "What is the current mileage in kilometers?" },
+    { key: "driveSide", label: "Drive side", origin: "sheet", question: "Is the vehicle LHD (left-hand drive) or RHD (right-hand drive)?" },
+    { key: "askingPriceJpy", label: "Asking price in JPY", origin: "external", question: "What is the asking price in Japanese Yen (JPY)?" },
+    { key: "exteriorColor", label: "Exterior color", origin: "sheet", question: "What is the exterior color of the vehicle?" },
   ];
 
   const optionalFields = [
-    { key: "grade", label: "Grade / Edition", question: "What is the grade or edition? (e.g. S 130th Anniversary Edition, GT3 RS, Edition 1)" },
-    { key: "modelCode", label: "Model code (型式)", question: "What is the Japanese model code? (e.g. CBA-190378)" },
-    { key: "interiorColor", label: "Interior color", question: "What is the interior color/material?" },
-    { key: "interiorGrade", label: "Interior grade (内装)", question: "What is the interior grade? (A/B/C/D)" },
-    { key: "interiorAuxGrade", label: "Interior aux grade (内装補助評価)", question: "What is the interior auxiliary grade? (A/B/C/D)" },
-    { key: "transmission", label: "Transmission type", question: "What transmission does it have? (Automatic, Manual, DCT, PDK, SMG)" },
-    { key: "fuelType", label: "Fuel type", question: "What fuel type? (Petrol, Diesel, Hybrid, Electric)" },
-    { key: "drivetrain", label: "Drivetrain (駆動)", question: "What drivetrain? (2WD / 4WD / AWD)" },
-    { key: "bodyType", label: "Body type", question: "What body type? (coupe, sedan, SUV, etc.)" },
-    { key: "doorCount", label: "Door count", question: "How many doors?" },
-    { key: "seatingCapacity", label: "Seating capacity (乗車定員)", question: "How many seats?" },
-    { key: "auctionGrade", label: "Auction grade", question: "What is the auction inspection grade? (e.g. 3.5, 4, 4.5, 5)" },
-    { key: "accidentHistory", label: "Accident history", question: "Does the vehicle have any accident/repair history?" },
-    { key: "importType", label: "Import type (輸入区分)", question: "How was it imported? (Dealer / Individual / Auction)" },
-    { key: "vin", label: "Chassis / VIN (車台No)", question: "What is the 17-character chassis number / VIN?" },
-    { key: "registrationPlate", label: "Registration plate (登録No)", question: "What is the Japanese registration plate?" },
-    { key: "shakenExpiry", label: "Shaken expiry (車検)", question: "When does the shaken expire? (YYYY-MM or YYYY-MM-DD)" },
-    { key: "lotNumber", label: "Lot number (出品番号)", question: "What is the auction lot number?" },
-    { key: "auctionHouse", label: "Auction house (会場)", question: "Which auction house? (USS / TAA / JU / HAA etc.)" },
-    { key: "recyclingDepositJpy", label: "Recycling deposit (リサイクル預託金)", question: "What is the recycling deposit in JPY?" },
-    { key: "colorCode", label: "Color code (カラーNo.)", question: "What is the manufacturer color code?" },
-    { key: "exteriorColorCatalog", label: "Color catalog name", question: "What is the manufacturer catalog name for the exterior color? (auto-filled from code lookup)" },
-    { key: "colorChanged", label: "Color changed / repainted", question: "Has the vehicle been repainted? (indicated by 色替 or → arrow)" },
-    { key: "specificationNotes", label: "Notable specifications", question: "Any notable specifications or options? (e.g. carbon brakes, sport exhaust, special edition)" },
+    { key: "grade", label: "Grade / Edition", origin: "sheet", question: "What is the grade or edition? (e.g. S 130th Anniversary Edition, GT3 RS, Edition 1)" },
+    { key: "modelCode", label: "Model code (型式)", origin: "sheet", question: "What is the Japanese model code? (e.g. CBA-190378)" },
+    { key: "interiorColor", label: "Interior color", origin: "sheet", question: "What is the interior color/material?" },
+    { key: "interiorGrade", label: "Interior grade (内装)", origin: "sheet", question: "What is the interior grade? (A/B/C/D)" },
+    { key: "interiorAuxGrade", label: "Interior aux grade (内装補助評価)", origin: "either", question: "What is the interior auxiliary grade? (A/B/C/D)" },
+    { key: "transmission", label: "Transmission type", origin: "sheet", question: "What transmission does it have? (Automatic, Manual, DCT, PDK, SMG)" },
+    { key: "fuelType", label: "Fuel type", origin: "sheet", question: "What fuel type? (Petrol, Diesel, Hybrid, Electric)" },
+    { key: "drivetrain", label: "Drivetrain (駆動)", origin: "sheet", question: "What drivetrain? (2WD / 4WD / AWD)" },
+    { key: "bodyType", label: "Body type", origin: "either", question: "What body type? (coupe, sedan, SUV, etc.)" },
+    { key: "doorCount", label: "Door count", origin: "sheet", question: "How many doors?" },
+    { key: "seatingCapacity", label: "Seating capacity (乗車定員)", origin: "sheet", question: "How many seats?" },
+    { key: "auctionGrade", label: "Auction grade", origin: "sheet", question: "What is the auction inspection grade? (e.g. 3.5, 4, 4.5, 5)" },
+    { key: "accidentHistory", label: "Accident history", origin: "sheet", question: "Does the vehicle have any accident/repair history?" },
+    { key: "importType", label: "Import type (輸入区分)", origin: "sheet", question: "How was it imported? (Dealer / Individual / Auction)" },
+    { key: "vin", label: "Chassis / VIN (車台No)", origin: "sheet", question: "What is the 17-character chassis number / VIN?" },
+    { key: "registrationPlate", label: "Registration plate (登録No)", origin: "sheet", question: "What is the Japanese registration plate?" },
+    { key: "shakenExpiry", label: "Shaken expiry (車検)", origin: "sheet", question: "When does the shaken expire? (YYYY-MM or YYYY-MM-DD)" },
+    { key: "lotNumber", label: "Lot number (出品番号)", origin: "sheet", question: "What is the auction lot number?" },
+    { key: "auctionHouse", label: "Auction house (会場)", origin: "sheet", question: "Which auction house? (USS / TAA / JU / HAA etc.)" },
+    { key: "recyclingDepositJpy", label: "Recycling deposit (リサイクル預託金)", origin: "sheet", question: "What is the recycling deposit in JPY?" },
+    { key: "colorCode", label: "Color code (カラーNo.)", origin: "sheet", question: "What is the manufacturer color code?" },
+    { key: "exteriorColorCatalog", label: "Color catalog name", origin: "either", question: "What is the manufacturer catalog name for the exterior color? (auto-filled from code lookup)" },
+    { key: "colorChanged", label: "Color changed / repainted", origin: "sheet", question: "Has the vehicle been repainted? (indicated by 色替 or → arrow)" },
+    { key: "specificationNotes", label: "Notable specifications", origin: "either", question: "Any notable specifications or options? (e.g. carbon brakes, sport exhaust, special edition)" },
   ];
 
-  const missingRequired = requiredFields.filter((f) => !extracted[f.key] && extracted[f.key] !== false && extracted[f.key] !== 0);
-  const missingOptional = optionalFields.filter((f) => !extracted[f.key] && extracted[f.key] !== false && extracted[f.key] !== 0);
+  const isEmpty = (v) => v === null || v === undefined || v === "";
+  const missingRequired = requiredFields.filter((f) => isEmpty(extracted[f.key]));
+  const missingOptional = optionalFields.filter((f) => isEmpty(extracted[f.key]));
+
+  // Split into sheet-derivable (retry target) vs external (always ask).
+  // Downstream: extractVehicleData runs focused retries on sheet+either;
+  // the UI shows two separate panels so the user knows which questions
+  // are being asked because the sheet doesn't have them versus which ones
+  // the agent couldn't read.
+  const missingSheetFields = [...missingRequired, ...missingOptional].filter((f) => f.origin === "sheet" || f.origin === "either");
+  const missingExternal = [...missingRequired, ...missingOptional].filter((f) => f.origin === "external");
 
   return {
     extracted,
     summary: result.summary || null,
+    // Legacy shape — kept for backward compat with any consumer still using it.
     missingRequired,
     missingOptional,
+    // New shape: origin-classified.
+    missingSheetFields,   // candidates for focused-retry pass
+    missingExternal,      // always ask the user
     complete: missingRequired.length === 0,
   };
 }

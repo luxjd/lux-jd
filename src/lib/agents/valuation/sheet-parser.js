@@ -18,6 +18,12 @@
 
 import { callClaudeVision } from "@/lib/claude";
 import { validateSheetOutput, validateExtractionOutput } from "./validation";
+import { loadPrompt } from "./prompts/loader";
+import { ensembleEnabled, ensembleExtract } from "./sheet-ensemble";
+import { maybePreprocess } from "./image-preprocess";
+import { extractMileageWithZone, zoneExtractorEnabled } from "./sheet-mileage-extractor";
+import { retryMissingSheetFields, retryEnabled, RETRY_ACCEPT_THRESHOLD } from "./sheet-field-retry";
+import { postNormaliseExtraction } from "./sheet-post-normalize";
 
 // ══════════════════════════════════════════════════════════════
 // ESTIMATION PROVENANCE LABELS
@@ -477,57 +483,13 @@ export const AUCTION_SHEET_TOOL = {
   },
 };
 
-// Clean, proven system prompt — short = more attention on the image
-const PASS1_SYSTEM = `You are an expert at reading and extracting data from Japanese vehicle auction sheets (USS, TAA, JU, HAA, etc.).`;
-
-// ─────────────────────────────────────────────────────────────
-// LEAN PROMPT — optimized for best OCR through OpenRouter API.
-// Tested: this outperforms both our original verbose prompt AND the
-// Claude.ai native prompt when routed through OpenRouter.
-// Reference databases (colors, damage codes, brands) are applied as
-// POST-PROCESSING enrichment, not crammed into the prompt.
-// Best with: claude-opus-4 (set in claude.js)
-// ─────────────────────────────────────────────────────────────
-const PASS1_PROMPT = `Extract ALL data from this Japanese vehicle auction sheet. Return ONLY valid JSON.
-
-RULES:
-1. Japanese era years: Heisei (H) + 1988 = AD year. Reiwa (R) + 2018. Example: H24 = 2012.
-2. Read odometer digit boxes carefully — note km or miles.
-3. Auction grades: S/6 (best) → 1 (worst). R/RA = accident history.
-4. Interior grades: A (best) → D (worst).
-5. Map damage diagram codes to English panel names.
-6. model vs grade: "model" is the base model name ONLY (e.g. "GT", "G63", "488 GTB", "911 Turbo S"). "grade" is the trim + edition from the グレード field (e.g. "S 130th Anniversary Edition"). Split them into the two fields — do NOT merge them into one. Preserve multi-digit numerals in grade VERBATIM. "130th Anniversary Edition" must NOT be truncated to "10th" or "30th". Do not drop leading digits from 100th / 110th / 120th / 130th / 140th / 150th. Read the full number left-to-right.
-7. 内装色 (interior_color): preserve two-tone strings with the separator intact. "ブラック/ホワイト" → "Black/White". Never collapse a two-tone interior to a single color.
-8. exterior_color_japanese: copy the exact Japanese characters printed on the sheet verbatim (e.g. "パール", "ダイヤモンドホワイト"). Do not translate this field.
-9. Inspector abbreviations (注意事項 / 内外装備考): スレ = scuff, ガタ = looseness, キズ = scratch, ヘコミ/凹み = dent, サビ = rust, ヒビ/亀裂 = crack, 小 = minor, 中 = moderate, 大 = major. Example: "シートハンドル小スレ" = "minor scuff on seat handle" (NOT "looseness").
-10. 車台No. (VIN / chassis number) is EXACTLY 17 characters. It is DIFFERENT from 型式 (model code, typically 6–10 chars prefixed CBA-/DBA-/ABA-/LDA-). Do NOT confuse them. Brand WMI prefixes: Mercedes=WDB/WDC/WDD/WDF, Porsche=WP0/WP1, Ferrari=ZFF, Lamborghini=ZHW, Bentley=SCB, Aston Martin=SCF, Rolls-Royce=SCA, BMW=WBS/WBA/WBY, Audi=WAU, Jaguar=SAJ, Range Rover=SAL. If you can only read part of the VIN, still attempt the full 17 chars — do NOT return the model code as VIN.
-11. If a field is unreadable or not present, use null.
-
-Return this JSON structure:
-{
-  "auction_house": null, "lot_number": null,
-  "make": "", "model": "", "grade": "", "model_code": "", "vin": "",
-  "year": null, "year_era": "", "year_calculation": "",
-  "displacement_cc": null,
-  "mileage_reading": null, "mileage_digits": "",
-  "transmission": "", "fuel_type": "", "drive_side": "",
-  "exterior_color": "", "exterior_color_japanese": "", "color_code": "",
-  "interior_color": "",
-  "overall_grade": null, "interior_grade": "", "interior_aux_grade": "",
-  "import_type": "", "accident_history": null,
-  "service_book_present": null,
-  "shaken_expiry": null,
-  "registration_plate": null,
-  "dimensions": {"length_mm": null, "width_mm": null, "height_mm": null},
-  "panel_conditions": {},
-  "damage_codes": [{"location":"","code":"","meaning":"","severity":"MINOR|MODERATE|MAJOR"}],
-  "equipment_translated": [],
-  "sales_points": [], "caution_notes": [], "inspector_notes": [],
-  "mechanical_notes": [], "modification_notes": [],
-  "recycling_deposit_jpy": null,
-  "overall_assessment": "",
-  "confidence": 0.0
-}`;
+// Spec §5.1 + §8.1: pass-1 system/user prompts live in
+// prompts/sheet_parsing*.txt. The verify/pass-3/extraction prompts below
+// remain inline because they're implementation details of our multi-pass
+// pipeline (not spec-mandated prompts) and the spec only calls out one
+// "sheet_parsing" prompt file in §5.1.
+const PASS1_SYSTEM = loadPrompt("sheet_parsing.system");
+const PASS1_PROMPT = loadPrompt("sheet_parsing");
 
 
 // ══════════════════════════════════════════════════════════════
@@ -540,13 +502,132 @@ const VERIFY_SYSTEM = "Read the auction sheet carefully and answer the question.
 // Claude.ai and ChatGPT read this sheet correctly with simple prompts.
 // Our verbose prompts were stealing attention from the image.
 
-const VERIFY_MILEAGE_PROMPT = `What is the exact mileage (走行) shown on this Japanese auction sheet? Read the digit boxes carefully. Return JSON: {"mileageKm": <number>, "confidence": <0.0-1.0>}`;
+// The odometer on a Japanese auction sheet is almost always a row of
+// 6 or 7 individual digit boxes (one box per digit), read left-to-right.
+// Claude's #1 error here is SKIPPING LEADING ZEROS — reading "045032"
+// as 45032, or reading "000089" as 89. The prompt explicitly forces
+// per-box reporting to pull attention onto every box including empty
+// leading zeros. Also distinguishes km (standard) from miles (import).
+const VERIFY_MILEAGE_PROMPT = `Read the odometer / mileage field (走行 / 走行距離) on this Japanese auction sheet with FORENSIC precision.
 
-const VERIFY_YEAR_PROMPT = `What year was this vehicle first registered? Read the 年式 or 初度登録年月 field. Convert Japanese era: H(平成)+1988, R(令和)+2018. Example: H24=2012. Return JSON: {"era": "<e.g. H24>", "western_year": <number>, "confidence": <0.0-1.0>}`;
+The mileage is displayed as a row of numeric digit boxes — typically 6 or 7 boxes. Each box contains exactly one digit (including leading zeros). Report every digit, from leftmost to rightmost, even if a leading box shows 0.
+
+COMMON MISTAKES TO AVOID:
+- Do NOT drop leading zeros. "045032" is FORTY-FIVE THOUSAND THIRTY-TWO, not 450,320 or 4,503.
+- Do NOT confuse the odometer with another number on the sheet (model code, VIN digits, shaken date).
+- If the sheet notes "Miles" or "ml" anywhere on the odometer, multiply by 1.60934 to convert to km.
+- Look for a km / miles marker on or near the odometer; if ambiguous, set unit_unclear=true.
+
+Return ONLY valid JSON:
+{
+  "digit_count": <6 or 7 or whatever you see>,
+  "digits": "<string of every digit left-to-right including leading zeros, e.g. '045032'>",
+  "mileageKm": <integer km — convert from miles if the sheet shows miles>,
+  "unit_read": "<'km' | 'miles' | 'unclear'>",
+  "unit_unclear": <true only if km-vs-miles is genuinely ambiguous on the sheet>,
+  "confidence": <0.0-1.0 — lower if any box was smudged or cut off>
+}`;
+
+// Second, independently-worded mileage prompt. Different wording reduces
+// correlation between the two reads, which is what makes the triple-read
+// majority vote actually useful — if both prompts were identical, failure
+// modes would correlate and the vote would be 3-way agreement on a wrong
+// answer.
+const VERIFY_MILEAGE_PROMPT_B = `Read the number shown in the mileage digit boxes on this auction sheet.
+
+The mileage boxes are a row of small squares, each holding a single digit. Start from the LEFTMOST box — do not skip it even if it shows 0. Concatenate every digit in order to form the mileage.
+
+Worked example: boxes contain (left→right) 0, 4, 5, 0, 3, 2 → mileage = 45,032 km (seventeen-thousand is wrong; four hundred fifty thousand three hundred twenty is also wrong).
+
+Return ONLY valid JSON:
+{"digits_read_left_to_right": "<e.g. 045032>", "mileageKm": <integer>, "confidence": <0.0-1.0>}`;
+
+// Returns era_letter + era_number as SEPARATE fields so the cross-validator
+// can rebuild year_era as "H24" rather than concatenating undefined values.
+// Showa support added — pre-1989 classics carry 昭和 dates (S63 = 1988).
+const VERIFY_YEAR_PROMPT = `What year was this vehicle first registered? Read the 年式 or 初度登録年月 field carefully.
+
+Japanese-era conversion:
+- 昭和 / S (Showa, 1926-1989): Western year = era_number + 1925. Example: S63 = 1988, S55 = 1980.
+- 平成 / H (Heisei, 1989-2019): Western year = era_number + 1988. Example: H24 = 2012, H31 = 2019.
+- 令和 / R (Reiwa, 2019-present): Western year = era_number + 2018. Example: R1 = 2019, R5 = 2023.
+
+Bounds:
+- Showa era number must be 1-64
+- Heisei era number must be 1-31
+- Reiwa era number must be 1-${new Date().getFullYear() - 2018}
+
+Return ONLY valid JSON:
+{
+  "era_letter": "S" | "H" | "R",
+  "era_number": <integer>,
+  "era_combined": "<e.g. H24, R5, S63>",
+  "western_year": <integer — result of the conversion>,
+  "calculation": "<show the math, e.g. 'H24: 24 + 1988 = 2012'>",
+  "confidence": <0.0-1.0>
+}`;
 
 const VERIFY_COLOR_PROMPT = `What is the exterior color (外色) and color code number (カラーNo.) on this auction sheet? Return JSON: {"japanese_text": "<exact Japanese text>", "color_english": "<English>", "color_code": "<3-digit number or null>", "confidence": <0.0-1.0>}`;
 
 const VERIFY_VIN_PROMPT = `Find the chassis number (車台No.) on this Japanese auction sheet. This is the full 17-character VIN — NOT the shorter model code (型式, typically prefixed CBA-/DBA-/ABA-/LDA-). A valid VIN has exactly 17 characters using A–H, J–N, P, R–Z, 0–9. Read every character — do not stop early. Common prefixes: Mercedes=WDB/WDC/WDD/WDF, Porsche=WP0/WP1, Ferrari=ZFF, Lamborghini=ZHW, Bentley=SCB, Aston Martin=SCF, Rolls-Royce=SCA, McLaren=SBM, Jaguar=SAJ, Range Rover=SAL, BMW=WBS/WBA/WBY, Audi=WAU. Return JSON: {"vin": "<exactly 17 characters>", "model_code": "<型式 separately if visible>", "confidence": <0.0-1.0>}`;
+
+// Drive side (ハンドル / 左・右) was an uncorroborated Pass-1 read and
+// live-test showed it can be wrong on hand-filled sheets where 左 is
+// circled / checkmarked in a way the model misinterprets. Adding this
+// second, focused pass converts it from silent-wrong to consensus-
+// checked (agree → 0.97 confidence; disagree → flagged).
+const VERIFY_DRIVE_SIDE_PROMPT = `Find the steering-wheel side (ハンドル / 左・右) on this Japanese auction sheet.
+
+The field shows two options — 左 (left) and 右 (right) — with ONE visibly selected.
+Selection markers vary by auction house. Any of these indicates the SELECTED option:
+- circled: ○左 or ○右, or 左 with a circle drawn around it
+- BRACKETED: [左] or [右]  — SQUARE BRACKETS INDICATE SELECTION, NOT crossing out
+- underlined
+- highlighted / boxed
+- tick / checkmark next to the character
+- bolder / thicker printing than the unselected option
+
+IMPORTANT: On USS / TAA sheets, the selected option is often typeset inside SQUARE BRACKETS. Do NOT interpret brackets as cancellation — they are the selection marker. "[左]・右" means LHD; "左・[右]" means RHD.
+
+Mapping:
+- 左 selected → LHD (left-hand drive)
+- 右 selected → RHD (right-hand drive)
+
+If neither side has a visible marker, or the marker is genuinely ambiguous, report "unclear" and set confidence below 0.5.
+
+Return ONLY valid JSON:
+{
+  "marked_character": "<'左' | '右' | 'unclear'>",
+  "marker_type": "<'brackets' | 'circle' | 'underline' | 'highlight' | 'checkmark' | 'bold' | 'unclear'>",
+  "drive_side": "<'LHD' | 'RHD' | 'unclear'>",
+  "reasoning": "<one short sentence explaining why>",
+  "confidence": <0.0-1.0>
+}`;
+
+// The overall grade drives every downstream verdict (BUY / REVIEW / PASS)
+// more than any other single field. Worth a dedicated verification call.
+// Note: S is the top tier (spec §2.1 = 6.5). Lower grades often shown
+// with 0.5-step increments (e.g. 4.5). R / RA indicate accident history
+// and are returned separately — do NOT fold R into the numeric grade.
+const VERIFY_GRADE_PROMPT = `Find the overall auction grade (評価点 / 外部評価 / 総合評価) on this Japanese auction sheet.
+
+Grading scale (top → bottom):
+- S  = concours / showroom (rare; often shown as a circled S)
+- 6  = exceptional, excellent-original
+- 5  = very good
+- 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1  = stepwise down; 4 is typical for good-condition vehicles
+- R or RA = accident history (repair record / 修復歴). Report this in accident_indicator, NOT as a numeric grade.
+
+The grade is usually shown large, near the condition/damage section. Do NOT confuse it with the interior grade (内装 = A/B/C/D) — that's a separate letter. Do NOT confuse S with 5.
+
+Return ONLY valid JSON:
+{
+  "grade_raw": "<exact character(s) printed: S | 6 | 5 | 4.5 | 3.5 | R | RA | ...>",
+  "grade_numeric": <float 1.0-6.0 or 6.5 for S; null if R/RA/unreadable>,
+  "interior_grade": "<A | B | C | D | null>",
+  "accident_indicator": <true if grade is R/RA, false if visibly no accident mark, null if unclear>,
+  "confidence": <0.0-1.0>
+}`;
 
 // ══════════════════════════════════════════════════════════════
 // PASS 3: DEEP DAMAGE MAP ANALYSIS
@@ -634,14 +715,28 @@ function normalizePass1Output(raw) {
   const fin = raw.financials || {};
   const dim = raw.dimensions || {};
 
+  // Normalize whitespace in identifier-like strings — SL550 vs "SL 550"
+  // vs "SL-550" are the same trim level; collapse internal whitespace so
+  // downstream equality checks (and the snake_case API shape) don't fail
+  // on cosmetic formatting.
+  const compactIdent = (s) => {
+    if (!s || typeof s !== "string") return s;
+    const trimmed = s.trim();
+    // Collapse whitespace inside alphanumeric runs: "SL 550" → "SL550",
+    // but keep legitimate word separations ("GT R", "488 GTB") intact.
+    // Heuristic: collapse only when a single whitespace is sandwiched
+    // between a letter and a digit (or vice versa).
+    return trimmed.replace(/([A-Za-z])\s+(\d)/g, "$1$2").replace(/(\d)\s+([A-Za-z])/g, "$1$2");
+  };
+
   return {
     auction_house: ai.auction_house || null,
     lot_number: ai.lot_number || null,
     auction_date: ai.auction_date || null,
 
     make: vb.make || null,
-    model: vb.model || null,
-    grade: vb.grade_trim || vb.grade || null,
+    model: compactIdent(vb.model) || null,
+    grade: compactIdent(vb.grade_trim || vb.grade) || null,
     model_code: vb.chassis_code || vb.model_code || null,
     vin: reg.chassis_number || null,
     displacement_cc: vb.displacement_cc ? parseInt(vb.displacement_cc) : null,
@@ -796,11 +891,51 @@ export function validateVin(vin, make) {
  * Uses MAJORITY VOTE (2-of-3 or 3-of-3) instead of blind trust.
  * Returns merged result with per-field confidence and anomaly flags.
  */
-function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color, pass2ColorB, pass2Vin, pass3Damage) {
+function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color, pass2ColorB, pass2Vin, pass3Damage, pass2Grade, pass2DriveSide, pass2ZoneMileage) {
   const anomalies = [];
   const fieldConfidence = {};
 
+  // ── Zone-cropped mileage extractor (highest-priority mileage signal) ──
+  // When the zone extractor achieved 2+ model consensus on its own, trust
+  // that over the whole-sheet triple-read. The zone extractor sees digit
+  // boxes at ~250 px tall vs the whole-sheet read at ~15 px, so its
+  // per-digit OCR is categorically more reliable.
+  let zoneMileageAccepted = false;
+  if (pass2ZoneMileage && pass2ZoneMileage.mileage_km != null) {
+    const zoneAgree = pass2ZoneMileage.agreement || "";
+    // Accept:
+    //   3-of-3 / 2-of-3 model consensus on the zoomed crop (highest quality)
+    //   1-of-3-zone-unit-corrected — only one model read the crop, but the
+    //     locator's unit marker resolved ambiguity → still more reliable
+    //     than whole-sheet triple-read at 15 px per digit.
+    if (zoneAgree.startsWith("3-of-3")
+        || zoneAgree.startsWith("2-of-3")
+        || zoneAgree.startsWith("unit-majority")
+        || zoneAgree === "1-of-3-zone-unit-corrected"
+        || zoneAgree === "1-of-3-zone") {
+      pass1.mileage_reading = pass2ZoneMileage.mileage_km;
+      pass1._mileage_zone_extraction = {
+        value: pass2ZoneMileage.mileage_km,
+        agreement: pass2ZoneMileage.agreement,
+        confidence: pass2ZoneMileage.confidence,
+        rationale: pass2ZoneMileage.rationale,
+        zoneUnit: pass2ZoneMileage.zone?.unitVisible,
+      };
+      fieldConfidence.mileage = pass2ZoneMileage.confidence;
+      anomalies.push({
+        field: "mileage",
+        type: "ZONE_CROP_CONSENSUS",
+        value: pass2ZoneMileage.mileage_km,
+        agreement: pass2ZoneMileage.agreement,
+        resolution: `Zone-cropped multi-model read achieved ${pass2ZoneMileage.agreement}. ${pass2ZoneMileage.rationale}`,
+      });
+      zoneMileageAccepted = true;
+    }
+  }
+
   // ── Mileage cross-check: TRIPLE READ + MAJORITY VOTE ──
+  // Skipped when the zone extractor already produced a high-agreement read.
+  if (!zoneMileageAccepted) {
   const mileageReadings = [
     pass1?.mileage_reading,
     pass2Mileage?.mileageKm,
@@ -827,19 +962,47 @@ function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color
         });
       }
     } else {
-      // All three disagree — flag as LOW confidence, requires HUMAN VERIFICATION
+      // All three disagree — flag as LOW confidence and route to human.
+      // Fallback strategy (in priority order):
+      //   1. Prefer a read that explicitly identified its unit (km/miles).
+      //      A read that saw "マイル" and did the ×1.60934 conversion is
+      //      more trustworthy than one that just reported a number.
+      //   2. Prefer the highest individual confidence among Pass-2 reads.
+      //   3. Take the MEDIAN of the three to reduce wild-outlier damage.
       fieldConfidence.mileage = 0.30;
-      // Pick the reading with highest individual confidence from verification passes
-      const bestConf = Math.max(pass2Mileage?.confidence || 0, pass2MileageB?.confidence || 0);
-      const bestPass = (pass2Mileage?.confidence || 0) >= (pass2MileageB?.confidence || 0) ? pass2Mileage : pass2MileageB;
-      if (bestPass?.mileageKm) {
-        pass1.mileage_reading = bestPass.mileageKm;
+
+      const unitAware = [pass2Mileage, pass2MileageB].find(
+        (p) => p?.mileageKm && (p.unit_read === "km" || p.unit_read === "miles")
+      );
+
+      let fallback = null;
+      if (unitAware) {
+        fallback = unitAware.mileageKm;
+      } else {
+        const bestPass = (pass2Mileage?.confidence || 0) >= (pass2MileageB?.confidence || 0) ? pass2Mileage : pass2MileageB;
+        fallback = bestPass?.mileageKm ?? null;
       }
+
+      // Sanity: if fallback is >500,000 km it's almost certainly wrong —
+      // use the median of the three reads as a last-ditch guess.
+      const nums = mileageReadings.filter((n) => typeof n === "number" && n > 0).sort((a, b) => a - b);
+      const median = nums.length ? nums[Math.floor(nums.length / 2)] : null;
+      if (fallback == null || fallback > 500_000) {
+        fallback = median;
+      }
+
+      if (fallback != null) {
+        pass1.mileage_reading = fallback;
+      }
+
       anomalies.push({
         field: "mileage",
         type: "NO_CONSENSUS",
         readings: mileageReadings.filter(Boolean),
-        resolution: "⚠ NO MAJORITY — all 3 reads disagree. Mileage requires HUMAN VERIFICATION. Using highest-confidence read.",
+        unitAwareUsed: !!unitAware,
+        fallbackStrategy: unitAware ? "unit-aware" : (median === fallback ? "median" : "highest-confidence"),
+        resolution: "⚠ NO MAJORITY — all 3 reads disagree. Mileage requires HUMAN VERIFICATION. " +
+                    (unitAware ? "Used unit-aware read as fallback." : median === fallback ? "Used median as fallback." : "Used highest-confidence read."),
         humanVerificationRequired: true,
       });
       // Store all readings so the UI can show them for manual selection
@@ -857,6 +1020,7 @@ function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color
   } else {
     fieldConfidence.mileage = pass1?.mileage_reading ? 0.60 : 0.0;
   }
+  } // end if (!zoneMileageAccepted)
 
   // ── Year cross-check with PLAUSIBILITY GUARD ──
   // Don't let verification override a correct Pass 1 when verification misreads the era number
@@ -871,6 +1035,15 @@ function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color
       const pass2Plausible = pass2Year.western_year >= 2000 && pass2Year.western_year <= new Date().getFullYear() + 1;
       const pass1HasValidCalc = pass1.year_calculation && /\d+\s*\+\s*\d+\s*=\s*\d+/.test(pass1.year_calculation);
 
+      // Rebuild year_era from Pass-2 components if present, else fall back
+      // to the combined string the prompt now also emits. The old code
+      // silently produced "undefinedundefined" when the prompt returned
+      // only `era` without split components.
+      const pass2Era =
+        (pass2Year.era_letter && pass2Year.era_number != null)
+          ? `${pass2Year.era_letter}${pass2Year.era_number}`
+          : (pass2Year.era_combined || pass2Year.era || null);
+
       if (pass1Plausible && !pass2Plausible) {
         // Pass 1 is plausible, verification is not — keep Pass 1
         anomalies.push({
@@ -884,8 +1057,8 @@ function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color
       } else if (!pass1Plausible && pass2Plausible) {
         // Verification is plausible, Pass 1 is not — use verification
         pass1.year = pass2Year.western_year;
-        pass1.year_era = `${pass2Year.era_letter}${pass2Year.era_number}`;
-        pass1.year_calculation = pass2Year.calculation;
+        if (pass2Era) pass1.year_era = pass2Era;
+        pass1.year_calculation = pass2Year.calculation || pass1.year_calculation;
         fieldConfidence.year = 0.75;
       } else {
         // Both plausible or both implausible — use verification but lower confidence
@@ -899,8 +1072,8 @@ function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color
         });
         if (!pass1HasValidCalc) {
           pass1.year = pass2Year.western_year;
-          pass1.year_era = `${pass2Year.era_letter}${pass2Year.era_number}`;
-          pass1.year_calculation = pass2Year.calculation;
+          if (pass2Era) pass1.year_era = pass2Era;
+          pass1.year_calculation = pass2Year.calculation || pass1.year_calculation;
         }
         fieldConfidence.year = 0.55;
       }
@@ -1064,6 +1237,51 @@ function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color
     }
   }
 
+  // ── Drive-side cross-check (Pass 1 vs dedicated drive-side pass) ──
+  // Policy: when Pass 1 and the verification pass DISAGREE, do NOT silently
+  // overwrite. Both reads are single-shot LLM judgments on the same image;
+  // there is no principled way to pick a winner. Flag the field, drop
+  // confidence, and let the downstream "sheetValidationFailed" guardrail
+  // force REVIEW. Silent overwriting (which we originally did) produces
+  // worse outcomes than leaving Pass 1 visible and flagged.
+  if (pass2DriveSide) {
+    const p1ds = pass1?.drive_side ? String(pass1.drive_side).toUpperCase() : null;
+    const p2ds = pass2DriveSide.drive_side
+      ? String(pass2DriveSide.drive_side).toUpperCase()
+      : null;
+    const p2Conf = pass2DriveSide.confidence || 0;
+
+    if (p1ds && p2ds && p2ds !== "UNCLEAR" && p1ds !== "UNCLEAR") {
+      if (p1ds === p2ds) {
+        fieldConfidence.drive_side = 0.97;
+      } else {
+        // Disagreement — keep Pass 1, flag, drop confidence so the
+        // global sheet-confidence drops and guardrails engage.
+        anomalies.push({
+          field: "drive_side",
+          type: "DRIVE_SIDE_DISAGREEMENT",
+          pass1Value: p1ds,
+          pass2Value: p2ds,
+          pass2MarkedChar: pass2DriveSide.marked_character,
+          pass2Reasoning: pass2DriveSide.reasoning,
+          pass2Confidence: p2Conf,
+          resolution: "Drive-side readings disagree. Keeping Pass 1 but flagging for human verification.",
+          humanVerificationRequired: true,
+        });
+        fieldConfidence.drive_side = 0.45;
+      }
+    } else if (p2ds && p2ds !== "UNCLEAR" && !p1ds) {
+      // Pass 1 missed it, fill from verification — only case where we
+      // accept the verification read unilaterally.
+      pass1.drive_side = p2ds;
+      fieldConfidence.drive_side = 0.78;
+    } else if (p1ds) {
+      fieldConfidence.drive_side = 0.70;
+    }
+  } else if (pass1?.drive_side) {
+    fieldConfidence.drive_side = 0.65;
+  }
+
   // ── Damage cross-check (Pass 1 vs Pass 3) ──
   if (pass3Damage) {
     const p1Codes = pass1?.damage_codes || [];
@@ -1118,6 +1336,102 @@ function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color
     });
   } else {
     pass1.accident_contradiction = null;
+  }
+
+  // ── Era-math auto-correction ──
+  // If year_era is present and yields a VALID era number (H1-31, R1-current,
+  // S1-64), its arithmetic is closed-form. A disagreement with year means
+  // `year` was misread (most common: a 2-year typo). Prefer the era-derived
+  // value — it's math, not OCR, and can't be wrong if the era string parsed.
+  if (pass1?.year_era && pass1?.year) {
+    const m = String(pass1.year_era).toUpperCase().match(/^([SHR])\s*(\d{1,2})/);
+    if (m) {
+      const base = { S: 1925, H: 1988, R: 2018 }[m[1]];
+      const eraNum = parseInt(m[2], 10);
+      const maxEra = { S: 64, H: 31, R: Math.max(1, new Date().getFullYear() - 2018) }[m[1]];
+      if (base && eraNum >= 1 && eraNum <= maxEra) {
+        const eraDerivedYear = base + eraNum;
+        if (eraDerivedYear !== pass1.year) {
+          anomalies.push({
+            field: "year",
+            type: "ERA_MATH_CORRECTION",
+            sheetYear: pass1.year,
+            eraDerivedYear,
+            era: pass1.year_era,
+            resolution: `year_era=${pass1.year_era} (${m[1] === "S" ? "Showa" : m[1] === "H" ? "Heisei" : "Reiwa"}) implies ${eraDerivedYear}, but the year field read as ${pass1.year}. Era math wins (closed-form arithmetic over valid era number).`,
+          });
+          pass1.year = eraDerivedYear;
+          fieldConfidence.year = 0.88;
+        }
+      }
+    }
+  }
+
+  // ── Grade verification cross-check (Pass 1 vs dedicated grade pass) ──
+  // Accepts Pass 1 when Pass 2 agrees or is silent. Lowers confidence
+  // when they disagree; trusts Pass 2 when Pass 1 was null. Also handles
+  // the R / RA accident marker — that's not a numeric grade.
+  if (pass2Grade) {
+    const p1g = typeof pass1?.overall_grade === "number" ? pass1.overall_grade : null;
+    const p2gRaw = typeof pass2Grade.grade_raw === "string" ? pass2Grade.grade_raw.toUpperCase().trim() : null;
+    const p2gNumeric = typeof pass2Grade.grade_numeric === "number" ? pass2Grade.grade_numeric : null;
+
+    // R / RA = accident marker, not a grade.
+    if (p2gRaw === "R" || p2gRaw === "RA") {
+      pass1.accident_history = true;
+      anomalies.push({
+        field: "accident_history",
+        type: "GRADE_R_DETECTED",
+        message: "Grade verification pass read R/RA — forcing accident_history=true.",
+      });
+      // Don't overwrite a numeric grade if Pass 1 had one; the R marker
+      // exists alongside, but for scoring we still need the number.
+      if (p1g != null) fieldConfidence.overall_grade = Math.max(fieldConfidence.overall_grade ?? 0.7, 0.7);
+    } else if (p2gNumeric != null && p1g != null) {
+      if (Math.abs(p2gNumeric - p1g) < 0.1) {
+        fieldConfidence.overall_grade = 0.97;
+      } else {
+        anomalies.push({
+          field: "overall_grade",
+          type: "GRADE_DISAGREEMENT",
+          pass1Value: p1g,
+          pass2Value: p2gNumeric,
+          pass2Raw: p2gRaw,
+          resolution: `Pass 2 dedicated grade read disagrees with Pass 1. Averaging to ${((p1g + p2gNumeric) / 2).toFixed(2)}; verify manually.`,
+          humanVerificationRequired: true,
+        });
+        // When Pass 2 confidence is notably higher, prefer Pass 2.
+        if ((pass2Grade.confidence || 0) > 0.80) {
+          pass1.overall_grade = p2gNumeric;
+          fieldConfidence.overall_grade = 0.65;
+        } else {
+          fieldConfidence.overall_grade = 0.55;
+        }
+      }
+    } else if (p2gNumeric != null && p1g == null) {
+      // Pass 1 missed the grade; fill from Pass 2.
+      pass1.overall_grade = p2gNumeric;
+      fieldConfidence.overall_grade = 0.78;
+    } else if (p1g != null) {
+      fieldConfidence.overall_grade = 0.75;
+    }
+
+    // Interior grade corroboration — A/B/C/D single letter.
+    if (pass2Grade.interior_grade && !pass1.interior_grade) {
+      pass1.interior_grade = pass2Grade.interior_grade;
+      fieldConfidence.interior_grade = 0.78;
+    } else if (pass2Grade.interior_grade && pass1.interior_grade && pass2Grade.interior_grade !== pass1.interior_grade) {
+      anomalies.push({
+        field: "interior_grade",
+        type: "DISAGREEMENT",
+        pass1Value: pass1.interior_grade,
+        pass2Value: pass2Grade.interior_grade,
+        resolution: "Pass 1 / Pass 2 disagree on A/B/C/D interior grade — verify manually.",
+      });
+      fieldConfidence.interior_grade = 0.55;
+    }
+  } else if (pass1?.overall_grade != null) {
+    fieldConfidence.overall_grade = 0.70;
   }
 
   // ── Grade vs condition consistency ──
@@ -1197,30 +1511,60 @@ function computeDamageSeverityScore(damageCodes) {
  * @param {boolean} [opts.quickMode=false] - Single-pass only (fastest, least accurate)
  * @returns {object|null} Parsed sheet data with confidence scores, or null
  */
-export async function parseAuctionSheet(image, opts = {}) {
-  if (!image) return null;
+export async function parseAuctionSheet(rawImage, opts = {}) {
+  if (!rawImage) return null;
 
   const { skipVerification = false, skipDamageDeep = false, quickMode = false } = opts;
+
+  // ── Pre-Pass: image preprocessing (flag-gated) ──
+  // When SHEET_PREPROCESS=1, run the raw image through sharp: EXIF
+  // auto-rotate, upscale small images, adaptive contrast, light sharpen,
+  // PNG output. All downstream passes (Pass 1, 2×6 verifications, Pass 3)
+  // consume the SAME preprocessed image so they agree on pixel geometry.
+  const preprocessResult = await maybePreprocess(rawImage, opts.forcePreprocess ? { force: true } : {});
+  const image = preprocessResult.image;
+  if (preprocessResult.preprocessed) {
+    console.log(`[sheet-parser] preprocessing applied: ${preprocessResult.applied.join(", ")}`);
+  }
 
   // ── Pass 1: Full comprehensive extraction ──
   // Tool-use enforces the schema (no regex-from-text parsing), extended
   // thinking gives the model room to reason through ambiguous OCR, and
   // prompt caching makes the system prompt cheap on subsequent calls.
-  const pass1 = await callClaudeVision({
-    prompt: PASS1_PROMPT,
-    images: [image],
-    system: PASS1_SYSTEM,
-    tools: [AUCTION_SHEET_TOOL],
-    toolChoice: { type: "function", function: { name: "record_auction_sheet" } },
-    reasoning: { max_tokens: 8000 },
-    maxTokens: 16000,
-    cacheSystem: true,
-  });
+  //
+  // If SHEET_ENSEMBLE=1, Pass-1 routes through a 3-model consensus
+  // (Claude + GPT-5 + Gemini via OpenRouter) instead of a single call.
+  // Attaches per-field confidence from cross-model agreement — this is
+  // the single biggest silent-failure reducer available without training
+  // new models. All three vision providers are reachable with the same
+  // OPENROUTER_API_KEY we already have.
+  const pass1 = ensembleEnabled()
+    ? await ensembleExtract(image, { prompt: PASS1_PROMPT, system: PASS1_SYSTEM, maxTokens: 16000 })
+    : await callClaudeVision({
+        prompt: PASS1_PROMPT,
+        images: [image],
+        system: PASS1_SYSTEM,
+        tools: [AUCTION_SHEET_TOOL],
+        toolChoice: { type: "function", function: { name: "record_auction_sheet" } },
+        reasoning: { max_tokens: 8000 },
+        maxTokens: 16000,
+        cacheSystem: true,
+      });
 
   if (!pass1 || typeof pass1 !== "object") return null;
 
   // ── Normalize: map Claude.ai clean schema → our internal field names ──
   const normalized = normalizePass1Output(pass1);
+
+  // Apply whitespace compaction to identifier-like fields regardless of
+  // which extraction path was used. normalizePass1Output returns early
+  // for the tool-use path, so we need this here too.
+  const compactIdent = (s) => {
+    if (!s || typeof s !== "string") return s;
+    return s.trim().replace(/([A-Za-z])\s+(\d)/g, "$1$2").replace(/(\d)\s+([A-Za-z])/g, "$1$2");
+  };
+  if (normalized.model) normalized.model = compactIdent(normalized.model);
+  if (normalized.grade) normalized.grade = compactIdent(normalized.grade);
 
   // Quick mode — return after single pass with basic validation
   if (quickMode) {
@@ -1230,25 +1574,28 @@ export async function parseAuctionSheet(image, opts = {}) {
     return validateSheetOutput(normalized);
   }
 
-  // ── Pass 2: Blind verification — TRIPLE mileage read + DUAL color read + VIN (all parallel) ──
+  // ── Pass 2: Blind verification — TRIPLE mileage + DUAL color + YEAR + VIN + GRADE (all parallel) ──
   let pass2Mileage = null, pass2MileageB = null;
   let pass2Year = null;
   let pass2Color = null, pass2ColorB = null;
   let pass2Vin = null;
+  let pass2Grade = null;
+  let pass2DriveSide = null;
+  let pass2ZoneMileage = null;
 
   if (!skipVerification) {
-    // Run 6 verification calls in parallel:
-    // - 2x mileage (for triple read with Pass 1 = 3 total readings)
-    // - 1x year
-    // - 2x color (for triple read with Pass 1 = 3 total readings)
-    // - 1x VIN (strict 17-char read, separated from 型式 model code)
+    // 8 verification calls in parallel. Drive-side + grade are the two
+    // most recent additions — live-testing showed they're fields that
+    // silently fail most often on hand-filled sheets.
     const verifyPromises = await Promise.allSettled([
       callClaudeVision({ prompt: VERIFY_MILEAGE_PROMPT, images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
-      callClaudeVision({ prompt: "Read the mileage number (走行) from this auction sheet. What number is shown in the digit boxes? Return JSON: {\"mileageKm\": <number>}", images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
+      callClaudeVision({ prompt: VERIFY_MILEAGE_PROMPT_B, images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
       callClaudeVision({ prompt: VERIFY_YEAR_PROMPT, images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
       callClaudeVision({ prompt: VERIFY_COLOR_PROMPT, images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
       callClaudeVision({ prompt: "What color (外色) is this vehicle? Also read the color code number (カラーNo.). Return JSON: {\"color_english\": \"<color>\", \"color_code\": \"<3-digit code>\"}", images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
       callClaudeVision({ prompt: VERIFY_VIN_PROMPT, images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
+      callClaudeVision({ prompt: VERIFY_GRADE_PROMPT, images: [image], system: VERIFY_SYSTEM, maxTokens: 1024 }),
+      callClaudeVision({ prompt: VERIFY_DRIVE_SIDE_PROMPT, images: [image], system: VERIFY_SYSTEM, maxTokens: 512 }),
     ]);
 
     pass2Mileage = verifyPromises[0].status === "fulfilled" ? verifyPromises[0].value : null;
@@ -1257,6 +1604,33 @@ export async function parseAuctionSheet(image, opts = {}) {
     pass2Color = verifyPromises[3].status === "fulfilled" ? verifyPromises[3].value : null;
     pass2ColorB = verifyPromises[4].status === "fulfilled" ? verifyPromises[4].value : null;
     pass2Vin = verifyPromises[5].status === "fulfilled" ? verifyPromises[5].value : null;
+    pass2Grade = verifyPromises[6].status === "fulfilled" ? verifyPromises[6].value : null;
+    pass2DriveSide = verifyPromises[7].status === "fulfilled" ? verifyPromises[7].value : null;
+
+    // Zone-cropped mileage extractor (flag-gated).
+    if (zoneExtractorEnabled()) {
+      console.log("[sheet-parser] zone-mileage flag ON, attempting extraction...");
+      try {
+        pass2ZoneMileage = await extractMileageWithZone(image, normalized?.year || null);
+        if (pass2ZoneMileage) {
+          console.log(`[sheet-parser] zone mileage result: ${pass2ZoneMileage.mileage_km} km, agreement=${pass2ZoneMileage.agreement}, conf=${pass2ZoneMileage.confidence?.toFixed(2)}`);
+          if (pass2ZoneMileage.allScores) {
+            for (const s of pass2ZoneMileage.allScores) {
+              console.log(`  • ${s.model}: ${s.km} km (${Math.round(s.kmPerYr || 0)} km/yr, score ${s.score.toFixed(2)}) — ${s.reason}`);
+            }
+          } else if (pass2ZoneMileage.reads) {
+            for (const r of pass2ZoneMileage.reads) {
+              console.log(`  • ${r.name || "?"}: km=${r.mileage_km}, unit=${r.unit}, conf=${r.confidence}`);
+            }
+          }
+          console.log(`  zone bbox: ${JSON.stringify(pass2ZoneMileage.zone?.bbox)}, unitVisible=${pass2ZoneMileage.zone?.unitVisible}`);
+        } else {
+          console.log("[sheet-parser] zone mileage returned null (locator or crop failed)");
+        }
+      } catch (e) {
+        console.warn("[sheet-parser] zone mileage extractor threw:", e.message);
+      }
+    }
   }
 
   // ── Pass 3: Deep damage map analysis ──
@@ -1279,7 +1653,7 @@ export async function parseAuctionSheet(image, opts = {}) {
 
   // ── Cross-validation & merge (majority vote) ──
   const { merged, anomalies, fieldConfidence } = crossValidate(
-    normalized, pass2Mileage, pass2MileageB, pass2Year, pass2Color, pass2ColorB, pass2Vin, pass3Damage
+    normalized, pass2Mileage, pass2MileageB, pass2Year, pass2Color, pass2ColorB, pass2Vin, pass3Damage, pass2Grade, pass2DriveSide, pass2ZoneMileage
   );
 
   // Enrich damage codes with reference database
@@ -1292,6 +1666,14 @@ export async function parseAuctionSheet(image, opts = {}) {
   merged._field_confidence = fieldConfidence;
   merged._extraction_mode = "full";
   merged._passes_completed = 1 + (skipVerification ? 0 : 1) + (skipDamageDeep ? 0 : 1);
+  merged._preprocessing = preprocessResult.preprocessed
+    ? {
+        applied: preprocessResult.applied,
+        inputWidth: preprocessResult.meta?.width,
+        outputWidth: preprocessResult.outMeta?.width,
+        warning: preprocessResult.warning || null,
+      }
+    : null;
 
   // Per-field provenance labels — downstream UI renders "(Estimated)"
   // next to any field listed here. Absent = directly extracted.
@@ -1436,10 +1818,19 @@ Return ONLY valid JSON:
  * @param {Array<{data: string, mediaType: string}>} images - Base64 encoded images
  * @returns {object} { extracted, summary, verified }
  */
-export async function extractVehicleData(images) {
-  if (!images || images.length === 0) {
+export async function extractVehicleData(rawImages) {
+  if (!rawImages || rawImages.length === 0) {
     throw new Error("No images provided for extraction");
   }
+
+  // ── Pre-Pass: preprocess every uploaded image in parallel ──
+  // Upload flow ingests auction sheets, service booklets, photos — run
+  // them all through the same pipeline so the downstream extraction sees
+  // uniformly enhanced images.
+  const images = await Promise.all(rawImages.map(async (img) => {
+    const r = await maybePreprocess(img);
+    return r.image;
+  }));
 
   // ── Pass 1: Full extraction ──
   const result = await callClaudeVision({
@@ -1548,11 +1939,24 @@ export async function extractVehicleData(images) {
     }
   }
 
-  // Normalize auction grade
+  // Normalize auction grade.
+  // Spec §2.1: the Japanese auction scale is 1.0-6.0 *plus* an S grade
+  // that sits ABOVE 6. S is an independent tier, not an alias for 6 —
+  // a concours-quality S vehicle is noticeably better than a grade-6
+  // vehicle. Per our own validation rule, S = 6.5 so it sorts above
+  // 6.0 numerically while staying inside the normalized float range.
   if (extracted.auctionGrade != null) {
-    const g = String(extracted.auctionGrade).toUpperCase();
-    if (g === "S") extracted.auctionGrade = 6;
-    else extracted.auctionGrade = parseFloat(g) || null;
+    const g = String(extracted.auctionGrade).toUpperCase().trim();
+    if (g === "S") {
+      extracted.auctionGrade = 6.5;
+    } else if (g === "R" || g === "RA") {
+      // R / RA grades indicate accident history — they're a separate
+      // axis, not a numeric grade. Null out and set accident_history.
+      extracted.auctionGrade = null;
+      extracted.accidentHistory = true;
+    } else {
+      extracted.auctionGrade = parseFloat(g) || null;
+    }
   }
 
   // Manufacturer catalog-name lookup — kept as REFERENCE only. The sheet's
@@ -1573,8 +1977,156 @@ export async function extractVehicleData(images) {
     }
   }
 
-  return validateExtractionOutput({
+  // ── Defensive-stack merge ──
+  // extractVehicleData originally ran a single whole-sheet prompt for speed.
+  // But that path skipped the zone-mileage extractor, post-validation, VIN
+  // check-digit, and reality constraints — which means the UI's review
+  // screen could show demonstrably-wrong data (e.g. 35,433 km instead of
+  // 137,565 km because the odometer digit boxes got misread).
+  //
+  // Fix: run the FULL parseAuctionSheet pipeline on the primary image and
+  // merge its fields with confidence-weighted preference. This converts the
+  // upload flow to use the same defensive stack as the valuation flow, so
+  // whatever the user sees on the review screen is the same quality that
+  // would drive a BUY verdict.
+  try {
+    const primaryImage = images[0];
+    const deepParsed = await parseAuctionSheet(primaryImage);
+    if (deepParsed && typeof deepParsed === "object") {
+      // Map parseAuctionSheet's internal field names → extractVehicleData's
+      // UI-friendly field names. parseAuctionSheet values win for fields it
+      // extracts with the zone/ensemble/post-validation stack.
+      const mapIfBetter = (uiKey, deepValue, predicate = (v) => v != null && v !== "") => {
+        if (predicate(deepValue)) {
+          extracted[uiKey] = deepValue;
+        }
+      };
+      mapIfBetter("mileageKm", deepParsed.mileage_reading, (v) => typeof v === "number" && v > 0);
+      mapIfBetter("year", deepParsed.year, (v) => typeof v === "number" && v >= 1990);
+      mapIfBetter("yearEra", deepParsed.year_era);
+      mapIfBetter("auctionGrade", deepParsed.overall_grade, (v) => typeof v === "number" && v > 0);
+      mapIfBetter("interiorGrade", deepParsed.interior_grade);
+      // VIN: only overwrite if deep-parse value is exactly 17 chars AND
+      // passes the WMI check. Otherwise keep whatever the upload read.
+      if (deepParsed.vin && typeof deepParsed.vin === "string") {
+        const cleanVin = deepParsed.vin.replace(/[^A-HJ-NPR-Z0-9]/gi, "").toUpperCase();
+        if (cleanVin.length === 17) {
+          extracted.vin = cleanVin;
+        }
+      }
+      // Shaken era-math has been applied inside parseAuctionSheet.
+      mapIfBetter("shakenExpiry", deepParsed.shaken_expiry);
+      mapIfBetter("driveSide", deepParsed.drive_side);
+      mapIfBetter("transmission", deepParsed.transmission);
+      mapIfBetter("fuelType", deepParsed.fuel_type);
+      mapIfBetter("lotNumber", deepParsed.lot_number);
+      mapIfBetter("auctionHouse", deepParsed.auction_house);
+      mapIfBetter("modelCode", deepParsed.model_code);
+      mapIfBetter("displacement", deepParsed.displacement_cc);
+      mapIfBetter("accidentHistory", deepParsed.accident_history, (v) => typeof v === "boolean");
+      mapIfBetter("registrationPlate", deepParsed.registration_plate);
+      mapIfBetter("colorCode", deepParsed.color_code);
+
+      // Color: prefer the MORE SPECIFIC name over generic truncation.
+      // "Pearl White" > "White"; "Selenite Grey Metallic" > "Grey".
+      const prefFromSpec = (a, b) => {
+        if (!a) return b;
+        if (!b) return a;
+        return String(b).length > String(a).length ? b : a;
+      };
+      extracted.exteriorColor = prefFromSpec(extracted.exteriorColor, deepParsed.exterior_color);
+      if (deepParsed.exterior_color_japanese) extracted.exteriorColorJapanese = deepParsed.exterior_color_japanese;
+      extracted.interiorColor = prefFromSpec(extracted.interiorColor, deepParsed.interior_color);
+
+      // Carry over the defensive diagnostics so downstream can render
+      // "confirm these" badges for anything parseAuctionSheet flagged.
+      extracted._deepParseAnomalies = Array.isArray(deepParsed._anomalies) ? deepParsed._anomalies : [];
+      extracted._deepParseFieldConfidence = deepParsed._field_confidence || {};
+      extracted._deepParseValidation = deepParsed._validation || null;
+      extracted._preprocessingApplied = deepParsed._preprocessing || null;
+    }
+  } catch (e) {
+    console.warn("[extract] deep parseAuctionSheet merge failed, continuing with lightweight extraction:", e.message);
+  }
+
+  // ── Model/grade reassembly ──
+  // Pass 1 sometimes splits a compact model name like "SL550" into
+  // model="SL" + grade="550" because the sheet prints "SL 550" with a
+  // space separator. Detect: short model (≤3 chars) + digit-prefixed grade
+  // = probably split. Reassemble and clear grade since 550 isn't a trim.
+  if (extracted.model && extracted.grade) {
+    const modelCompact = String(extracted.model).trim();
+    const gradeStr = String(extracted.grade).trim();
+    const isShortModel = modelCompact.length <= 3 && /^[A-Za-z]+$/.test(modelCompact);
+    const gradeStartsWithDigits = /^\d{2,4}\b/.test(gradeStr);
+    if (isShortModel && gradeStartsWithDigits) {
+      const digitPart = gradeStr.match(/^(\d{2,4})/)[1];
+      const rest = gradeStr.slice(digitPart.length).trim();
+      extracted.model = modelCompact + digitPart;        // "SL" + "550" = "SL550"
+      extracted.grade = rest || null;                    // anything after (e.g. "AMG", "Edition") stays as grade
+      console.log(`[extract] model/grade reassembled: "${modelCompact}"+"${digitPart}" → "${extracted.model}"${rest ? `, grade="${rest}"` : ", grade cleared"}`);
+    }
+  }
+
+  // ── Post-normalisation pass ──
+  // Apply the calibration-set-learned rules: auction-house location
+  // stripping ("USS Tokyo" → "USS"), Mercedes-Benz → Mercedes-AMG when an
+  // AMG model code is present, import-type canonicalisation, recycling-
+  // deposit plausibility. These are small but high-confidence fixes that
+  // eliminate the systematic errors we measured across 6 real sheets.
+  const { notes: normaliseNotes } = postNormaliseExtraction(extracted);
+  if (normaliseNotes.length > 0) {
+    console.log(`[extract] post-normalise: ${normaliseNotes.join(" | ")}`);
+  }
+
+  // ── Focused-retry pass ──
+  // Before handing back to the UI, check which sheet-derivable fields are
+  // still missing and attempt focused per-field reads with a 3-model
+  // ensemble. This converts a "we didn't see it, please tell us" question
+  // into "we didn't see it on first pass, tried again, got it" success —
+  // which is the key UX principle: only ask the user for information that
+  // genuinely isn't on the sheet or that we truly couldn't read.
+  let initialValidation = validateExtractionOutput({
     extracted,
     summary: result.summary || null,
   });
+
+  if (retryEnabled() && images.length > 0 && initialValidation.missingSheetFields?.length > 0) {
+    // Use the first image as the primary sheet — auction sheets are
+    // typically the first upload. (Future: run retry against every sheet
+    // image and take the first successful read.)
+    const primaryImage = images[0];
+    const keysToRetry = initialValidation.missingSheetFields.map((f) => f.key);
+    console.log(`[extract] retrying ${keysToRetry.length} missing sheet fields: ${keysToRetry.join(", ")}`);
+
+    const retryResults = await retryMissingSheetFields(primaryImage, keysToRetry);
+
+    // Accept any retry result whose confidence clears the threshold.
+    const recovered = [];
+    const stillMissing = [];
+    for (const [key, r] of Object.entries(retryResults)) {
+      if (r && r.value !== null && r.confidence >= RETRY_ACCEPT_THRESHOLD) {
+        extracted[key] = r.value;
+        recovered.push({ key, value: r.value, confidence: r.confidence, votes: r.votes });
+      } else {
+        stillMissing.push({ key, reason: r ? `low confidence ${(r.confidence * 100).toFixed(0)}% (votes ${r.votes})` : "no retry response" });
+      }
+    }
+    if (recovered.length) console.log(`[extract] recovered ${recovered.length} fields via retry: ${recovered.map((r) => `${r.key}=${JSON.stringify(r.value)} (${r.votes})`).join(", ")}`);
+    if (stillMissing.length) console.log(`[extract] still missing after retry (will ask user): ${stillMissing.map((s) => `${s.key} (${s.reason})`).join(", ")}`);
+
+    // Re-apply post-normalise so retry-recovered values are canonicalised too.
+    postNormaliseExtraction(extracted);
+
+    // Re-run validation now that retries have populated some fields.
+    // Any field still missing goes to the user-ask panels.
+    const finalValidation = validateExtractionOutput({
+      extracted,
+      summary: result.summary || null,
+    });
+    finalValidation._retryAudit = { recovered, stillMissing };
+    return finalValidation;
+  }
+
+  return initialValidation;
 }

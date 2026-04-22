@@ -1,0 +1,75 @@
+Estimate the fair market value for this target vehicle based on {{listingsCount}} REAL comparable listings from the German market.{{outlierNote}}
+
+TARGET VEHICLE:
+- Make/Model: {{make}} {{model}} ({{year}})
+- Mileage: {{mileageKm}} km
+- Exterior: {{exteriorColor}}
+- Interior: {{interiorColor}}
+- Drive Side: {{driveSide}}
+- Transmission: {{transmission}}
+- Fuel Type: {{fuelType}}
+- Service: {{serviceHistory}}
+- Accident: {{accidentHistory}}
+- Auction Grade: {{auctionGrade}}
+- Specs/Options: {{specificationNotes}}
+
+REAL MARKET DATA ({{listingsCount}} listings scraped just now):
+- Median: €{{median}}
+- Mean: €{{mean}}
+- P25: €{{p25}}
+- P75: €{{p75}}
+- Range: €{{priceMin}} — €{{priceMax}}
+
+TOP COMPARABLES:
+{{comparablesList}}
+
+APPLY THESE 7 ADJUSTMENTS (each must be calculated individually):
+
+1. MILEAGE ADJUSTMENT: Compare target mileage vs average comparable mileage.
+   Rule: +/- €50-200 per 1,000 km deviation (higher for exotic brands, lower for mainstream luxury).
+   Example: If comparables avg 25,000 km and target is 15,000 km → positive adjustment.
+
+2. COLOR PREMIUM/DISCOUNT: Certain colors command premiums in the German market.
+   Examples: Ferrari Rosso Corsa = standard (no adjustment). Rare colors (Blu Pozzi, Verde Abetone) = +3-8%.
+   AMG: Selenite Grey = standard. Special matte colors = +2-5%.
+   Porsche: GT Silver, Chalk = premium. Guards Red = standard.
+
+3. SPECIFICATION PREMIUM: Factory options add measurable value.
+   Key premiums: Carbon ceramic brakes (+€3-8K), sport exhaust (+€2-4K), carbon fiber packages (+€3-6K),
+   special editions (+5-15%), full PPF (+€2-3K retained value, rare colors.
+   Compare visible options to comparables listed.
+
+4. CONDITION ADJUSTMENT: Based on auction grade / photo analysis vs typical comparable condition.
+   Grade 5+: premium vehicle, add 3-5%. Grade 4-4.5: standard, no adjustment. Grade 3.5 or below: discount 5-10%.
+
+5. DRIVE SIDE: LHD commands premium in German market for non-German brands.
+   Ferrari/Lamborghini/Maserati LHD: +3-5%. RHD: major discount (-10-20%, very limited buyer pool).
+   German brands (Porsche, AMG, BMW M): LHD = standard, no adjustment.
+
+6. SERVICE HISTORY: Full dealer service history adds significant value for exotics.
+   Full dealer: +5-10%. Partial: no change. Unknown/Independent: -3-7%.
+
+7. ACCIDENT HISTORY: Any documented accident reduces value.
+   Minor repair: -10-15%. Significant repair: -15-25%. Unknown severity: -12%.
+
+IMPORTANT: Start from the MEDIAN price and add/subtract each adjustment. The final estimated_sale_price_eur should equal median + sum of all adjustments.
+
+Return ONLY valid JSON:
+{
+  "estimated_sale_price_eur": <integer — median + all adjustments>,
+  "price_adjustments": [
+    {"factor": "Mileage adjustment", "adjustment_eur": <integer +/->, "reasoning": "target has X km vs avg Y km of comparables, Z per 1000km"},
+    {"factor": "Color premium/discount", "adjustment_eur": <integer +/->, "reasoning": "specific color analysis"},
+    {"factor": "Specification premium", "adjustment_eur": <integer +/->, "reasoning": "specific options referenced"},
+    {"factor": "Condition adjustment", "adjustment_eur": <integer +/->, "reasoning": "grade-based analysis"},
+    {"factor": "Drive side", "adjustment_eur": <integer +/->, "reasoning": "market preference analysis"},
+    {"factor": "Service history", "adjustment_eur": <integer +/->, "reasoning": "documentation value"},
+    {"factor": "Accident history", "adjustment_eur": <integer +/->, "reasoning": "impact analysis"}
+  ],
+  "avg_days_on_market": <integer estimate based on liquidity>,
+  "market_liquidity": "HIGH" or "MEDIUM" or "LOW",
+  "trend_direction": "RISING" or "STABLE" or "DECLINING",
+  "engine_spec": "engine description if identifiable from model",
+  "original_msrp_eur": <integer estimate when new>,
+  "confidence": <number 0.0-1.0 — 0.9+ if 15+ close comparables, 0.7 if 5-15, 0.5 if <5>
+}

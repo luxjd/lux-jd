@@ -1,0 +1,222 @@
+MILEAGE CORRECTED: 63000 → 63074
+VIN CONFLICT: pass1="SAJKA41K478B11063", verify="SAJKA41K478111063" — keeping verification (more careful read)
+[sheet-parser] preprocessing applied: normalize (adaptive contrast), sharpen (sigma=0.7), PNG output
+[sheet-parser] zone-mileage flag ON, attempting extraction...
+[sheet-parser] zone mileage result: 62074 km, agreement=unit-majority (2/3 models → km), conf=0.82
+  • opus: km=99878, unit=miles, conf=0.92
+  • sonnet: km=62074, unit=km, conf=0.9
+  • haiku: km=620740, unit=km, conf=0.95
+  zone bbox: {"x":45,"y":8,"width":8,"height":15}, unitVisible=none
+[extract] post-normalise: auctionHouse normalised "USS Tokyo" → "USS" (location="Tokyo") | recyclingDepositJpy cleared: recycling_deposit 100 implausibly low (typical 10-30k JPY)
+[extract] retrying 6 missing sheet fields: grade, interiorAuxGrade, registrationPlate, shakenExpiry, recyclingDepositJpy, exteriorColorCatalog
+[extract] recovered 4 fields via retry: grade="XK Convertible" (1/3), registrationPlate="品川 480 す 1062" (1/3), shakenExpiry="1994-02-07" (1/3), recyclingDepositJpy=14550 (1/3)
+MILEAGE CORRECTED: 31397 → 32
+[sheet-parser] preprocessing applied: normalize (adaptive contrast), sharpen (sigma=0.7), PNG output
+[sheet-parser] zone-mileage flag ON, attempting extraction...
+[sheet-parser] zone mileage result: 31397 km, agreement=3-of-3-models, conf=0.96
+  • opus: km=31397, unit=km, conf=0.95
+  • sonnet: km=31397, unit=km, conf=0.95
+  • haiku: km=31397, unit=km, conf=0.95
+  zone bbox: {"x":0,"y":20,"width":45,"height":15}, unitVisible=km
+[extract] retrying 4 missing sheet fields: interiorAuxGrade, transmission, registrationPlate, shakenExpiry
+[extract] recovered 3 fields via retry: transmission="AUTOMATIC" (3/3), registrationPlate="品川 502 め 9131" (1/3), shakenExpiry="2016-06" (1/3)
+COLOR CORRECTED: "Gunmetal" → "Dark Blue/Navy"
+VIN REJECTED: "WDD218376IA109221" is 16 chars, not 17 — cleared for human verification
+[sheet-parser] preprocessing applied: normalize (adaptive contrast), sharpen (sigma=0.7), PNG output
+[sheet-parser] zone-mileage flag ON, attempting extraction...
+[mileage-zone] locator bbox detected as pixels; converted to pct: {"x":31.5,"y":6.987227648384674,"width":1.3888888888888888,"height":0.6010518407212623}
+[sheet-parser] zone mileage result: 45796 km, agreement=3-of-3-models, conf=0.96
+  • opus: km=45796, unit=km, conf=0.95
+  • sonnet: km=45796, unit=km, conf=0.95
+  • haiku: km=45796, unit=km, conf=0.95
+  zone bbox: {"x":0,"y":20,"width":45,"height":15}, unitVisible=km
+[extract] model/grade reassembled: "CLS"+"63" → "CLS63", grade="S 4MATIC"
+[extract] post-normalise: auctionHouse normalised "TAA Tokyo" → "TAA" (location="Tokyo") | make upgraded "Mercedes-Benz" → "Mercedes-AMG" (AMG pattern detected)
+[extract] retrying 4 missing sheet fields: interiorAuxGrade, transmission, seatingCapacity, exteriorColorCatalog
+[extract] recovered 2 fields via retry: transmission="AUTOMATIC" (3/3), seatingCapacity=4 (2/3)
+[sheet-parser] preprocessing applied: normalize (adaptive contrast), sharpen (sigma=0.7), PNG output
+[sheet-parser] zone-mileage flag ON, attempting extraction...
+[mileage-zone] locator bbox detected as pixels; converted to pct: {"x":4.222222222222222,"y":16.220735785953178,"width":1.3333333333333335,"height":0.4459308807134894}
+[sheet-parser] zone mileage result: 9816 km, agreement=3-of-3-models, conf=0.96
+  • opus: km=9816, unit=km, conf=0.95
+  • sonnet: km=9816, unit=km, conf=0.95
+  • haiku: km=9816, unit=km, conf=0.95
+  zone bbox: {"x":0,"y":20,"width":45,"height":15}, unitVisible=km
+[extract] retrying 3 missing sheet fields: interiorAuxGrade, transmission, auctionHouse
+[extract] recovered 2 fields via retry: transmission="AUTOMATIC" (3/3), auctionHouse="USS" (3/3)
+[sheet-parser] preprocessing applied: normalize (adaptive contrast), sharpen (sigma=0.7), PNG output
+[sheet-parser] zone-mileage flag ON, attempting extraction...
+[sheet-parser] zone mileage result: 16510 km, agreement=3-of-3-models, conf=0.96
+  • opus: km=16510, unit=km, conf=0.98
+  • sonnet: km=16510, unit=km, conf=0.95
+  • haiku: km=16510, unit=km, conf=0.95
+  zone bbox: {"x":5,"y":28,"width":35,"height":4}, unitVisible=km
+[extract] post-normalise: make upgraded "Mercedes-Benz" → "Mercedes-AMG" (AMG pattern detected)
+[extract] retrying 4 missing sheet fields: interiorAuxGrade, transmission, auctionHouse, exteriorColorCatalog
+[extract] recovered 2 fields via retry: transmission="AUTOMATIC" (3/3), auctionHouse="USS" (3/3)
+MILEAGE CORRECTED: 35483 → 354038
+COLOR CORRECTED: "Kanzite Silver" → "White"
+YEAR KEPT: 2012 (verification 1992 implausible)
+[sheet-parser] preprocessing applied: normalize (adaptive contrast), sharpen (sigma=0.7), PNG output
+[sheet-parser] zone-mileage flag ON, attempting extraction...
+[sheet-parser] zone mileage result: 13746 km, agreement=unit-majority (2/3 models → miles), conf=0.82
+  • opus: km=85483, unit=km, conf=0.92
+  • sonnet: km=13746, unit=miles, conf=0.9
+  • haiku: km=1374907, unit=miles, conf=0.95
+  zone bbox: {"x":9,"y":32,"width":85,"height":8}, unitVisible=km
+[extract] model/grade reassembled: "SL"+"550" → "SL550", grade cleared
+[extract] retrying 3 missing sheet fields: grade, interiorAuxGrade, seatingCapacity
+[extract] recovered 2 fields via retry: grade="SL550" (2/3), seatingCapacity=5 (2/3)
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+  BATCH RESULTS  — per-sheet detail
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  sheet1.jpeg — Jaguar XK Convertible, USS Tokyo
+  17/17 fields, 100.0% weighted  (106.0s)
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ✓ auction_house        expected=USS                    got=USS                    exact
+  ✓ lot_number           expected=70336                  got=70336                  exact
+  ✓ make                 expected=Jaguar                 got=Jaguar                 exact
+  ✓ model                expected=XK                     got=XK                     exact
+  ✓ model_code           expected=CBA-J435A              got=CBA-J435A              exact
+  ✓ year                 expected=2006                   got=2006                   exact
+  ✓ year_era             expected=H18                    got=H18                    exact
+  ✓ mileage_km           expected=62074                  got=62074                  ±0.0%
+  ✓ displacement         expected=4200                   got=4200                   exact
+  ✓ transmission         expected=AUTOMATIC              got=AUTOMATIC              exact
+  ✓ fuel_type            expected=PETROL                 got=PETROL                 exact
+  ✓ drive_side           expected=LHD                    got=LHD                    exact
+  ✓ overall_grade        expected=4                      got=4                      exact
+  ✓ interior_grade       expected=B                      got=B                      exact
+  ✓ accident_history     expected=false                  got=false                  exact
+  ✓ import_type          expected=Dealer                 got=Dealer                 contains
+  ✓ recycling_deposit    expected=14550                  got=14550                  ±0.0%
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  sheet2.jpeg — Mercedes-AMG GT S 130th Anniversary, USS Tokyo
+  17/18 fields, 96.4% weighted  (111.7s)
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ✗ auction_house        expected=USS                    got=東京                     mismatch
+  ✓ lot_number           expected=78014                  got=78014                  exact
+  ✓ make                 expected=Mercedes-AMG           got=Mercedes-AMG           exact
+  ✓ model                expected=GT                     got=GT                     exact
+  ✓ model_code           expected=CBA-190378             got=CBA-190378             exact
+  ✓ year                 expected=2016                   got=2016                   exact
+  ✓ year_era             expected=H28                    got=H28                    exact
+  ✓ mileage_km           expected=31397                  got=31397                  ±0.0%
+  ✓ displacement         expected=4000                   got=4000                   exact
+  ✓ transmission         expected=AUTOMATIC              got=AUTOMATIC              exact
+  ✓ fuel_type            expected=PETROL                 got=PETROL                 exact
+  ✓ drive_side           expected=LHD                    got=LHD                    exact
+  ✓ overall_grade        expected=4                      got=4                      exact
+  ✓ interior_grade       expected=B                      got=B                      exact
+  ✓ accident_history     expected=false                  got=false                  exact
+  ✓ vin                  expected=WDD1903781A009131      got=WDD1903781A009131      exact
+  ✓ import_type          expected=Dealer                 got=Dealer                 contains
+  ✓ recycling_deposit    expected=16930                  got=16930                  ±0.0%
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  sheet3.jpeg — Mercedes-AMG CLS63 S 4Matic, USS Yokohama
+  16/17 fields, 96.1% weighted  (117.0s)
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ✗ auction_house        expected=USS                    got=TAA                    mismatch
+  ✓ lot_number           expected=75449                  got=75449                  exact
+  ✓ make                 expected=Mercedes-AMG           got=Mercedes-AMG           exact
+  ✓ model                expected=CLS                    got=CLS63                  contains:CLS
+  ✓ model_code           expected=CBA-218376             got=CBA-218376             exact
+  ✓ year                 expected=2013                   got=2013                   exact
+  ✓ year_era             expected=H25                    got=H25                    exact
+  ✓ mileage_km           expected=45796                  got=45796                  ±0.0%
+  ✓ displacement         expected=5500                   got=5500                   exact
+  ✓ transmission         expected=AUTOMATIC              got=AUTOMATIC              exact
+  ✓ fuel_type            expected=PETROL                 got=PETROL                 exact
+  ✓ drive_side           expected=LHD                    got=LHD                    exact
+  ✓ overall_grade        expected=4.5                    got=4.5                    exact
+  ✓ interior_grade       expected=B                      got=B                      exact
+  ✓ vin                  expected=WDD2183761A109221      got=WDD2183761A109221      exact
+  ✓ import_type          expected=Dealer                 got=Dealer                 contains
+  ✓ recycling_deposit    expected=21340                  got=21340                  ±0.0%
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  sheet4.jpeg — Mercedes-AMG GT S 130th Anniversary (low km), USS
+  18/18 fields, 100.0% weighted  (107.4s)
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ✓ auction_house        expected=USS                    got=USS                    exact
+  ✓ lot_number           expected=75743                  got=75743                  exact
+  ✓ make                 expected=Mercedes-AMG           got=Mercedes-AMG           exact
+  ✓ model                expected=GT                     got=GT                     exact
+  ✓ model_code           expected=CBA-190378             got=CBA-190378             exact
+  ✓ year                 expected=2017                   got=2017                   exact
+  ✓ year_era             expected=H29                    got=H29                    exact
+  ✓ mileage_km           expected=9816                   got=9816                   ±0.0%
+  ✓ displacement         expected=4000                   got=4000                   exact
+  ✓ transmission         expected=AUTOMATIC              got=AUTOMATIC              exact
+  ✓ fuel_type            expected=PETROL                 got=PETROL                 exact
+  ✓ drive_side           expected=LHD                    got=LHD                    exact
+  ✓ overall_grade        expected=5                      got=5                      exact
+  ✓ interior_grade       expected=A                      got=A                      exact
+  ✓ vin                  expected=WDD1903781A009275      got=WDD1903781A009275      exact
+  ✓ import_type          expected=Dealer                 got=Dealer                 contains
+  ✓ recycling_deposit    expected=16930                  got=16930                  ±0.0%
+  ✓ registration_plate   expected=8546                   got=杉並 300 た 8546          contains
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  sheet5.jpeg — Mercedes-AMG C63 S Cabriolet, USS Shinagawa
+  17/17 fields, 100.0% weighted  (120.0s)
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ✓ auction_house        expected=USS                    got=USS                    exact
+  ✓ lot_number           expected=75482                  got=75482                  exact
+  ✓ make                 expected=Mercedes-AMG           got=Mercedes-AMG           exact
+  ✓ model                expected=C                      got=C-Class                contains:C
+  ✓ model_code           expected=CBA-205487             got=CBA-205487             exact
+  ✓ year                 expected=2021                   got=2021                   exact
+  ✓ year_era             expected=R3                     got=R3                     exact
+  ✓ mileage_km           expected=16510                  got=16510                  ±0.0%
+  ✓ displacement         expected=4000                   got=4000                   exact
+  ✓ transmission         expected=AUTOMATIC              got=AUTOMATIC              exact
+  ✓ fuel_type            expected=PETROL                 got=PETROL                 exact
+  ✓ drive_side           expected=LHD                    got=LHD                    exact
+  ✓ overall_grade        expected=5                      got=5                      exact
+  ✓ interior_grade       expected=A                      got=A                      exact
+  ✓ vin                  expected=WDD2054871F833473      got=WDD2054871F833473      exact
+  ✓ import_type          expected=Dealer                 got=Dealer                 contains
+  ✓ recycling_deposit    expected=23190                  got=23190                  ±0.0%
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  sheet6.jpeg — Mercedes-Benz SL550 (miles), USS Mie
+  16/18 fields, 90.4% weighted  (125.4s)
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ✓ auction_house        expected=USS                    got=USS                    exact
+  ✓ lot_number           expected=58225                  got=58225                  exact
+  ✓ make                 expected=Mercedes-Benz          got=Mercedes-Benz          exact
+  ✓ model                expected=SL                     got=SL550                  contains:SL
+  ✓ model_code           expected=CBA-231473             got=CBA-231473             exact
+  ✓ year                 expected=2012                   got=2012                   exact
+  ✓ year_era             expected=H24                    got=H24                    exact
+  ✗ mileage_km           expected=137565                 got=13746                  off 90.0%
+  ✓ displacement         expected=4660                   got=4660                   exact
+  ✓ transmission         expected=AUTOMATIC              got=AUTOMATIC              exact
+  ✓ fuel_type            expected=PETROL                 got=PETROL                 exact
+  ✓ overall_grade        expected=4                      got=4                      exact
+  ✓ interior_grade       expected=B                      got=B                      exact
+  ✓ accident_history     expected=false                  got=false                  exact
+  ✓ vin                  expected=WDD2314731F005822      got=WDD2314731F005822      exact
+  ✓ import_type          expected=Dealer                 got=Dealer                 contains
+  ✓ recycling_deposit    expected=18030                  got=18020                  ±0.1%
+  ✗ registration_plate   expected=2598                   got=三重 302 な 2588          no-match
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+  AGGREGATE  — 6 sheets
+════════════════════════════════════════════════════════════════════════════════════════════════════
+  Fields correct:          101 / 105  (96.2%)
+  Average weighted score:  97.1%
+
+  Fields that failed most often (systematic issues to target):
+    auction_house        failed 2/6 sheets
+    mileage_km           failed 1/6 sheets
+    registration_plate   failed 1/6 sheets
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+  Detail dumped to C:\LuxJD-FE\lux-jd\tests\fixtures\batch-run-latest.json

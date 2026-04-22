@@ -1,0 +1,17 @@
+These are supplementary documents for a {{year}} {{make}} {{model}} being evaluated for purchase.
+Documents may include: service booklet pages, build sheet / option sticker, Certificate of Conformity (CoC), warranty records, inspection reports, or other provenance documentation.
+
+Extract ALL useful information. Return ONLY valid JSON:
+{
+  "document_types_identified": ["service_booklet", "build_sheet", "coc", "warranty", "inspection", "other"],
+  "service_history_evidence": "Summary of service history found, or null if none",
+  "factory_options_found": ["option 1", "option 2"],
+  "build_date": "YYYY-MM or null",
+  "first_registration_date": "YYYY-MM-DD or null",
+  "country_of_origin": "country code or null",
+  "eu_type_approval": true/false/null,
+  "warranty_status": "active/expired/unknown",
+  "notable_findings": ["any other relevant finding"],
+  "provenance_confidence": 0.0-1.0,
+  "summary": "1-2 sentence summary of what these documents tell us about the vehicle"
+}

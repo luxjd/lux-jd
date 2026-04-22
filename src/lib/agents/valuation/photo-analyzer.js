@@ -1,76 +1,8 @@
 import { callClaudeVision, callClaude } from "@/lib/claude";
 import { validatePhotoOutput } from "./validation";
+import { loadPrompt } from "./prompts/loader";
 
-const SYSTEM_PROMPT = `You are an expert luxury vehicle appraiser specializing in Japanese-sourced premium automobiles (Ferrari, Porsche, Mercedes-AMG, Lamborghini, Bentley, Aston Martin, etc.). You assess vehicles for German market import viability. Your assessments directly influence €50,000-€400,000 purchase decisions.`;
-
-const USER_PROMPT = (make, model, year) => `Analyze these photos of a ${year} ${make} ${model} with expert precision.
-
-SCORING GUIDE:
-- 10: Showroom/concours condition — flawless
-- 9: Near-perfect, only factory imperfections
-- 8: Excellent — very light wear consistent with careful use
-- 7: Very good — minor cosmetic wear, no significant issues
-- 6: Good — some visible wear, light scratches/marks
-- 5: Average for age/mileage — moderate wear
-- 4: Below average — noticeable damage or heavy wear
-- 3: Poor — significant damage, heavy wear, needs reconditioning
-- 2: Very poor — major structural or cosmetic issues
-- 1: Severe damage — not economically viable to repair
-
-WHAT TO LOOK FOR:
-Exterior: Paint condition (swirls, chips, respray evidence), panel gaps/alignment, wheel/rim condition (curb rash), glass condition, headlight clarity, trim condition, undercarriage if visible
-Interior: Seat wear (bolsters, stitching), dashboard/trim condition, steering wheel wear, headliner, carpet, pedal wear, infotainment screen condition
-Modifications: Factory vs. aftermarket (affects resale), quality of any mods, reversibility
-TUV Import Risks: Non-EU headlight configuration, modified exhaust, structural modifications, tinted windows beyond limits, aftermarket wheels without ABE certification
-
-CRITICAL INSTRUCTIONS:
-- Score RELATIVE to what's expected for this ${year} ${make} ${model} at its apparent age
-- If you can see the steering wheel position, note whether it's LHD or RHD
-- Flag ANY item that could fail German TUV inspection
-- Distinguish factory options from aftermarket modifications
-- Note if interior appears factory-original (premium) or replaced (discount)
-
-Return ONLY valid JSON:
-{
-  "exterior_score": <number 1-10>,
-  "exterior_notes": ["specific observation 1", "specific observation 2"],
-  "interior_score": <number 1-10>,
-  "interior_notes": ["specific observation 1", "specific observation 2"],
-  "visible_modifications": ["mod 1 — factory/aftermarket"] or [],
-  "visible_damage": ["damage description with severity"] or [],
-  "notable_features_spotted": ["factory option or feature"],
-  "tuv_risk_flags": ["potential TUV issue 1"] or [],
-  "drive_side_observed": "LHD" or "RHD" or null,
-  "interior_originality": "FACTORY_ORIGINAL" or "PARTIALLY_MODIFIED" or "HEAVILY_MODIFIED" or "UNKNOWN",
-  "overall_impression": "2-3 sentence expert summary including condition relative to age/model expectations",
-  "confidence": <number 0.0-1.0 — lower if few photos, poor lighting, or unclear images>
-}`;
-
-// ── Photo Classification ──
-
-const CLASSIFY_PROMPT = (count) => `Classify these ${count} vehicle photos by type. Return ONLY a JSON array of objects in the same order as the images:
-[
-  {"index": 0, "type": "EXTERIOR_FRONT", "priority": 1},
-  {"index": 1, "type": "INTERIOR_OVERVIEW", "priority": 1},
-  ...
-]
-
-Types (in priority order):
-- EXTERIOR_FRONT (front 3/4 view) — priority 1
-- EXTERIOR_REAR (rear 3/4 view) — priority 1
-- EXTERIOR_SIDE (profile view) — priority 1
-- INTERIOR_OVERVIEW (cabin overview) — priority 1
-- DASHBOARD (instrument cluster/infotainment) — priority 1
-- ENGINE_BAY (engine compartment) — priority 1
-- WHEEL_CLOSEUP (wheel/brake detail) — priority 2
-- INTERIOR_DETAIL (seats, trim closeups) — priority 2
-- DAMAGE_DETAIL (damage/wear closeup) — priority 2
-- TRUNK (boot/trunk area) — priority 3
-- UNDERCARRIAGE (underbody) — priority 3
-- DOCUMENT (paper, screen, VIN plate) — priority 4
-- OTHER (unknown/unclear) — priority 4
-
-Priority 1 photos are most important for condition assessment.`;
+// Spec §8.1: prompts live in prompts/*.txt — no hardcoded strings here.
 
 /**
  * Select representative photos from a larger set using AI classification.
@@ -82,7 +14,7 @@ async function selectRepresentativePhotos(images) {
   // Use fast Claude to classify photos
   try {
     const classifications = await callClaudeVision({
-      prompt: CLASSIFY_PROMPT(images.length),
+      prompt: loadPrompt("photo_classification", { count: images.length }),
       images: images.slice(0, 20), // classify up to 20
       system: "You are a photo classifier for vehicle condition assessment.",
       maxTokens: 2048,
@@ -145,9 +77,9 @@ export async function analyzePhotos(images, make, model, year) {
   const selected = await selectRepresentativePhotos(images);
 
   const result = await callClaudeVision({
-    prompt: USER_PROMPT(make, model, year),
+    prompt: loadPrompt("photo_analysis", { make, model, year }),
     images: selected,
-    system: SYSTEM_PROMPT,
+    system: loadPrompt("photo_analysis.system"),
   });
 
   const validated = validatePhotoOutput(result);

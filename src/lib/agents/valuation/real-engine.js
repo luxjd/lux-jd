@@ -27,6 +27,9 @@ import { fetchFxRate } from "./fx-fetcher";
 import { validateInput } from "./validation";
 import { db } from "@/lib/db-storage";
 import { getSettings } from "@/lib/settings";
+import { loadPrompt } from "./prompts/loader";
+import { D, toInt, toNum, pct, Decimal } from "./decimal-math";
+import { postValidateSheet } from "./sheet-post-validation";
 
 const OPEX_PER_VEHICLE = 500;
 
@@ -103,50 +106,61 @@ function getTuvCost(make, driveSide, hasModifications, tuvRiskFlags = []) {
 // LANDED COST CALCULATOR
 // ══════════════════════════════════════════
 
-function calculateLandedCost(purchasePriceJpy, fxRate, estimatedValueEur, make, driveSide, hasModifications, tuvRiskFlags, fxBufferPct = 0.03) {
-  const bufferedRate = fxRate * (1 - fxBufferPct);
-  const purchaseEur = Math.round(purchasePriceJpy / bufferedRate);
-  const auctionFees = Math.round(purchaseEur * 0.04);
-  const jpTransport = 400;
-  const exportDocs = 175;
-  const freight = 2800;
-  const insurance = Math.round(Math.max(purchaseEur, estimatedValueEur * 0.7) * 0.02);
-  const cifValue = purchaseEur + auctionFees + jpTransport + exportDocs + freight + insurance;
-  const customsDuty = Math.round(cifValue * 0.10);
-  const importVat = Math.round((cifValue + customsDuty) * 0.19);
-  const portHandling = 600;
+export function calculateLandedCost(purchasePriceJpy, fxRate, estimatedValueEur, make, driveSide, hasModifications, tuvRiskFlags, fxBufferPct = 0.03) {
+  // All financial math goes through decimal.js — spec §6.4 + §8.1.
+  const bufferedRate = D(fxRate).mul(D(1).minus(fxBufferPct));
+  const purchaseEur = D(purchasePriceJpy).div(bufferedRate);
+  const auctionFees = purchaseEur.mul("0.04");
+  const jpTransport = D(400);
+  const exportDocs = D(175);
+  const freight = D(2800);
+  const insuranceBase = Decimal.max(purchaseEur, D(estimatedValueEur).mul("0.7"));
+  const insurance = insuranceBase.mul("0.02");
+  const cifValue = purchaseEur.plus(auctionFees).plus(jpTransport).plus(exportDocs).plus(freight).plus(insurance);
+  const customsDuty = cifValue.mul("0.10");
+  const importVat = cifValue.plus(customsDuty).mul("0.19");
+  const portHandling = D(600);
   const tuv = getTuvCost(make, driveSide, hasModifications, tuvRiskFlags);
-  const tuvCost = tuv.cost;
-  const registration = 150;
-  const deTransport = 450;
-  const detailing = 1200;
-  const photography = 500;
-  const totalLanded = purchaseEur + auctionFees + jpTransport + exportDocs + freight + insurance + customsDuty + portHandling + tuvCost + registration + deTransport + detailing + photography;
-  const totalWithVat = totalLanded + importVat;
+  const tuvCost = D(tuv.cost);
+  const registration = D(150);
+  const deTransport = D(450);
+  const detailing = D(1200);
+  const photography = D(500);
+  const totalLanded = purchaseEur.plus(auctionFees).plus(jpTransport).plus(exportDocs)
+    .plus(freight).plus(insurance).plus(customsDuty).plus(portHandling).plus(tuvCost)
+    .plus(registration).plus(deTransport).plus(detailing).plus(photography);
+
+  // Round once, then ensure the ledger invariant
+  //   total_cash_outlay = total_landed_cost + import_vat
+  // holds exactly in the output integers. Otherwise an auditor reconciling
+  // the numbers would see an off-by-one drift of €1 from independent rounding.
+  const totalLandedInt = toInt(totalLanded);
+  const importVatInt = toInt(importVat);
+  const totalWithVatInt = totalLandedInt + importVatInt;
 
   return {
     purchasePriceJpy,
     fxRateUsed: fxRate,
-    fxBufferApplied: fxBufferPct * 100,
-    purchasePriceEur: purchaseEur,
-    auctionFeesEur: auctionFees,
-    jpTransportEur: jpTransport,
-    exportDocsEur: exportDocs,
-    freightEur: freight,
-    insuranceEur: insurance,
-    cifValueEur: cifValue,
-    customsDutyEur: customsDuty,
-    importVatEur: importVat,
-    portHandlingEur: portHandling,
-    tuvEstimatedEur: tuvCost,
+    fxBufferApplied: toNum(D(fxBufferPct).mul(100), 2),
+    purchasePriceEur: toInt(purchaseEur),
+    auctionFeesEur: toInt(auctionFees),
+    jpTransportEur: toInt(jpTransport),
+    exportDocsEur: toInt(exportDocs),
+    freightEur: toInt(freight),
+    insuranceEur: toInt(insurance),
+    cifValueEur: toInt(cifValue),
+    customsDutyEur: toInt(customsDuty),
+    importVatEur: importVatInt,
+    portHandlingEur: toInt(portHandling),
+    tuvEstimatedEur: toInt(tuvCost),
     tuvComplexity: tuv.complexity,
-    registrationEur: registration,
-    deTransportEur: deTransport,
-    detailingEur: detailing,
-    photographyEur: photography,
-    totalLandedCostEur: totalLanded,
-    totalCashOutlayEur: totalWithVat,
-    reclaimableVatEur: importVat,
+    registrationEur: toInt(registration),
+    deTransportEur: toInt(deTransport),
+    detailingEur: toInt(detailing),
+    photographyEur: toInt(photography),
+    totalLandedCostEur: totalLandedInt,
+    totalCashOutlayEur: totalWithVatInt,
+    reclaimableVatEur: importVatInt,
   };
 }
 
@@ -155,16 +169,21 @@ function calculateLandedCost(purchasePriceJpy, fxRate, estimatedValueEur, make, 
 // Per spec: max_bid = (sale_price - min_margin - fixed_costs) * fx_rate / (1 + variable_cost_pct)
 // ══════════════════════════════════════════
 
-function calculateMaxBid(estimatedSalePrice, fxRate, fixedCostsEur, { minMarginEur = 15000, minMarginPct = 20, fxBufferPct = 0.03 } = {}) {
-  const variableCostPct = 0.04 + 0.02 + 0.10;
-  const minMargin = Math.max(minMarginEur, estimatedSalePrice * (minMarginPct / 100));
-  const maxPurchaseEur = estimatedSalePrice - minMargin - fixedCostsEur;
+export function calculateMaxBid(estimatedSalePrice, fxRate, fixedCostsEur, { minMarginEur = 15000, minMarginPct = 20, fxBufferPct = 0.03 } = {}) {
+  // Spec §6.5: max_bid_jpy = (estimated_sale_price_eur - min_margin_eur - fixed_costs_eur)
+  //   * fx_rate / (1 + variable_cost_pct)
+  // variable_cost_pct = auction fees 4% + insurance 2% + customs duty 10% = 16%
+  // We use the buffered FX rate to stay conservative — raising the JPY bid
+  // against a weaker EUR exposes the landed-cost math to FX slippage.
+  const variableCostPct = D("0.04").plus("0.02").plus("0.10");
+  const minMargin = Decimal.max(D(minMarginEur), D(estimatedSalePrice).mul(D(minMarginPct).div(100)));
+  const maxPurchaseEur = D(estimatedSalePrice).minus(minMargin).minus(fixedCostsEur);
 
-  if (maxPurchaseEur <= 0) return null;
+  if (maxPurchaseEur.lte(0)) return null;
 
-  const maxPurchaseBeforeVariables = maxPurchaseEur / (1 + variableCostPct);
-  const bufferedRate = fxRate * (1 - fxBufferPct);
-  const maxBidJpy = Math.round(maxPurchaseBeforeVariables * bufferedRate);
+  const maxPurchaseBeforeVariables = maxPurchaseEur.div(D(1).plus(variableCostPct));
+  const bufferedRate = D(fxRate).mul(D(1).minus(fxBufferPct));
+  const maxBidJpy = toInt(maxPurchaseBeforeVariables.mul(bufferedRate));
 
   return maxBidJpy > 0 ? maxBidJpy : null;
 }
@@ -173,11 +192,18 @@ function calculateMaxBid(estimatedSalePrice, fxRate, fixedCostsEur, { minMarginE
 // CONDITION SCORING — improved grade mapping
 // ══════════════════════════════════════════
 
-// Maps auction grade (1-6) to condition score (1-10) using a realistic curve
-function gradeToScore(grade) {
-  if (!grade) return null;
-  // Grade 6(S)=9.5, 5=8.5, 4.5=7.5, 4=6.5, 3.5=5.5, 3=4.5, 2=3, 1=1.5
-  const mapping = { 6: 9.5, 5.5: 9.0, 5: 8.5, 4.5: 7.5, 4: 6.5, 3.5: 5.5, 3: 4.5, 2.5: 3.5, 2: 3.0, 1.5: 2.0, 1: 1.5 };
+// Maps auction grade (1.0-6.0 plus 6.5 for S) to a 1-10 condition score
+// using a realistic retention curve. Spec §2.1: S = 6.5 > 6 > 5 > ... > 1.
+// Exported for unit tests — the S-grade = 6.5 mapping is the single most
+// failure-prone place in the pipeline, so we want deterministic coverage.
+export function gradeToScore(grade) {
+  // 0 is not a valid auction grade — the scale starts at 1. Treat null,
+  // undefined, 0, and NaN alike: no grade reported.
+  if (grade == null || grade === 0 || Number.isNaN(Number(grade))) return null;
+  // S (6.5) is concours / showroom — tops the scale. 6 is excellent-original.
+  // Below that the falloff accelerates because grades 3 and below often
+  // indicate real damage or wear that auction buyers price aggressively.
+  const mapping = { 6.5: 9.8, 6: 9.5, 5.5: 9.0, 5: 8.5, 4.5: 7.5, 4: 6.5, 3.5: 5.5, 3: 4.5, 2.5: 3.5, 2: 3.0, 1.5: 2.0, 1: 1.5 };
   if (mapping[grade] !== undefined) return mapping[grade];
   // Interpolate
   const grades = Object.keys(mapping).map(Number).sort((a, b) => a - b);
@@ -399,25 +425,9 @@ async function analyzeAdditionalDocs(docImages, make, model, year) {
   if (!docImages || docImages.length === 0 || !isAIAvailable()) return null;
   try {
     const result = await callClaudeVision({
-      prompt: `These are supplementary documents for a ${year} ${make} ${model} being evaluated for purchase.
-Documents may include: service booklet pages, build sheet / option sticker, Certificate of Conformity (CoC), warranty records, inspection reports, or other provenance documentation.
-
-Extract ALL useful information. Return ONLY valid JSON:
-{
-  "document_types_identified": ["service_booklet", "build_sheet", "coc", "warranty", "inspection", "other"],
-  "service_history_evidence": "Summary of service history found, or null if none",
-  "factory_options_found": ["option 1", "option 2"],
-  "build_date": "YYYY-MM or null",
-  "first_registration_date": "YYYY-MM-DD or null",
-  "country_of_origin": "country code or null",
-  "eu_type_approval": true/false/null,
-  "warranty_status": "active/expired/unknown",
-  "notable_findings": ["any other relevant finding"],
-  "provenance_confidence": 0.0-1.0,
-  "summary": "1-2 sentence summary of what these documents tell us about the vehicle"
-}`,
+      prompt: loadPrompt("additional_docs", { make, model, year }),
       images: docImages.slice(0, 10),
-      system: "You are an expert automotive document analyst specializing in luxury vehicle provenance verification for import/export operations.",
+      system: loadPrompt("additional_docs.system"),
     });
     return result;
   } catch (e) {
@@ -497,27 +507,14 @@ export async function generateRealValuation(input) {
   let enrichment = null;
   if (isAIAvailable()) {
     enrichment = await callClaude({
-      prompt: `Vehicle: ${validatedInput.make} ${validatedInput.model} ${validatedInput.year}.
-Transmission provided: ${validatedInput.transmission || "unknown"}
-Fuel type provided: ${validatedInput.fuelType || "unknown"}
-Specification notes: ${validatedInput.specificationNotes || "none"}
-
-Return ONLY valid JSON with these fields. Be precise — this data is used for financial decisions:
-{
-  "engine_spec": "exact engine specification e.g. '3.9L Twin-Turbo V8, 670 PS' — include displacement, configuration, forced induction, and power output",
-  "original_msrp_eur": <integer — original MSRP when new in EUR, be accurate for the specific variant>,
-  "production_years": "e.g. 2015-2019 — exact production run for this specific model variant",
-  "full_model_name": "e.g. Ferrari 488 GTB (F142M) — include internal designation/chassis code if known",
-  "transmission_type": "AUTOMATIC/MANUAL/DCT/PDK/SMG — only if not already provided, otherwise echo provided value",
-  "fuel_type": "PETROL/DIESEL/HYBRID/ELECTRIC — only if not already provided",
-  "notable_options": [
-    {"option": "Carbon ceramic brakes (CCB/PCCB)", "estimated_premium_eur": 5000},
-    {"option": "Sport exhaust system", "estimated_premium_eur": 3000}
-  ],
-  "known_issues": ["common problems/failure points for this model that a buyer should be aware of"],
-  "depreciation_profile": "SLOW/MODERATE/FAST — how this model typically depreciates"
-}
-IMPORTANT for notable_options: Identify factory options from the specification_notes provided. For each option, estimate the resale premium it adds in EUR on the German market. Include standard standout features of this variant too (e.g. if it's a Performance/Competition/Pista variant). Return empty array if no notable options are identifiable.`,
+      prompt: loadPrompt("enrichment", {
+        make: validatedInput.make,
+        model: validatedInput.model,
+        year: validatedInput.year,
+        transmission: validatedInput.transmission || "unknown",
+        fuelType: validatedInput.fuelType || "unknown",
+        specificationNotes: validatedInput.specificationNotes || "none",
+      }),
       model: process.env.CLAUDE_MODEL_FAST,
       jsonMode: true,
     });
@@ -547,8 +544,14 @@ IMPORTANT for notable_options: Identify factory options from the specification_n
       : Promise.resolve(null),
   ]);
 
+  // ─── Step 5c: Post-validate auction sheet (VIN check, NHTSA, reality rules) ───
+  // Layer 2 + 3 + 5 per our accuracy plan. Runs independent checks against the
+  // sheet extraction, returns the same object with adjusted per-field confidence
+  // and a `_validation` block for transparency in the final report.
+  const validatedSheet = sheetResult ? await postValidateSheet(sheetResult) : null;
+
   // ─── Step 6: Merge condition data ───
-  const condition = mergeConditionData(photoResult, sheetResult, validatedInput.auctionGrade);
+  const condition = mergeConditionData(photoResult, validatedSheet, validatedInput.auctionGrade);
 
   // ─── Step 7: Landed cost ───
   if (!marketResult?.estimated_sale_price_eur && !marketResult?.price_statistics?.median) {
@@ -565,10 +568,13 @@ IMPORTANT for notable_options: Identify factory options from the specification_n
   let guidanceMaxBid = null;
   if (pricingGuidanceMode) {
     const provisionalTuv = getTuvCost(validatedInput.make, validatedInput.driveSide, hasModifications, condition.tuvRiskFlags);
-    const provisionalInsurance = Math.round(estimatedSalePrice * 0.7 * 0.02);
-    const provisionalFixed = 400 + 175 + 2800 + provisionalInsurance + 600 + provisionalTuv.cost + 150 + 450 + 1200 + 500 + OPEX_PER_VEHICLE;
+    const provisionalInsurance = toInt(D(estimatedSalePrice).mul("0.7").mul("0.02"));
+    const provisionalFixed = toInt(
+      D(400).plus(175).plus(2800).plus(provisionalInsurance).plus(600)
+        .plus(provisionalTuv.cost).plus(150).plus(450).plus(1200).plus(500).plus(OPEX_PER_VEHICLE)
+    );
     guidanceMaxBid = calculateMaxBid(estimatedSalePrice, fxResult.rate, provisionalFixed, { minMarginEur: MIN_MARGIN_EUR, minMarginPct: MIN_MARGIN_PCT, fxBufferPct: FX_BUFFER_PCT });
-    effectiveAskingPriceJpy = guidanceMaxBid || Math.round(estimatedSalePrice * 0.35 * fxResult.rate);
+    effectiveAskingPriceJpy = guidanceMaxBid || toInt(D(estimatedSalePrice).mul("0.35").mul(fxResult.rate));
   }
 
   const landedCost = calculateLandedCost(
@@ -580,26 +586,29 @@ IMPORTANT for notable_options: Identify factory options from the specification_n
   const exceedsMaxPurchase = settings.maxPurchaseEur && landedCost.totalLandedCostEur > settings.maxPurchaseEur;
 
   // ─── Step 8: Deterministic max bid ───
-  const fixedCosts = landedCost.jpTransportEur + landedCost.exportDocsEur + landedCost.freightEur +
-    landedCost.portHandlingEur + landedCost.tuvEstimatedEur + landedCost.registrationEur +
-    landedCost.deTransportEur + landedCost.detailingEur + landedCost.photographyEur + OPEX_PER_VEHICLE;
+  const fixedCosts = toInt(
+    D(landedCost.jpTransportEur).plus(landedCost.exportDocsEur).plus(landedCost.freightEur)
+      .plus(landedCost.portHandlingEur).plus(landedCost.tuvEstimatedEur).plus(landedCost.registrationEur)
+      .plus(landedCost.deTransportEur).plus(landedCost.detailingEur).plus(landedCost.photographyEur)
+      .plus(OPEX_PER_VEHICLE)
+  );
   const deterministicMaxBid = calculateMaxBid(estimatedSalePrice, fxResult.rate, fixedCosts, { minMarginEur: MIN_MARGIN_EUR, minMarginPct: MIN_MARGIN_PCT, fxBufferPct: FX_BUFFER_PCT });
 
-  // ─── Step 9: Margin calculation ───
-  const grossMargin = estimatedSalePrice - landedCost.totalLandedCostEur;
-  const grossMarginPct = estimatedSalePrice > 0 ? Number(((grossMargin / estimatedSalePrice) * 100).toFixed(1)) : 0;
+  // ─── Step 9: Margin calculation (Decimal math per spec §6.4) ───
+  const grossMargin = toInt(D(estimatedSalePrice).minus(landedCost.totalLandedCostEur));
+  const grossMarginPct = pct(grossMargin, estimatedSalePrice);
   const p25 = marketResult?.price_statistics?.p25 || estimatedSalePrice;
   const p75 = marketResult?.price_statistics?.p75 || estimatedSalePrice;
 
   // Pessimistic: sell at P25, costs 10% higher
-  const pessimisticCost = Math.round(landedCost.totalLandedCostEur * 1.10);
-  const pessimisticMargin = p25 - pessimisticCost;
+  const pessimisticCost = toInt(D(landedCost.totalLandedCostEur).mul("1.10"));
+  const pessimisticMargin = toInt(D(p25).minus(pessimisticCost));
   // Optimistic: sell at P75
-  const optimisticMargin = p75 - landedCost.totalLandedCostEur;
+  const optimisticMargin = toInt(D(p75).minus(landedCost.totalLandedCostEur));
 
   const holdDays = 42 + 5 + 7 + (marketResult?.avg_days_on_market || 30);
   const annualizedRoi = landedCost.totalCashOutlayEur > 0
-    ? Number(((grossMargin / landedCost.totalCashOutlayEur) * (365 / holdDays) * 100).toFixed(1))
+    ? toNum(D(grossMargin).div(landedCost.totalCashOutlayEur).mul(365).div(holdDays).mul(100), 1)
     : 0;
 
   // Confidence: geometric mean of 3 sub-scores
@@ -709,6 +718,11 @@ IMPORTANT for notable_options: Identify factory options from the specification_n
   const webSearchFallback = !!marketResult?.web_search_fallback;
   const disparateVariants = !!marketResult?.disparate_variants_detected;
   const genericModel = !!marketResult?.generic_model_input;
+  // Sheet-level validation (VIN check, NHTSA, reality constraints) — any
+  // HIGH-severity signal forces verdict to REVIEW because something the
+  // sheet says is *provably* inconsistent with either math or external truth.
+  const sheetValidationFailed = !!validatedSheet?._validation?.any_high_severity;
+  const sheetValidationSummary = validatedSheet?._validation?.summary || null;
   const msrpSanity = checkMarketPriceSanity(
     estimatedSalePrice,
     enrichment,
@@ -716,6 +730,9 @@ IMPORTANT for notable_options: Identify factory options from the specification_n
     validatedInput.make
   );
   const dataQualityWarnings = [];
+  if (sheetValidationFailed) {
+    dataQualityWarnings.push(`Auction sheet validation flagged HIGH-severity issue(s): ${sheetValidationSummary}. Verify extracted VIN / year / make before committing capital.`);
+  }
   if (webSearchFallback) {
     dataQualityWarnings.push(
       `Direct scrapers (mobile.de, AutoScout24) were blocked. Market estimate is based on Google snippet parsing — fewer details available and wrong-variant risk. Confidence capped at ${Math.round((marketResult?.confidence || 0.55) * 100)}%.`
@@ -739,7 +756,7 @@ IMPORTANT for notable_options: Identify factory options from the specification_n
   const marginBorderline = grossMargin >= MIN_MARGIN_EUR && grossMarginPct >= MIN_MARGIN_PCT
     && (grossMargin < MIN_MARGIN_EUR * 1.15 || grossMarginPct < MIN_MARGIN_PCT * 1.15);
 
-  const forceReview = webSearchFallback || !msrpSanity.passed || disparateVariants || genericModel || insufficientConfidence || marginBorderline;
+  const forceReview = webSearchFallback || !msrpSanity.passed || disparateVariants || genericModel || insufficientConfidence || marginBorderline || sheetValidationFailed;
 
   if (riskRecommendation) {
     // Force PASS when confidence is too low (spec §3.8)
@@ -765,6 +782,7 @@ IMPORTANT for notable_options: Identify factory options from the specification_n
         if (!msrpSanity.passed) triggers.push("MSRP sanity floor breached");
         if (insufficientConfidence) triggers.push(`confidence ${(confidence * 100).toFixed(0)}% < 70% required for BUY`);
         if (marginBorderline) triggers.push(`margin is borderline (within 15% of threshold)`);
+        if (sheetValidationFailed) triggers.push(`auction sheet post-validation (${sheetValidationSummary})`);
         const reason = `Data quality / threshold issues: ${triggers.join(" + ")}. Human verification required before BUY.`;
         riskRecommendation.verdict_reasoning = `${reason} ${riskRecommendation.verdict_reasoning || ""}`.trim();
         riskRecommendation.key_concerns = [
@@ -808,6 +826,8 @@ IMPORTANT for notable_options: Identify factory options from the specification_n
       confidenceBelowBuyThreshold: insufficientConfidence,
       confidenceBelowPassThreshold: lowConfidence,
       marginBorderline,
+      sheetValidationFailed,
+      sheetValidationSummary,
       priceSpreadPct: marketResult?.price_statistics?.coefficientOfVariation != null
         ? Math.round(marketResult.price_statistics.coefficientOfVariation * 100)
         : null,
@@ -881,10 +901,11 @@ IMPORTANT for notable_options: Identify factory options from the specification_n
       accidentContradiction: condition.accidentContradiction,
       serviceBookPresent: condition.serviceBookPresent,
       photoAnalysisSummary: photoResult?.overall_impression || null,
-      auctionSheetSummary: sheetResult?.overall_assessment || null,
+      auctionSheetSummary: validatedSheet?.overall_assessment || sheetResult?.overall_assessment || null,
+      auctionSheetValidation: validatedSheet?._validation || null,
       conditionConfidence: condition.conditionConfidence,
       photoCount: input.images?.length || 0,
-      auctionSheetParsed: sheetResult || null,
+      auctionSheetParsed: validatedSheet || sheetResult || null,
       // Enriched multi-pass analysis data
       damageSeverityScore: condition.damageSeverityScore,
       damageDistribution: condition.damageDistribution,
@@ -957,14 +978,14 @@ IMPORTANT for notable_options: Identify factory options from the specification_n
       totalLandedCost: landedCost.totalLandedCostEur,
       grossMarginEur: grossMargin,
       grossMarginPct,
-      marginAfterOpex: grossMargin - OPEX_PER_VEHICLE,
+      marginAfterOpex: toInt(D(grossMargin).minus(OPEX_PER_VEHICLE)),
       marginRange: {
         pessimistic: pessimisticMargin,
         base: grossMargin,
         optimistic: optimisticMargin,
       },
       capitalRequired: landedCost.totalCashOutlayEur,
-      returnOnCapital: landedCost.totalCashOutlayEur > 0 ? Number(((grossMargin / landedCost.totalCashOutlayEur) * 100).toFixed(1)) : 0,
+      returnOnCapital: landedCost.totalCashOutlayEur > 0 ? pct(grossMargin, landedCost.totalCashOutlayEur) : 0,
       estimatedHoldDays: holdDays,
       annualizedRoi,
       marginConfidence: confidence,

@@ -17,6 +17,7 @@ import { scrapeMobileDe } from "./scrapers/mobile-de";
 import { scrapeAutoScout24 } from "./scrapers/autoscout24";
 import { buildMobileDeSearchUrl, buildAutoScout24SearchUrl } from "./scrapers/search-urls";
 import { removeOutliers, validateMarketOutput } from "./validation";
+import { loadPrompt } from "./prompts/loader";
 
 // ══════════════════════════════════════════════════════════════
 // WEB-SEARCH FALLBACK SAFETY FILTERS
@@ -147,83 +148,40 @@ function isModelInputGeneric(make, model) {
   return true;
 }
 
-const ANALYSIS_SYSTEM = `You are a senior German luxury car pricing analyst with 15+ years of experience at premium dealerships. You are given REAL comparable listings scraped from mobile.de and AutoScout24. Your price estimates directly influence €50,000-€400,000 purchase decisions. Be precise and evidence-based — reference specific comparables to justify your adjustments.`;
-
-const ANALYSIS_PROMPT = (input, stats, listings, outlierCount) => `Estimate the fair market value for this target vehicle based on ${listings.length} REAL comparable listings from the German market.${outlierCount > 0 ? ` (${outlierCount} statistical outliers were removed before analysis.)` : ""}
-
-TARGET VEHICLE:
-- Make/Model: ${input.make} ${input.model} (${input.year})
-- Mileage: ${formatNumber(input.mileageKm)} km
-- Exterior: ${input.exteriorColor}
-- Interior: ${input.interiorColor || "Not specified"}
-- Drive Side: ${input.driveSide}
-- Transmission: ${input.transmission || "Unknown"}
-- Fuel Type: ${input.fuelType || "Unknown"}
-- Service: ${input.serviceHistory || "Unknown"}
-- Accident: ${input.accidentHistory ? "YES — documented" : "No"}
-- Auction Grade: ${input.auctionGrade || "N/A"}
-- Specs/Options: ${input.specificationNotes || "None noted"}
-
-REAL MARKET DATA (${listings.length} listings scraped just now):
-- Median: €${formatNumber(stats.median)}
-- Mean: €${formatNumber(stats.mean)}
-- P25: €${formatNumber(stats.p25)}
-- P75: €${formatNumber(stats.p75)}
-- Range: €${formatNumber(stats.min)} — €${formatNumber(stats.max)}
-
-TOP COMPARABLES:
-${listings.slice(0, 15).map((l, i) => `${i + 1}. ${l.title} — €${formatNumber(l.price)} | ${formatNumber(l.mileage)} km | ${l.year || "?"} | ${l.platform} | ${l.dealer || "Private"}`).join("\n")}
-
-APPLY THESE 7 ADJUSTMENTS (each must be calculated individually):
-
-1. MILEAGE ADJUSTMENT: Compare target mileage vs average comparable mileage.
-   Rule: +/- €50-200 per 1,000 km deviation (higher for exotic brands, lower for mainstream luxury).
-   Example: If comparables avg 25,000 km and target is 15,000 km → positive adjustment.
-
-2. COLOR PREMIUM/DISCOUNT: Certain colors command premiums in the German market.
-   Examples: Ferrari Rosso Corsa = standard (no adjustment). Rare colors (Blu Pozzi, Verde Abetone) = +3-8%.
-   AMG: Selenite Grey = standard. Special matte colors = +2-5%.
-   Porsche: GT Silver, Chalk = premium. Guards Red = standard.
-
-3. SPECIFICATION PREMIUM: Factory options add measurable value.
-   Key premiums: Carbon ceramic brakes (+€3-8K), sport exhaust (+€2-4K), carbon fiber packages (+€3-6K),
-   special editions (+5-15%), full PPF (+€2-3K retained value, rare colors.
-   Compare visible options to comparables listed.
-
-4. CONDITION ADJUSTMENT: Based on auction grade / photo analysis vs typical comparable condition.
-   Grade 5+: premium vehicle, add 3-5%. Grade 4-4.5: standard, no adjustment. Grade 3.5 or below: discount 5-10%.
-
-5. DRIVE SIDE: LHD commands premium in German market for non-German brands.
-   Ferrari/Lamborghini/Maserati LHD: +3-5%. RHD: major discount (-10-20%, very limited buyer pool).
-   German brands (Porsche, AMG, BMW M): LHD = standard, no adjustment.
-
-6. SERVICE HISTORY: Full dealer service history adds significant value for exotics.
-   Full dealer: +5-10%. Partial: no change. Unknown/Independent: -3-7%.
-
-7. ACCIDENT HISTORY: Any documented accident reduces value.
-   Minor repair: -10-15%. Significant repair: -15-25%. Unknown severity: -12%.
-
-IMPORTANT: Start from the MEDIAN price and add/subtract each adjustment. The final estimated_sale_price_eur should equal median + sum of all adjustments.
-
-Return ONLY valid JSON:
-{
-  "estimated_sale_price_eur": <integer — median + all adjustments>,
-  "price_adjustments": [
-    {"factor": "Mileage adjustment", "adjustment_eur": <integer +/->, "reasoning": "target has X km vs avg Y km of comparables, Z per 1000km"},
-    {"factor": "Color premium/discount", "adjustment_eur": <integer +/->, "reasoning": "specific color analysis"},
-    {"factor": "Specification premium", "adjustment_eur": <integer +/->, "reasoning": "specific options referenced"},
-    {"factor": "Condition adjustment", "adjustment_eur": <integer +/->, "reasoning": "grade-based analysis"},
-    {"factor": "Drive side", "adjustment_eur": <integer +/->, "reasoning": "market preference analysis"},
-    {"factor": "Service history", "adjustment_eur": <integer +/->, "reasoning": "documentation value"},
-    {"factor": "Accident history", "adjustment_eur": <integer +/->, "reasoning": "impact analysis"}
-  ],
-  "avg_days_on_market": <integer estimate based on liquidity>,
-  "market_liquidity": "HIGH" or "MEDIUM" or "LOW",
-  "trend_direction": "RISING" or "STABLE" or "DECLINING",
-  "engine_spec": "engine description if identifiable from model",
-  "original_msrp_eur": <integer estimate when new>,
-  "confidence": <number 0.0-1.0 — 0.9+ if 15+ close comparables, 0.7 if 5-15, 0.5 if <5>
-}`;
+// Spec §8.1: prompts live in prompts/price_analysis*.txt, loaded at runtime.
+function buildAnalysisPrompt(input, stats, listings, outlierCount) {
+  const comparablesList = listings
+    .slice(0, 15)
+    .map(
+      (l, i) =>
+        `${i + 1}. ${l.title} — €${formatNumber(l.price)} | ${formatNumber(l.mileage)} km | ${l.year || "?"} | ${l.platform} | ${l.dealer || "Private"}`
+    )
+    .join("\n");
+  return loadPrompt("price_analysis", {
+    listingsCount: listings.length,
+    outlierNote: outlierCount > 0 ? ` (${outlierCount} statistical outliers were removed before analysis.)` : "",
+    make: input.make,
+    model: input.model,
+    year: input.year,
+    mileageKm: formatNumber(input.mileageKm),
+    exteriorColor: input.exteriorColor,
+    interiorColor: input.interiorColor || "Not specified",
+    driveSide: input.driveSide,
+    transmission: input.transmission || "Unknown",
+    fuelType: input.fuelType || "Unknown",
+    serviceHistory: input.serviceHistory || "Unknown",
+    accidentHistory: input.accidentHistory ? "YES — documented" : "No",
+    auctionGrade: input.auctionGrade || "N/A",
+    specificationNotes: input.specificationNotes || "None noted",
+    median: formatNumber(stats.median),
+    mean: formatNumber(stats.mean),
+    p25: formatNumber(stats.p25),
+    p75: formatNumber(stats.p75),
+    priceMin: formatNumber(stats.min),
+    priceMax: formatNumber(stats.max),
+    comparablesList,
+  });
+}
 
 /**
  * Calculate price statistics from a list of listings.
@@ -291,11 +249,16 @@ export async function estimateMarketValue(input) {
 
   console.log(`Primary scrape: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}`);
 
-  // Step 1b: If <5 results, widen search (±4 years, +50% mileage)
+  // Spec §4.4.1 widening cascade:
+  //   Tier 1 (primary): ±2yr, ±30% mileage (already done above)
+  //   Tier 2: if <5 results, ±4yr, ±50% mileage
+  //   Tier 3: if still <5, drop year filter entirely (all years for this model)
   let searchWidened = false;
+  let searchTier = "primary";
   if (mobileListings.length + autoscoutListings.length < 5) {
-    console.log("Few results, widening search to ±4 years, ±50% mileage...");
+    console.log("Few results, widening search to ±4 years, ±50% mileage (tier 2)...");
     searchWidened = true;
+    searchTier = "tier-2";
     const wideYearFrom = input.year - 4;
     const wideYearTo = input.year + 4;
     const wideMileage = input.mileageKm + Math.max(Math.round(input.mileageKm * 0.5), 30000);
@@ -313,7 +276,33 @@ export async function estimateMarketValue(input) {
       autoscoutListings = wideA.value.listings;
       autoscoutSearchUrl = wideA.value.searchUrl || autoscoutSearchUrl;
     }
-    console.log(`Widened scrape: mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}`);
+    console.log(`Widened scrape (tier 2): mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}`);
+
+    // Tier 3: if still <5, drop the year filter entirely (all model years).
+    if (mobileListings.length + autoscoutListings.length < 5) {
+      console.log("Still <5 results, dropping year filter (tier 3: all years)...");
+      searchTier = "tier-3-all-years";
+      // Use a very wide year range rather than omitting the param —
+      // scrapers/search-urls.js builds `fr=${from}:${to}` unconditionally, so
+      // undefined values would corrupt the URL.
+      const thisYear = new Date().getFullYear();
+      const wideAllYearsFrom = 1990;
+      const wideAllYearsTo = thisYear + 1;
+      const allYearsMileage = input.mileageKm + Math.max(Math.round(input.mileageKm * 0.8), 50000);
+      const [allM, allA] = await Promise.allSettled([
+        scrapeMobileDe({ make: input.make, model: input.model, yearFrom: wideAllYearsFrom, yearTo: wideAllYearsTo, maxMileage: allYearsMileage }),
+        scrapeAutoScout24({ make: input.make, model: input.model, yearFrom: wideAllYearsFrom, yearTo: wideAllYearsTo, maxMileage: allYearsMileage }),
+      ]);
+      if (allM.status === "fulfilled" && allM.value.listings.length > mobileListings.length) {
+        mobileListings = allM.value.listings;
+        mobileSearchUrl = allM.value.searchUrl || mobileSearchUrl;
+      }
+      if (allA.status === "fulfilled" && allA.value.listings.length > autoscoutListings.length) {
+        autoscoutListings = allA.value.listings;
+        autoscoutSearchUrl = allA.value.searchUrl || autoscoutSearchUrl;
+      }
+      console.log(`Widened scrape (tier 3): mobile.de=${mobileListings.length}, autoscout24=${autoscoutListings.length}`);
+    }
   }
 
   const searchUrls = { mobile_de: mobileSearchUrl, autoscout24: autoscoutSearchUrl };
@@ -358,8 +347,8 @@ export async function estimateMarketValue(input) {
   let aiAnalysis = null;
   if (isAIAvailable()) {
     const rawResult = await callClaude({
-      prompt: ANALYSIS_PROMPT(input, stats, filteredListings, outliersRemoved),
-      system: ANALYSIS_SYSTEM,
+      prompt: buildAnalysisPrompt(input, stats, filteredListings, outliersRemoved),
+      system: loadPrompt("price_analysis.system"),
       jsonMode: true,
     });
     aiAnalysis = validateMarketOutput(rawResult);
@@ -397,6 +386,7 @@ export async function estimateMarketValue(input) {
     confidence,
     outliers_removed: outliersRemoved,
     search_widened: searchWidened,
+    search_tier: searchTier,
     comparable_listings: filteredListings.slice(0, 10).map((l) => ({
       title: l.title,
       price: l.price,
@@ -727,7 +717,7 @@ Return ONLY valid JSON:
   "trend_direction": "RISING" or "STABLE" or "DECLINING",
   "confidence": <0.55-0.75>
 }`,
-    system: ANALYSIS_SYSTEM,
+    system: loadPrompt("price_analysis.system"),
     jsonMode: true,
   });
 
@@ -822,7 +812,7 @@ Return ONLY valid JSON:
   "reasoning": "2-3 sentences",
   "confidence": <0.3-0.5>
 }`,
-    system: ANALYSIS_SYSTEM,
+    system: loadPrompt("price_analysis.system"),
     jsonMode: true,
   });
 

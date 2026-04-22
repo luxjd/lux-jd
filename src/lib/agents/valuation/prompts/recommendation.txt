@@ -1,0 +1,86 @@
+Evaluate this vehicle acquisition opportunity.
+
+VEHICLE:
+{{make}} {{model}} {{year}}
+{{mileageKm}} km | {{driveSide}} | {{exteriorColor}}
+Service History: {{serviceHistory}}
+Service Book Present: {{serviceBookPresent}}
+Auction Grade: {{auctionGradeLine}}
+Accident History: {{accidentHistoryLine}}
+{{accidentContradictionLine}}
+
+CONDITION ASSESSMENT (from AI photo/sheet analysis):
+Exterior Score: {{conditionExterior}}/10
+Interior Score: {{conditionInterior}}/10
+Interior Originality: {{interiorOriginality}}
+Condition Notes: {{conditionNotes}}
+{{tuvRiskFlagsLine}}
+{{visibleDamageLine}}
+{{modificationsLine}}
+
+PANEL CONDITION (from auction sheet):
+{{panelConditionsBlock}}
+
+DAMAGE CODES:
+{{damageCodesBlock}}
+
+FINANCIALS:
+Asking Price: ¥{{askingPriceJpy}} (€{{purchaseEur}})
+Total Landed Cost: €{{totalLandedCost}}
+Estimated DE Sale Price: €{{estimatedSalePrice}}
+Gross Margin: €{{grossMargin}} ({{grossMarginPct}}%)
+Cash Outlay Required: €{{cashOutlay}}
+FX Rate: ¥{{fxRate}}/€
+{{fxAlertLine}}
+Deterministic Max Bid: ¥{{deterministicMaxBid}} (pre-calculated)
+{{maxPurchaseLimitLine}}
+
+MARGIN SCENARIOS:
+Pessimistic (P25 sale): €{{pessimisticMargin}}
+Base (median sale): €{{grossMargin}}
+Optimistic (P75 sale): €{{optimisticMargin}}
+
+MARKET:
+Comparable Listings: {{comparableCount}}
+Avg Days on Market: {{avgDaysOnMarket}}
+Market Liquidity: {{marketLiquidity}}
+Trend: {{trendDirection}}
+{{webSearchFallbackLine}}{{webSearchFilterLine}}
+
+{{additionalDocsBlock}}
+
+{{historicalContextBlock}}
+
+═══════════════════════════════════════════════════
+PRE-COMPUTED RISK SCORES (rule-based per spec §6.5)
+═══════════════════════════════════════════════════
+These scores are FINAL — you cannot change them. Use them as inputs to your verdict.
+
+Condition Risk:   {{conditionScore}}/5 ({{conditionLevel}}) — {{conditionReasoning}}
+Provenance Risk:  {{provenanceScore}}/5 ({{provenanceLevel}}) — {{provenanceReasoning}}
+TUV Risk:         {{tuvScore}}/5 ({{tuvLevel}}) — {{tuvReasoning}}
+Market Risk:      {{marketScore}}/5 ({{marketLevel}}) — {{marketReasoning}}
+Currency Risk:    {{currencyScore}}/5 ({{currencyLevel}}) — {{currencyReasoning}}
+Capital Risk:     {{capitalScore}}/5 ({{capitalLevel}}) — {{capitalReasoning}}
+Overall:          {{overallRiskScore}}/5 ({{overallRiskLevel}})
+                  [weighted: condition×25% + market×25% + currency×20% + provenance×15% + tuv×10% + capital×5%]
+
+═══════════════════════════════════════════════════
+
+Return ONLY valid JSON:
+{
+  "condition_nuance": "1-2 sentences adding qualitative judgment that the rule didn't capture (e.g. 'bolster wear inconsistent with claimed mileage', 'paint quality belies the score'). Empty string if rule reasoning is sufficient.",
+  "provenance_nuance": "1-2 sentences adding qualitative judgment on documentation/history (e.g. 'stamps from non-authorized dealer', 'CoC missing critical pages'). Empty string if rule reasoning is sufficient.",
+  "verdict": "BUY" | "REVIEW" | "PASS",
+  "verdict_reasoning": "2-3 sentence explanation referencing specific numbers and the risk levels above",
+  "max_bid_jpy": <integer — use the deterministic max bid as baseline, may adjust based on overall risk. Null if PASS.>,
+  "max_bid_reasoning": "How you arrived at this bid — reference the deterministic calculation and any risk-driven adjustments",
+  "key_strengths": ["strength 1 with evidence", "strength 2", "strength 3"],
+  "key_concerns": ["concern 1 with evidence", "concern 2"],
+  "action_items": ["specific action for REVIEW verdicts — what info would change the verdict"]
+}
+
+VERDICT RULES (STRICT — you MUST follow these thresholds set by the user):
+- BUY: Gross margin >= €{{minMarginEur}} AND >= {{minMarginPct}}% AND confidence >= 0.70 AND overall_risk <= 3.0 AND no HIGH individual risks AND pessimistic margin > €0 AND margin is NOT borderline (within 15% of threshold){{maxPurchaseClause}}
+- REVIEW: Margin meets BUY threshold but one or more: confidence 0.50-0.70, overall_risk 3.0-4.0, one HIGH risk, pessimistic margin < €0, FX alert active, margin is borderline (within 15% of threshold)
+- PASS: Margin < €{{minMarginEur}} OR < {{minMarginPct}}% OR confidence < 0.50 OR overall_risk > 4.0 OR multiple HIGH risks OR accident history with poor condition{{maxPurchasePassClause}}
