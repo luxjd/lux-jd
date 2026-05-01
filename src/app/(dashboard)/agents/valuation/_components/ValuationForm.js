@@ -10,6 +10,15 @@ const MAKES = [
   "Alfa Romeo", "Bugatti",
 ];
 
+const HIDDEN_FIELDS = {
+  fieldConfidence: true,
+  field_confidence: true,
+  confidence: true,
+  yearEra: true,
+  mileageUnit: true,
+  mileage_unit: true,
+};
+
 const FIELD_LABELS = {
   // Identity
   make: "Make",
@@ -65,7 +74,7 @@ function formatValue(key, value) {
   if (key === "accidentHistory") return value ? "Yes" : "No";
   if (key === "colorChanged") return value ? "Yes (repaint indicated)" : "No";
   if (key === "askingPriceJpy" || key === "recyclingDepositJpy") return formatJpy(value);
-  if (key === "mileageKm") return `${formatKm(value)} km`;
+  if (key === "mileageKm") return `${formatKm(value)}`;
   if (key === "auctionGrade") return String(value);
   if (key === "doorCount") return `${value}-door`;
   if (key === "seatingCapacity") return `${value} seats`;
@@ -382,6 +391,7 @@ export default function ValuationForm({ onSubmit, loading }) {
   // Filter on the FORMATTED string so empty arrays / empty dimensions /
   // blank strings disappear instead of rendering an empty card.
   const extractedEntries = Object.entries(extractedData)
+    .filter(([k]) => !k.startsWith("_") && !(k in HIDDEN_FIELDS))
     .filter(([, v]) => v !== null && v !== undefined && v !== "")
     .filter(([k, v]) => {
       const f = formatValue(k, v);
@@ -431,7 +441,9 @@ export default function ValuationForm({ onSubmit, loading }) {
             {extractedEntries.map(([key, value]) => (
               <div key={key} className="px-4 py-3 rounded-xl bg-surface-container-high border border-outline-variant/10">
                 <p className="text-xs uppercase tracking-widest text-on-surface-variant mb-1">
-                  {FIELD_LABELS[key] || key}
+                  {key === "mileageKm"
+                    ? `Mileage (${extractedData.mileageUnit === "miles" ? "miles" : "km"})`
+                    : (FIELD_LABELS[key] || key)}
                 </p>
                 <p className="text-on-surface font-medium">{formatValue(key, value)}</p>
               </div>

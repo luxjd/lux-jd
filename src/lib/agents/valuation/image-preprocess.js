@@ -32,7 +32,8 @@ const TARGET_MAX_WIDTH = 2400;
 const ABSOLUTE_MIN_WIDTH = 600;
 
 export function preprocessingEnabled() {
-  return process.env.SHEET_PREPROCESS === "1" || process.env.VALUATION_SHEET_PREPROCESS === "1";
+  if (process.env.SHEET_PREPROCESS === "0") return false;
+  return true;
 }
 
 /**

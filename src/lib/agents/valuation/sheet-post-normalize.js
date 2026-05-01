@@ -135,22 +135,22 @@ export function postNormaliseExtraction(extracted) {
   if (!extracted || typeof extracted !== "object") return { extracted, notes: [] };
   const notes = [];
 
-  // Auction house
+  // Auction house — preserve original for accident corner detection below
+  const rawAH = extracted.auctionHouse || extracted.auction_house || "";
   if (extracted.auctionHouse) {
     const { normalised, location } = normaliseAuctionHouse(extracted.auctionHouse);
     if (normalised && normalised !== extracted.auctionHouse) {
       notes.push(`auctionHouse normalised "${extracted.auctionHouse}" → "${normalised}"${location ? ` (location="${location}")` : ""}`);
+      extracted._rawAuctionHouse = extracted.auctionHouse;
       extracted.auctionHouse = normalised;
       if (location) extracted.auctionHouseLocation = location;
     }
   }
 
-  // Make — upgrade to AMG if model/grade says so
-  const beforeMake = extracted.make;
-  upgradeToAMGIfApplicable(extracted);
-  if (extracted.make !== beforeMake) {
-    notes.push(`make upgraded "${beforeMake}" → "${extracted.make}" (AMG pattern detected)`);
-  }
+  // Make — strict extraction: do NOT upgrade Mercedes-Benz → Mercedes-AMG
+  // based on model/grade inference. Only report what 車名 field prints.
+  // The upgradeToAMGIfApplicable function is intentionally NOT called here
+  // because inferring AMG from grade violates the "extract only" rule.
 
   // Import type
   if (extracted.importType) {
@@ -168,6 +168,107 @@ export function postNormaliseExtraction(extracted) {
       notes.push(`recyclingDepositJpy cleared: ${warning}`);
       extracted.recyclingDepositJpy = null;
       extracted._recyclingDepositWarning = warning;
+    }
+  }
+
+  // Mileage unit — preserve original units exactly as written on the sheet.
+  // Do NOT auto-convert miles → km. The raw digit reading and the unit are
+  // reported separately so downstream consumers can decide whether to convert.
+  // This respects the "preserve original units" strict extraction rule.
+
+  // Void/invalid grade — 事故・現状コーナー sheets may show 無効.
+  // Calibration: 3.jpeg shows large 無効 stamp over the grade box.
+  if (typeof extracted.auctionGrade === "string") {
+    const g = extracted.auctionGrade.trim();
+    if (/無効|void|invalid/i.test(g)) {
+      notes.push(`auctionGrade "${g}" is void/invalid → null`);
+      extracted.auctionGrade = null;
+    }
+  }
+  if (typeof extracted.overallGrade === "string") {
+    const g = extracted.overallGrade.trim();
+    if (/無効|void|invalid/i.test(g)) {
+      notes.push(`overallGrade "${g}" is void/invalid → null`);
+      extracted.overallGrade = null;
+    }
+  }
+  // Same for the internal field name
+  if (typeof extracted.overall_grade === "string") {
+    const g = extracted.overall_grade.trim();
+    if (/無効|void|invalid/i.test(g)) {
+      notes.push(`overall_grade "${g}" is void/invalid → null`);
+      extracted.overall_grade = null;
+    }
+  }
+
+  // Model code "フメイ" (unknown) — clear it.
+  // Calibration: 7.jpeg shows フメイ in the 型式 field for a grey-import G500.
+  const mc = extracted.modelCode || extracted.model_code;
+  if (mc && /^フメイ$|^不明$|^unknown$/i.test(String(mc).trim())) {
+    notes.push(`modelCode "${mc}" means unknown → null`);
+    if (extracted.modelCode != null) extracted.modelCode = null;
+    if (extracted.model_code != null) extracted.model_code = null;
+  }
+
+  // Color change detection — "レッド→クロ" pattern.
+  // Calibration: sheet5 shows 色替 with arrow indicating repaint.
+  const extColor = extracted.exteriorColor || extracted.exterior_color;
+  if (extColor && typeof extColor === "string" && /→|->|⇒/.test(extColor)) {
+    const parts = extColor.split(/→|->|⇒/).map((s) => s.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      notes.push(`exteriorColor "${extColor}" contains color-change arrow → using original "${parts[0]}"`);
+      if (extracted.exteriorColor != null) extracted.exteriorColor = parts[0];
+      if (extracted.exterior_color != null) extracted.exterior_color = parts[0];
+      extracted.colorChanged = true;
+    }
+  }
+
+  // Accident corner detection — the sheet header explicitly prints
+  // "事故・現状コーナー" (Accident/As-Is Corner). This is the strongest
+  // accident signal on any sheet — the vehicle was PLACED in the accident
+  // section by the auction house. This overrides 修復歴=無 because the
+  // corner assignment is an auction-house-level classification, not an
+  // inspector checkbox that can be ambiguous.
+  // Check multiple fields for 事故 — the corner name may appear in
+  // auctionHouse, specificationNotes, cautionNotes, or overall_assessment
+  const accidentProbe = [
+    rawAH,
+    extracted._rawAuctionHouse,
+    extracted.auctionHouse, extracted.auction_house,
+    extracted.specificationNotes,
+    extracted.overall_assessment, extracted.overallAssessment,
+    ...(Array.isArray(extracted.cautionNotes) ? extracted.cautionNotes : []),
+    ...(Array.isArray(extracted.caution_notes) ? extracted.caution_notes : []),
+  ].filter(Boolean).join(" ");
+  if (/事故/.test(accidentProbe)) {
+    const was = extracted.accidentHistory ?? extracted.accident_history ?? null;
+    if (was !== true) {
+      notes.push(`auction corner header prints "事故" → accident_history=true (overrides ${JSON.stringify(was)})`);
+    }
+    if ("accidentHistory" in extracted || !("accident_history" in extracted)) {
+      extracted.accidentHistory = true;
+    } else {
+      extracted.accident_history = true;
+    }
+  }
+
+  // Shaken expiry era conversion — if still in Japanese era format.
+  // Calibration: sheets commonly show "R9年7月" which should be "2027-07".
+  const shaken = extracted.shakenExpiry || extracted.shaken_expiry;
+  if (shaken && typeof shaken === "string") {
+    const eraMatch = shaken.match(/([SHR])\s*(\d{1,2})\s*[年\/\-]\s*(\d{1,2})/i);
+    if (eraMatch) {
+      const base = { S: 1925, H: 1988, R: 2018 }[eraMatch[1].toUpperCase()];
+      if (base) {
+        const westernYear = base + parseInt(eraMatch[2], 10);
+        const month = eraMatch[3].padStart(2, "0");
+        const converted = `${westernYear}-${month}`;
+        if (converted !== shaken) {
+          notes.push(`shakenExpiry era-converted "${shaken}" → "${converted}"`);
+          if (extracted.shakenExpiry != null) extracted.shakenExpiry = converted;
+          if (extracted.shaken_expiry != null) extracted.shaken_expiry = converted;
+        }
+      }
     }
   }
 

@@ -22,6 +22,7 @@ import { loadPrompt } from "./prompts/loader";
 import { ensembleEnabled, ensembleExtract } from "./sheet-ensemble";
 import { maybePreprocess } from "./image-preprocess";
 import { extractMileageWithZone, zoneExtractorEnabled } from "./sheet-mileage-extractor";
+import { extractVinWithZone, vinExtractorEnabled } from "./sheet-vin-extractor";
 import { retryMissingSheetFields, retryEnabled, RETRY_ACCEPT_THRESHOLD } from "./sheet-field-retry";
 import { postNormaliseExtraction } from "./sheet-post-normalize";
 
@@ -421,7 +422,7 @@ export const AUCTION_SHEET_TOOL = {
       properties: {
         auction_house:           { type: ["string", "null"], description: "USS / TAA / JU / HAA / CAA / AUCNET / etc." },
         lot_number:              { type: ["string", "null"] },
-        make:                    { type: ["string", "null"], description: "English brand. Use 'Mercedes-Benz' (not 'Mercedes-AMG' unless it's a dedicated AMG model like AMG GT)." },
+        make:                    { type: ["string", "null"], description: "Read 車名 field EXACTLY. メルセデスAMG='Mercedes-AMG', メルセデスベンツ='Mercedes-Benz'. Do NOT change make based on grade/model — only report what 車名 prints." },
         model:                   { type: ["string", "null"], description: "Base model name only — e.g. 'GT', 'G63', '488 GTB', '911 Turbo S'. Do NOT include grade/edition here — that goes in 'grade'." },
         grade:                   { type: ["string", "null"], description: "Trim + edition from the グレード field, e.g. 'S 130th Anniversary Edition', 'GT3 RS', 'Edition 1'. PRESERVE multi-digit anniversary numerals verbatim — '130th Anniversary' must NOT be shortened to '10th' or '30th'." },
         model_code:              { type: ["string", "null"], description: "型式 / chassis-code (typically prefixed CBA-/DBA-/ABA-/LDA-, 6–10 chars). DIFFERENT from VIN." },
@@ -430,8 +431,9 @@ export const AUCTION_SHEET_TOOL = {
         year_era:                { type: ["string", "null"], description: "Japanese era shorthand, e.g. 'H24' or 'R5'." },
         year_calculation:        { type: ["string", "null"], description: "Calculation used, e.g. 'H24 + 1988 = 2012'." },
         displacement_cc:         { type: ["integer", "null"] },
-        mileage_reading:         { type: ["integer", "null"], description: "Read ALL digit boxes left-to-right. Do not assume km vs miles — flag if unclear." },
-        mileage_digits:          { type: ["string", "null"] },
+        mileage_reading:         { type: ["integer", "null"], description: "Read ALL digit boxes left-to-right including leading zeros. Report the RAW number — do NOT convert between units." },
+        mileage_digits:          { type: ["string", "null"], description: "Left-to-right digit string including leading zeros, e.g. '009816' or '051170'." },
+        mileage_unit:            { type: ["string", "null"], enum: [null, "km", "miles"], description: "Read the unit marker near digit boxes. マイル/Miles/Mile → 'miles'. km or no marker → 'km'. Do NOT convert the mileage_reading value." },
         transmission:            { type: ["string", "null"], enum: [null, "AUTOMATIC", "MANUAL", "DCT", "PDK", "SMG"] },
         fuel_type:               { type: ["string", "null"], enum: [null, "PETROL", "DIESEL", "HYBRID", "ELECTRIC", "LPG", "CNG"] },
         drive_side:              { type: ["string", "null"], enum: [null, "LHD", "RHD"] },
@@ -475,7 +477,16 @@ export const AUCTION_SHEET_TOOL = {
         mechanical_notes:        { type: "array", items: { type: "string" } },
         modification_notes:      { type: "array", items: { type: "string" } },
         recycling_deposit_jpy:   { type: ["integer", "null"] },
+        body_type:               { type: ["string", "null"], description: "形状 field: raw code exactly as printed — 3D, 2D, OP, CP, SD, HB, SW. Do NOT translate to English." },
+        door_count:              { type: ["integer", "null"], description: "Only if explicitly printed (e.g. '3D'=3, '2D'=2). Do NOT infer from body type or model name." },
+        drivetrain:              { type: ["string", "null"], enum: [null, "2WD", "4WD", "AWD", "FF", "FR", "MR", "RR"], description: "Only if explicitly printed in 駆動 field. Do NOT assume." },
+        seating_capacity:        { type: ["integer", "null"], description: "乗車定員 — only if explicitly printed." },
         overall_assessment:      { type: ["string", "null"] },
+        field_confidence: {
+          type: "object",
+          description: "Per-field confidence: 'high' (clearly legible), 'medium' (readable, some uncertainty), 'low' (difficult to read). Include every non-null extracted field.",
+          additionalProperties: { type: "string", enum: ["high", "medium", "low"] },
+        },
         confidence:              { type: "number", minimum: 0, maximum: 1 },
       },
       required: ["make", "model", "confidence"],
@@ -515,17 +526,20 @@ The mileage is displayed as a row of numeric digit boxes — typically 6 or 7 bo
 COMMON MISTAKES TO AVOID:
 - Do NOT drop leading zeros. "045032" is FORTY-FIVE THOUSAND THIRTY-TWO, not 450,320 or 4,503.
 - Do NOT confuse the odometer with another number on the sheet (model code, VIN digits, shaken date).
-- If the sheet notes "Miles" or "ml" anywhere on the odometer, multiply by 1.60934 to convert to km.
-- Look for a km / miles marker on or near the odometer; if ambiguous, set unit_unclear=true.
+- Look for マイル/Miles/Mile/ml near the digit boxes — imported vehicles often show miles, not km.
+- If km-vs-miles is genuinely ambiguous, set unit_unclear=true.
+- Do NOT convert between units — report the raw digit reading and the unit separately.
 
 Return ONLY valid JSON:
 {
   "digit_count": <6 or 7 or whatever you see>,
   "digits": "<string of every digit left-to-right including leading zeros, e.g. '045032'>",
-  "mileageKm": <integer km — convert from miles if the sheet shows miles>,
+  "raw_reading": <integer — the raw number from the digit boxes exactly as printed>,
+  "mileageKm": <integer — same as raw_reading (do NOT convert miles to km)>,
   "unit_read": "<'km' | 'miles' | 'unclear'>",
   "unit_unclear": <true only if km-vs-miles is genuinely ambiguous on the sheet>,
-  "confidence": <0.0-1.0 — lower if any box was smudged or cut off>
+  "confidence": <0.0-1.0 — lower if any box was smudged or cut off>,
+  "field_confidence": "<'high' | 'medium' | 'low'>"
 }`;
 
 // Second, independently-worded mileage prompt. Different wording reduces
@@ -914,8 +928,12 @@ function crossValidate(pass1, pass2Mileage, pass2MileageB, pass2Year, pass2Color
         || zoneAgree === "1-of-3-zone-unit-corrected"
         || zoneAgree === "1-of-3-zone") {
       pass1.mileage_reading = pass2ZoneMileage.mileage_km;
+      if (pass2ZoneMileage.mileage_unit) {
+        pass1.mileage_unit = pass2ZoneMileage.mileage_unit;
+      }
       pass1._mileage_zone_extraction = {
         value: pass2ZoneMileage.mileage_km,
+        unit: pass2ZoneMileage.mileage_unit || "km",
         agreement: pass2ZoneMileage.agreement,
         confidence: pass2ZoneMileage.confidence,
         rationale: pass2ZoneMileage.rationale,
@@ -1633,6 +1651,17 @@ export async function parseAuctionSheet(rawImage, opts = {}) {
     }
   }
 
+  // ── VIN zone extraction (parallel with Pass 3) ──
+  let pass2ZoneVin = null;
+  const vinZonePromise = (!skipVerification && vinExtractorEnabled()) ? (async () => {
+    try {
+      console.log("[sheet-parser] VIN zone extractor running...");
+      pass2ZoneVin = await extractVinWithZone(image, normalized?.make || null);
+    } catch (e) {
+      console.warn("[sheet-parser] VIN zone extractor threw:", e.message);
+    }
+  })() : Promise.resolve();
+
   // ── Pass 3: Deep damage map analysis ──
   let pass3Damage = null;
 
@@ -1651,10 +1680,31 @@ export async function parseAuctionSheet(rawImage, opts = {}) {
     }
   }
 
+  // Wait for VIN zone extraction to complete (runs parallel with Pass 3)
+  await vinZonePromise;
+
   // ── Cross-validation & merge (majority vote) ──
   const { merged, anomalies, fieldConfidence } = crossValidate(
     normalized, pass2Mileage, pass2MileageB, pass2Year, pass2Color, pass2ColorB, pass2Vin, pass3Damage, pass2Grade, pass2DriveSide, pass2ZoneMileage
   );
+
+  // ── VIN zone override (highest-quality VIN signal) ──
+  if (pass2ZoneVin && pass2ZoneVin.vin && pass2ZoneVin.confidence >= 0.75) {
+    const zoneVin = pass2ZoneVin.vin;
+    if (merged.vin !== zoneVin) {
+      console.log(`[sheet-parser] VIN zone override: "${merged.vin}" → "${zoneVin}" (conf=${pass2ZoneVin.confidence}, agreement=${pass2ZoneVin.agreement})`);
+      anomalies.push({
+        field: "vin",
+        type: "ZONE_CROP_OVERRIDE",
+        oldValue: merged.vin,
+        newValue: zoneVin,
+        agreement: pass2ZoneVin.agreement,
+        confidence: pass2ZoneVin.confidence,
+      });
+    }
+    merged.vin = zoneVin;
+    fieldConfidence.vin = Math.max(fieldConfidence.vin || 0, pass2ZoneVin.confidence);
+  }
 
   // Enrich damage codes with reference database
   merged.damage_codes = enrichDamageCodes(merged.damage_codes);
@@ -1716,6 +1766,14 @@ export async function parseAuctionSheet(rawImage, opts = {}) {
 /** Extraction-specific prompt — returns form-friendly field structure */
 const EXTRACTION_PROMPT = `Analyze ALL the provided images carefully and extract every piece of vehicle data you can find.
 
+STRICT RULES:
+- EXTRACT ONLY values explicitly printed on the sheet. Never infer or guess.
+- If a field is not present → null. If present but unreadable → "uncertain".
+- Do NOT assume values from common knowledge (e.g. do NOT assume door count or drivetrain from model name).
+- PRESERVE ORIGINAL UNITS — if mileage shows マイル/Miles, report the raw number and set mileageUnit="miles". Do NOT convert.
+- Report per-field confidence in fieldConfidence: "high" / "medium" / "low".
+- Never fabricate color codes, VIN characters, dates, or specs you cannot clearly read.
+
 For JAPANESE AUCTION SHEETS — SCAN THE ENTIRE SHEET for these Japanese labels:
 
 YEAR CONVERSION (初度登録年月 / 年式):
@@ -1724,17 +1782,18 @@ YEAR CONVERSION (初度登録年月 / 年式):
 - SHOWA (昭和/S): S + 1925 = Western year
 
 BRAND NAMES (車名 in katakana):
-メルセデス ベンツ = Mercedes-Benz, フェラーリ = Ferrari, ポルシェ = Porsche,
-ランボルギーニ = Lamborghini, ベントレー = Bentley, アストンマーチン = Aston Martin,
-ジャガー = Jaguar, マセラティ = Maserati, ロールスロイス = Rolls-Royce,
-マクラーレン = McLaren, レンジローバー = Range Rover, ロータス = Lotus,
+メルセデスAMG = Mercedes-AMG, メルセデス ベンツ / メルセデス・ベンツ = Mercedes-Benz,
+フェラーリ = Ferrari, ポルシェ = Porsche, ランボルギーニ = Lamborghini,
+ベントレー = Bentley, アストンマーチン = Aston Martin, ジャガー = Jaguar,
+マセラティ = Maserati, ロールスロイス = Rolls-Royce, マクラーレン = McLaren,
+レンジローバー = Range Rover, アウディ = Audi, ロータス = Lotus,
 アルファロメオ = Alfa Romeo, BMW = BMW
 
 FIELDS TO FIND:
 - 車名 = brand (make), モデル / model-name = base model (e.g. "GT"), グレード = trim + edition (e.g. "S 130th Anniversary Edition")
 - 出品番号 / Lot No. = lotNumber, 開催場 / 会場 = auctionHouse (USS/TAA/JU/HAA/CAA/AUCNET/etc.)
 - 排気量 = displacement cc, 型式 = model code (chassis code, NOT VIN)
-- 走行 = mileage km (digit boxes — read ALL digits left to right)
+- 走行 = mileage (digit boxes — read ALL digits left to right). CHECK for マイル/Miles next to digit boxes — if present, unit is "miles" (imported vehicles often show miles)
 - シフト = transmission (AT=AUTOMATIC, MT=MANUAL, CVT, DCT, PDK, SMG)
 - 駆動 / 駆動方式 = drivetrain (2WD / 4WD / AWD)
 - ドア / 形状 = doorCount + bodyType (e.g. "3D" = 3-door, "2D" = 2-door, "coupe"/"sedan"/"SUV")
@@ -1759,13 +1818,17 @@ CRITICAL RULES:
 2. H24 = 2012 (NOT 2024). Use H + 1988. R + 2018.
 3. Translate ALL Japanese text to English.
 4. 内装 grade (A/B/C/D) is condition, NOT color.
-5. Use Mercedes-Benz (not Mercedes-AMG unless dedicated AMG model like AMG GT).
+5. Read 車名 field EXACTLY. メルセデスAMG="Mercedes-AMG", メルセデスベンツ="Mercedes-Benz". Do NOT change make based on the grade/model — only report what 車名 prints.
 6. グレード / edition: preserve multi-digit anniversary numerals. "130th Anniversary" must NOT be shortened to "10th" or "30th". Read the full number.
 7. Interior color: preserve two-tone strings with "/" separator. "ブラック/ホワイト" → "Black/White". Never collapse a two-tone interior to a single color.
 8. Inspector abbreviations: スレ = scuff, ガタ = looseness, キズ = scratch, ヘコミ/凹み = dent, サビ = rust, 小/中/大 = minor/moderate/major. "シートハンドル小スレ" = "minor scuff on seat handle" (NOT "looseness").
 9. 車台No. (VIN) is EXACTLY 17 characters using A–H, J–N, P, R–Z, 0–9 — never return anything shorter. It is DIFFERENT from 型式 (model code, 6–10 chars prefixed CBA-/DBA-/ABA-/LDA-). Brand WMI prefixes: Mercedes=WDB/WDC/WDD/WDF, Porsche=WP0/WP1, Ferrari=ZFF, Lamborghini=ZHW, Bentley=SCB, Aston Martin=SCF, BMW=WBS/WBA/WBY, Audi=WAU, Jaguar=SAJ, Range Rover=SAL. If unsure, scan every row labelled 車台 and copy the full 17-character string.
 10. Exterior color: return what the SHEET literally says in "exteriorColor" (e.g. if it says パール, put "Pearl" — do NOT substitute the manufacturer catalog name like "Diamond White Bright"). Put the verbatim Japanese text in exteriorColorJapanese.
 11. Grade vs model: "model" is the base model name (e.g. "GT"). "grade" is the trim + edition (e.g. "S 130th Anniversary Edition"). Split them — do NOT merge "model" and "grade" into one field.
+12. MILES DETECTION: Look for マイル/Miles/Mile/ml near the mileage digit boxes. Imported vehicles often show miles. If found, set mileageUnit="miles" and report the RAW digit reading — do NOT convert to km.
+13. VOID GRADE: If the grade box shows 無効 (void/invalid), set auctionGrade=null. This is common in 事故・現状コーナー (accident/as-is) sheets.
+14. COLOR CHANGE: If 外色 shows "レッド→クロ" (arrow between colors), the car was repainted. Report the ORIGINAL color (before arrow) and set colorChanged=true.
+15. 型式 showing フメイ or 不明 means the model code is unknown — return null.
 
 Return ONLY valid JSON:
 {
@@ -1775,10 +1838,12 @@ Return ONLY valid JSON:
     "grade": "<trim + edition, e.g. 'S 130th Anniversary Edition'. Preserve full anniversary numerals. null if absent>",
     "modelCode": "<型式, e.g. 'CBA-190378'. null if absent>",
     "year": <4-digit year or null>,
-    "mileageKm": <integer or null>,
+    "displacement": <integer cc from 排気量 field, e.g. 4000, 3000, 5200. Only if printed>,
+    "mileageKm": <integer — raw digit reading, regardless of unit>,
+    "mileageUnit": "<'km' | 'miles' — check for マイル/Miles near digit boxes; default 'km'>",
     "driveSide": "<LHD/RHD or null>",
     "drivetrain": "<2WD|4WD|AWD or null>",
-    "bodyType": "<coupe|sedan|SUV|wagon|hatchback|convertible|etc., or null>",
+    "bodyType": "<raw code from 形状 field: 3D, 2D, OP, CP, SD, HB, SW, etc. Report the printed code, not an English word>",
     "doorCount": <integer or null>,
     "seatingCapacity": <integer or null>,
     "askingPriceJpy": <JPY integer or null>,
@@ -1791,8 +1856,9 @@ Return ONLY valid JSON:
     "interiorAuxGrade": "<A|B|C|D or null>",
     "transmission": "<AUTOMATIC|MANUAL|DCT|PDK|SMG or null>",
     "fuelType": "<PETROL|DIESEL|HYBRID|ELECTRIC or null>",
-    "auctionGrade": <grade number 1-6, or S=6, or null>,
+    "auctionGrade": <grade number 1-6, S=6.5, or null if R/RA/無効/void>,
     "accidentHistory": <true/false/null>,
+    "serviceBookPresent": <true if 保証書付/新車整備手帳 shows 有, false if 無, null if unclear>,
     "importType": "<Dealer|Individual|Auction|etc., or null>",
     "vin": "<17-character chassis/VIN. null if cannot read full 17 chars — do NOT return the model code here>",
     "registrationPlate": "<登録No., verbatim with kanji (e.g. '杉並 300 た 8546'), or null>",
@@ -1806,7 +1872,10 @@ Return ONLY valid JSON:
     "modifications": ["<each aftermarket/modification note, translated>"],
     "cautionNotes": ["<each 注意事項 item, translated with inspector glossary applied>"],
     "inspectorNotes": ["<free-form inspector remarks, translated>"],
-    "specificationNotes": "<short catch-all for anything not covered above; can be empty>"
+    "specificationNotes": "<short catch-all for anything not covered above; can be empty>",
+    "fieldConfidence": {
+      "<fieldName>": "<'high' | 'medium' | 'low' — for every non-null extracted field>"
+    }
   },
   "summary": "<2-3 sentence description>"
 }`;
@@ -1866,6 +1935,17 @@ export async function extractVehicleData(rawImages) {
         console.log(`MILEAGE CORRECTED: ${extracted.mileageKm} → ${verified}`);
         extracted.mileageKm = verified;
       }
+      // Propagate the unit detection from verification pass — preserve original unit
+      if (mileageV.value.unit_read === "miles" || mileageV.value.unit_read === "km") {
+        extracted.mileageUnit = mileageV.value.unit_read;
+      }
+      // If verification saw miles, use the raw_reading (not the converted mileageKm)
+      if (mileageV.value.unit_read === "miles" && mileageV.value.raw_reading) {
+        extracted.mileageKm = mileageV.value.raw_reading;
+      }
+    }
+    if (!extracted.mileageUnit) {
+      extracted.mileageUnit = extracted.mileageUnit || "km";
     }
 
     // Apply color correction
@@ -2002,6 +2082,7 @@ export async function extractVehicleData(rawImages) {
         }
       };
       mapIfBetter("mileageKm", deepParsed.mileage_reading, (v) => typeof v === "number" && v > 0);
+      mapIfBetter("mileageUnit", deepParsed.mileage_unit);
       mapIfBetter("year", deepParsed.year, (v) => typeof v === "number" && v >= 1990);
       mapIfBetter("yearEra", deepParsed.year_era);
       mapIfBetter("auctionGrade", deepParsed.overall_grade, (v) => typeof v === "number" && v > 0);
@@ -2026,6 +2107,9 @@ export async function extractVehicleData(rawImages) {
       mapIfBetter("accidentHistory", deepParsed.accident_history, (v) => typeof v === "boolean");
       mapIfBetter("registrationPlate", deepParsed.registration_plate);
       mapIfBetter("colorCode", deepParsed.color_code);
+      mapIfBetter("bodyType", deepParsed.body_type);
+      mapIfBetter("serviceBookPresent", deepParsed.service_book_present, (v) => typeof v === "boolean");
+      mapIfBetter("doorCount", deepParsed.door_count, (v) => typeof v === "number" && v >= 1);
 
       // Color: prefer the MORE SPECIFIC name over generic truncation.
       // "Pearl White" > "White"; "Selenite Grey Metallic" > "Grey".

@@ -53,8 +53,8 @@ Read 初度登録年月 or 年式. Convert Japanese era: H(平成)+1988, R(令�
 Return JSON: {"year": <4-digit integer>, "era": "<e.g. H24>", "confidence": 0.0-1.0}`,
 
   mileageKm: `What is the odometer reading on this Japanese auction sheet?
-Read every digit box left-to-right, including leading zeros. If the sheet shows マイル or "Miles", multiply by 1.60934 for km. If km, use as-is.
-Return JSON: {"mileageKm": <integer>, "unit_read": "km|miles|unclear", "confidence": 0.0-1.0}`,
+Read every digit box left-to-right, including leading zeros. Check for マイル/Miles near the digit boxes. Report the RAW number and the unit — do NOT convert between units.
+Return JSON: {"mileageKm": <integer — raw digit reading>, "unit_read": "km|miles|unclear", "confidence": 0.0-1.0, "field_confidence": "high|medium|low"}`,
 
   driveSide: `Is this a LEFT-HAND-DRIVE or RIGHT-HAND-DRIVE vehicle?
 Look at ハンドル. The SELECTED option is marked by a circle, bracket [左], underline, or checkmark. 左=LHD, 右=RHD. Brackets are SELECTION, not cancellation.
@@ -144,6 +144,18 @@ Return JSON: {"grade": "<string>", "confidence": 0.0-1.0}`,
   colorChanged: `Has this vehicle been REPAINTED (色替 / 色変)?
 Look for 色替 label, an arrow (→) next to the color, or explicit change markers.
 Return JSON: {"colorChanged": <true|false>, "confidence": 0.0-1.0}`,
+
+  serviceBookPresent: `Does this auction sheet indicate a SERVICE BOOK is present?
+Look for 新車整備手帳 or 保証書付 with 有 (present) or 無 (absent) circled or marked.
+Return JSON: {"serviceBookPresent": <true|false>, "confidence": 0.0-1.0}`,
+
+  bodyType: `What is the BODY TYPE code (形状) on this Japanese auction sheet?
+Return the EXACT code printed: 3D, 2D, OP, CP, SD, HB, SW, etc. Do NOT translate to English.
+Return JSON: {"bodyType": "<code>", "confidence": 0.0-1.0}`,
+
+  displacement: `What is the ENGINE DISPLACEMENT (排気量) in cc on this Japanese auction sheet?
+Read the number next to 排気量. Report the exact integer (e.g. 4000, 3000, 5200).
+Return JSON: {"displacement": <integer>, "confidence": 0.0-1.0}`,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -185,6 +197,8 @@ const FIELD_KEYS = {
   importType: "importType", drivetrain: "drivetrain",
   seatingCapacity: "seatingCapacity", doorCount: "doorCount",
   grade: "grade", colorChanged: "colorChanged",
+  serviceBookPresent: "serviceBookPresent", bodyType: "bodyType",
+  displacement: "displacement",
 };
 
 function normaliseValue(val, fieldKey) {

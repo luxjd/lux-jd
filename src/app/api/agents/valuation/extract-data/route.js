@@ -1,5 +1,5 @@
 import { isAIAvailable } from "@/lib/claude";
-import { extractVehicleData } from "@/lib/agents/valuation/sheet-parser";
+import { extractWithPipeline } from "@/lib/agents/valuation/extraction-pipeline";
 
 export async function POST(request) {
   if (!isAIAvailable()) {
@@ -14,7 +14,6 @@ export async function POST(request) {
       return Response.json({ error: "No files provided" }, { status: 400 });
     }
 
-    // Convert all files to base64 images
     const images = [];
     for (const file of files) {
       if (file && file.size > 0) {
@@ -29,8 +28,7 @@ export async function POST(request) {
       return Response.json({ error: "No valid files provided" }, { status: 400 });
     }
 
-    // Delegate to expert sheet parser (multi-pass with blind verification)
-    const result = await extractVehicleData(images);
+    const result = await extractWithPipeline(images);
 
     return Response.json(result);
   } catch (err) {

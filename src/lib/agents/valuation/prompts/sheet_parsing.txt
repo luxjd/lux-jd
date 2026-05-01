@@ -1,17 +1,147 @@
 Extract ALL data from this Japanese vehicle auction sheet. Return ONLY valid JSON.
 
-RULES:
-1. Japanese era years: Heisei (H) + 1988 = AD year. Reiwa (R) + 2018. Example: H24 = 2012.
-2. Read odometer digit boxes carefully — note km or miles.
-3. Auction grades: S/6 (best) → 1 (worst). R/RA = accident history.
-4. Interior grades: A (best) → D (worst).
-5. Map damage diagram codes to English panel names.
-6. model vs grade: "model" is the base model name ONLY (e.g. "GT", "G63", "488 GTB", "911 Turbo S"). "grade" is the trim + edition from the グレード field (e.g. "S 130th Anniversary Edition"). Split them into the two fields — do NOT merge them into one. Preserve multi-digit numerals in grade VERBATIM. "130th Anniversary Edition" must NOT be truncated to "10th" or "30th". Do not drop leading digits from 100th / 110th / 120th / 130th / 140th / 150th. Read the full number left-to-right.
-7. 内装色 (interior_color): preserve two-tone strings with the separator intact. "ブラック/ホワイト" → "Black/White". Never collapse a two-tone interior to a single color.
-8. exterior_color_japanese: copy the exact Japanese characters printed on the sheet verbatim (e.g. "パール", "ダイヤモンドホワイト"). Do not translate this field.
-9. Inspector abbreviations (注意事項 / 内外装備考): スレ = scuff, ガタ = looseness, キズ = scratch, ヘコミ/凹み = dent, サビ = rust, ヒビ/亀裂 = crack, 小 = minor, 中 = moderate, 大 = major. Example: "シートハンドル小スレ" = "minor scuff on seat handle" (NOT "looseness").
-10. 車台No. (VIN / chassis number) is EXACTLY 17 characters. It is DIFFERENT from 型式 (model code, typically 6–10 chars prefixed CBA-/DBA-/ABA-/LDA-). Do NOT confuse them. Brand WMI prefixes: Mercedes=WDB/WDC/WDD/WDF, Porsche=WP0/WP1, Ferrari=ZFF, Lamborghini=ZHW, Bentley=SCB, Aston Martin=SCF, Rolls-Royce=SCA, BMW=WBS/WBA/WBY, Audi=WAU, Jaguar=SAJ, Range Rover=SAL. If you can only read part of the VIN, still attempt the full 17 chars — do NOT return the model code as VIN.
-11. If a field is unreadable or not present, use null.
+═══════════════════════════════════════════════════════════════
+STRICT RULES — VIOLATIONS CAUSE REJECTION
+═══════════════════════════════════════════════════════════════
+
+1. EXTRACT ONLY what is explicitly printed on the sheet. Never infer or guess.
+2. If a field is not on the sheet → null. If present but unreadable → "uncertain".
+3. Do NOT assume values from common knowledge (e.g. do NOT assume door count, drivetrain, or fuel type based on the model name — only report if explicitly printed).
+4. PRESERVE ORIGINAL UNITS — if mileage shows マイル/Miles, report the raw number and set mileage_unit="miles". Do NOT convert to km.
+5. For Japanese text fields: extract BOTH the original Japanese AND the English translation.
+6. Report confidence per field: "high" (clearly legible), "medium" (readable, some uncertainty), "low" (hard to read, may be wrong).
+7. Never fabricate color codes, VIN characters, dates, or specs you cannot clearly read.
+
+═══════════════════════════════════════════════════════════════
+FIELD EXTRACTION GUIDE
+═══════════════════════════════════════════════════════════════
+
+AUCTION HOUSE & LOT:
+• auction_house: Header text. USS sub-corners (輸入車プライムコーナー etc.) → just "USS".
+• lot_number: 出品番号 — top-left, numeric.
+
+VEHICLE IDENTITY (read each field INDEPENDENTLY from its own label):
+• make: 車名 field in katakana. Read EXACTLY what is printed. メルセデスAMG="Mercedes-AMG", メルセデスベンツ="Mercedes-Benz", ポルシェ="Porsche", フェラーリ="Ferrari", ジャガー="Jaguar", アウディ="Audi", ベントレー="Bentley", マセラティ="Maserati", ランボルギーニ="Lamborghini", ロールスロイス="Rolls-Royce", マクラーレン="McLaren", BMW="BMW". Do NOT change the make based on the grade or model fields.
+• model: Base model name from the model field. Examples: "GT", "911", "R8 Spyder", "SL550", "G-Class", "CLS Class", "XK". Do NOT include grade/trim here.
+• grade: グレード field — trim + edition. Read verbatim. Preserve multi-digit numerals: "130th" must NOT become "10th" or "30th".
+• model_code: 型式 field — e.g. "CBA-190378". This is NOT the VIN.
+
+YEAR (mathematical conversion, not inference):
+• year: Convert Japanese era from 初度登録年月: S+1925, H+1988, R+2018. Show the math.
+• year_era: Raw era string — "H28", "R7", etc.
+
+MILEAGE (highest-priority precision field):
+• mileage_reading: 走行 field digit boxes. Read EVERY box left-to-right including leading zeros. Report the RAW number.
+• mileage_digits: Digit string including leading zeros, e.g. "009816".
+• mileage_unit: Check near digit boxes for km or マイル/Miles/Mile. Report "km" or "miles". Do NOT convert between units.
+
+TECHNICAL SPECS (only if explicitly printed):
+• displacement_cc: 排気量 — only if printed on the sheet.
+• transmission: シフト — AT/FAT/CVT/CAT=AUTOMATIC, MT/F5/F6=MANUAL, DCT/PDK/SMG as-is. Only if printed.
+• fuel_type: 燃料 — ガソリン=PETROL, 軽油=DIESEL, etc. Only if printed.
+• drive_side: ハンドル — read the selection marker (circle, brackets, underline). 左=LHD, 右=RHD. [左] on USS = SELECTED. Only if clearly marked.
+
+COLORS (extract original Japanese AND translation):
+• exterior_color: English translation of what 外色 prints. Report the sheet's own words — do NOT substitute catalog names.
+• exterior_color_japanese: Exact Japanese characters from 外色, verbatim.
+• color_code: カラーNo. — only if clearly printed.
+• interior_color: 内装色 — preserve two-tone with "/" exactly as printed.
+
+GRADES (read the exact character/number):
+• overall_grade: 評価点 — the number or letter in the grade box. S/6/5/4.5/4/3.5/3/2/1. R/RA = accident marker (NOT a numeric grade → set to null, set accident_history=true). 無効 = void → null.
+• interior_grade: 内装 — single letter A/B/C/D. NOT the color.
+
+OTHER FIELDS (only if explicitly visible):
+• import_type: 輸入区分 — only if printed.
+• accident_history: 修復歴 — 有=true, 無=false. Only if explicitly marked. Do NOT infer from damage codes.
+• service_book_present: 保証書付 — 有=true, 無=false. Only if marked.
+• shaken_expiry: 車検 — convert era to "YYYY-MM" (mathematical). Only if date is printed.
+• registration_plate: 登録No. — verbatim with kanji/hiragana. Only if printed.
+• vin: 車台No. — EXACTLY 17 characters. If you cannot read all 17 clearly, return "uncertain". NEVER return the model code here.
+• recycling_deposit_jpy: リサイクル預託金 — only if printed.
+• dimensions: 長さ/幅/高さ — only if printed. Report in mm (cm values ×10).
+• seating_capacity: 乗車定員 — only if printed.
+• door_count: ドア数 — only if explicitly printed (e.g. "3D", "2D"). Do NOT infer from body type.
+• drivetrain: 駆動 — only if explicitly printed (2WD/4WD). Do NOT assume.
+
+NOTES & DAMAGE:
+• equipment_translated: Only equipment icons that are clearly circled/marked.
+• sales_points, caution_notes, inspector_notes: Translated to English from Japanese text.
+• damage_codes: Only codes clearly written on the diagram.
+
+═══════════════════════════════════════════════════════════════
+FEW-SHOT EXAMPLES (correct strict extractions)
+═══════════════════════════════════════════════════════════════
+
+EXAMPLE 1 — Porsche 911 Carrera T (USS, clean typed sheet):
+{
+  "auction_house": "USS", "lot_number": "75133",
+  "make": "Porsche", "model": "911", "grade": "Carrera T",
+  "model_code": "7BA-992SK1", "vin": "WP0ZZZ99ZSS205247",
+  "year": 2025, "year_era": "R7", "year_calculation": "R7: 7 + 2018 = 2025",
+  "displacement_cc": 3000,
+  "mileage_reading": 2567, "mileage_digits": "002567", "mileage_unit": "km",
+  "transmission": "MANUAL", "fuel_type": "PETROL", "drive_side": "LHD",
+  "exterior_color": "White", "exterior_color_japanese": "ホワイト", "color_code": null,
+  "interior_color": null,
+  "overall_grade": 6, "interior_grade": "A",
+  "accident_history": null, "service_book_present": true,
+  "recycling_deposit_jpy": 21600,
+  "door_count": null, "drivetrain": null, "seating_capacity": 4,
+  "field_confidence": {
+    "make": "high", "model": "high", "grade": "high", "year": "high",
+    "mileage_reading": "high", "vin": "high", "overall_grade": "high",
+    "exterior_color": "high", "drive_side": "high", "transmission": "high"
+  },
+  "confidence": 0.95
+}
+Note: door_count and drivetrain are null because, even though 2WD appears in the 駆動 row, we only report what is unambiguously printed. In this case the sheet prints "2WD" next to 駆動 and "CP" for coupe — but door_count is not a separate explicit number, so null.
+
+EXAMPLE 2 — Mercedes-AMG GT S 130th Anniversary Edition (USS, typed):
+{
+  "auction_house": "USS", "lot_number": "75743",
+  "make": "Mercedes-AMG", "model": "GT", "grade": "S 130th Anniversary Edition",
+  "model_code": "CBA-190378", "vin": "WDD1903781A009275",
+  "year": 2017, "year_era": "H29", "year_calculation": "H29: 29 + 1988 = 2017",
+  "displacement_cc": 4000,
+  "mileage_reading": 9816, "mileage_digits": "009816", "mileage_unit": "km",
+  "transmission": "AUTOMATIC", "fuel_type": "PETROL", "drive_side": "LHD",
+  "exterior_color": "Pearl", "exterior_color_japanese": "パール", "color_code": "799",
+  "interior_color": "Black/White",
+  "overall_grade": 5, "interior_grade": "A",
+  "recycling_deposit_jpy": 16930,
+  "field_confidence": {
+    "make": "high", "model": "high", "grade": "high", "year": "high",
+    "mileage_reading": "high", "vin": "high", "overall_grade": "high",
+    "exterior_color": "high", "color_code": "high", "interior_color": "high"
+  },
+  "confidence": 0.95
+}
+Note: make is "Mercedes-AMG" because 車名 on the sheet prints メルセデスAMG. NOT inferred from the model.
+
+EXAMPLE 3 — Mercedes-Benz E400 (USS, sheet shows MILES):
+{
+  "auction_house": "USS", "lot_number": "75460",
+  "make": "Mercedes-Benz", "model": "E400", "grade": "4Matic Cabriolet Sport",
+  "model_code": "DBA-238466", "vin": "WDD2384661F049432",
+  "year": 2018, "year_era": "H30", "year_calculation": "H30: 30 + 1988 = 2018",
+  "displacement_cc": 3000,
+  "mileage_reading": 51170, "mileage_digits": "051170", "mileage_unit": "miles",
+  "transmission": "AUTOMATIC", "fuel_type": "PETROL", "drive_side": "LHD",
+  "exterior_color": "Pearl", "exterior_color_japanese": "パール", "color_code": "799",
+  "interior_color": null,
+  "overall_grade": 4.5, "interior_grade": "B",
+  "recycling_deposit_jpy": 18800,
+  "field_confidence": {
+    "make": "high", "model": "high", "grade": "medium", "year": "high",
+    "mileage_reading": "medium", "mileage_unit": "medium", "vin": "medium",
+    "overall_grade": "high", "exterior_color": "high"
+  },
+  "confidence": 0.88
+}
+Note: mileage_reading is 51,170 — the RAW digits. mileage_unit is "miles" because マイル is printed near the digit boxes. We do NOT convert to km.
+
+═══════════════════════════════════════════════════════════════
 
 Return this JSON structure:
 {
@@ -19,7 +149,7 @@ Return this JSON structure:
   "make": "", "model": "", "grade": "", "model_code": "", "vin": "",
   "year": null, "year_era": "", "year_calculation": "",
   "displacement_cc": null,
-  "mileage_reading": null, "mileage_digits": "",
+  "mileage_reading": null, "mileage_digits": "", "mileage_unit": "km",
   "transmission": "", "fuel_type": "", "drive_side": "",
   "exterior_color": "", "exterior_color_japanese": "", "color_code": "",
   "interior_color": "",
@@ -28,6 +158,7 @@ Return this JSON structure:
   "service_book_present": null,
   "shaken_expiry": null,
   "registration_plate": null,
+  "door_count": null, "drivetrain": null, "seating_capacity": null,
   "dimensions": {"length_mm": null, "width_mm": null, "height_mm": null},
   "panel_conditions": {},
   "damage_codes": [{"location":"","code":"","meaning":"","severity":"MINOR|MODERATE|MAJOR"}],
@@ -36,5 +167,6 @@ Return this JSON structure:
   "mechanical_notes": [], "modification_notes": [],
   "recycling_deposit_jpy": null,
   "overall_assessment": "",
+  "field_confidence": {},
   "confidence": 0.0
 }

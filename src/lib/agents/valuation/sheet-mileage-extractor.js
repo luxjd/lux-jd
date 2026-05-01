@@ -73,7 +73,8 @@ const MIN_PLAUSIBLE_DIGITS = 4;
 const MAX_PLAUSIBLE_DIGITS = 7;
 
 export function zoneExtractorEnabled() {
-  return process.env.SHEET_MILEAGE_ZONE === "1" || process.env.VALUATION_SHEET_MILEAGE_ZONE === "1";
+  if (process.env.SHEET_MILEAGE_ZONE === "0") return false;
+  return true;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ The mileage field shows a row of numeric digit boxes next to or below the Japane
 
 UNIT IDENTIFICATION (critical — read carefully):
 - A printed "km" label = mileage is in kilometres.
-- A printed "マイル" or "Miles" or "Mile" label = mileage is in miles (divide by 1.60934 for... wait, no: multiply miles × 1.60934 to get km).
+- A printed "マイル" or "Miles" or "Mile" label = mileage is in miles. Just identify the unit — do NOT convert.
 - Look at the text immediately AFTER the digit boxes — the unit is almost always printed there.
 - On USS Import Prime Corner sheets specifically, imported vehicles often show マイル.
 
@@ -256,11 +257,11 @@ PRIORITY: if you see マイル anywhere in the crop, the sheet is in MILES.
 Japanese import vehicles (ディーラー並行, 輸入車) commonly show マイル.
 
 ═══════════════════════════════════════════════════════════════
-STEP 3 — CONVERT TO KM
+STEP 3 — REPORT RAW READING (DO NOT CONVERT)
 ═══════════════════════════════════════════════════════════════
-- If unit = miles: mileage_km = round(raw_number × 1.60934)
-- If unit = km:    mileage_km = raw_number
-- If unit = unclear: set mileage_km = raw_number and unit = "unclear"
+- Set mileage_km = raw_number ALWAYS (do NOT multiply by 1.60934)
+- The unit field tells the consumer whether conversion is needed
+- We preserve the original reading exactly as printed
 
 Return ONLY valid JSON:
 {
@@ -269,7 +270,7 @@ Return ONLY valid JSON:
   "raw_number": <integer>,
   "unit_marker_found": "<the literal characters you saw near the digits, or null>",
   "unit": "<'km' | 'miles' | 'unclear'>",
-  "mileage_km": <integer — converted to km per step 3>,
+  "mileage_km": <integer — SAME as raw_number, do NOT convert>,
   "confidence": <0.0-1.0>
 }`;
 
@@ -561,8 +562,21 @@ export async function extractMileageWithZone(image, vehicleYear = null) {
   // Step 4: arbitrate
   const result = arbitrate(normalisedReads, vehicleYear, zone.unitVisible);
 
+  // Determine the consensus unit from the model reads
+  const unitVotes = { km: 0, miles: 0, unclear: 0 };
+  for (const r of normalisedReads) {
+    if (r.unit === "km") unitVotes.km++;
+    else if (r.unit === "miles") unitVotes.miles++;
+    else unitVotes.unclear++;
+  }
+  const consensusUnit = unitVotes.miles > unitVotes.km ? "miles"
+    : unitVotes.km > 0 ? "km"
+    : zone.unitVisible === "miles" ? "miles"
+    : "km";
+
   return {
     ...result,
+    mileage_unit: consensusUnit,
     zone: {
       bbox: zone.bbox,
       unitVisible: zone.unitVisible,
