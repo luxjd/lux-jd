@@ -1,0 +1,899 @@
+================================================================================
+  LUXJD — COMPLETE APPLICATION TEST PLAN
+  Every Feature. Every Edge Case. Every Agent.
+  Version 1.0 | May 2026
+================================================================================
+
+
+TABLE OF CONTENTS
+-----------------
+  0. Test Environment Setup
+  1. Authentication & Security
+  2. Dashboard
+  3. Agent #0 — Valuation Agent
+  4. Agent #1 — DE Market Agent
+  5. Agent #2 — JP Sourcing Agent
+  6. Agent #3 — Orchestrator
+  7. Agent #4 — Logistics Agent
+  8. Agent #5 — Listing Agent
+  9. Agent #6 — Concierge Agent
+  10. Agent #7 — Finance Agent
+  11. Cross-Agent Integration Tests
+  12. Performance & Load Tests
+  13. Error Handling & Edge Cases
+  14. Mobile / Responsive Tests
+  15. Data Integrity Tests
+
+
+================================================================================
+  0. TEST ENVIRONMENT SETUP
+================================================================================
+
+  Before testing, verify:
+
+  [ ] .env.local has all required keys:
+      - OPENROUTER_API_KEY (Claude access)
+      - APIFY_API_KEY (scraper access)
+      - DATABASE_URL (Postgres connection)
+      - SESSION_SECRET (32+ char signing key)
+      - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS (email)
+      - AUTH_EMAIL, AUTH_PASSWORD (login credentials)
+      - AVAILABLE_CAPITAL_EUR (portfolio capital)
+
+  [ ] Database is running and migrated:
+      Command: npx prisma db push
+      Check:   npx prisma studio (opens DB browser)
+
+  [ ] Dev server starts without errors:
+      Command: npm run dev
+      Check:   http://localhost:3000 loads login page
+
+  [ ] All agent modules import without errors:
+      Command: node --env-file=.env.local --import ./src/lib/agents/valuation/test-loader.js -e "
+        import('./src/lib/agents/valuation/extraction-pipeline.js').then(() => console.log('OK'))
+      "
+
+
+================================================================================
+  1. AUTHENTICATION & SECURITY
+================================================================================
+
+  1.1 Login Flow
+  ──────────────
+  What:    User can log in with valid credentials
+  How:     Navigate to /login, enter AUTH_EMAIL + AUTH_PASSWORD
+  Check:   [ ] Redirects to /dashboard after success
+           [ ] Session cookie is set (check browser DevTools → Application → Cookies)
+           [ ] Invalid password shows error message
+           [ ] Empty fields show validation error
+           [ ] CSRF token is included in form submission
+
+  1.2 Session Persistence
+  ──────────────────────
+  What:    User stays logged in across page navigations
+  How:     Log in, navigate to /dashboard, /pipeline, /finance, then refresh
+  Check:   [ ] All pages load without redirect to /login
+           [ ] Session survives browser refresh
+           [ ] Session expires after configured timeout
+
+  1.3 Protected Routes
+  ────────────────────
+  What:    Unauthenticated users cannot access agent pages
+  How:     Open a private/incognito window, try to access /dashboard
+  Check:   [ ] Redirects to /login
+           [ ] API endpoints return 401 without session cookie
+           [ ] Cannot access /api/agents/* without authentication
+
+  1.4 Logout
+  ──────────
+  What:    User can log out
+  How:     Click logout button (if exists) or clear cookies
+  Check:   [ ] Session cookie is removed
+           [ ] Subsequent page loads redirect to /login
+
+
+================================================================================
+  2. DASHBOARD
+================================================================================
+
+  2.1 KPI Cards
+  ─────────────
+  What:    Dashboard shows correct summary numbers
+  How:     Navigate to /dashboard after login
+  Check:   [ ] "Active Vehicles" count matches vehicles in pipeline
+           [ ] "Portfolio Value" reflects sum of in-pipeline vehicle values
+           [ ] "P&L" shows realized profit/loss from sold vehicles
+           [ ] "Active Leads" count matches leads in NEW/QUALIFIED status
+           [ ] Numbers update when vehicles/leads change
+
+  2.2 Pipeline Overview
+  ─────────────────────
+  What:    10-stage pipeline summary shows correct counts
+  How:     Add vehicles at different stages, check dashboard
+  Check:   [ ] Each stage shows count of vehicles in that stage
+           [ ] Total across all stages matches total active vehicles
+           [ ] Clicking a stage navigates to the pipeline view filtered to that stage
+
+  2.3 Agent Health Status
+  ───────────────────────
+  What:    All 7 agents show health status
+  How:     View agent health section on dashboard
+  Check:   [ ] Each agent shows HEALTHY / DEGRADED / DOWN / IDLE
+           [ ] Status reflects actual agent state (e.g., scraper down = DEGRADED)
+           [ ] Clicking an agent navigates to its detail page
+
+
+================================================================================
+  3. AGENT #0 — VALUATION AGENT
+================================================================================
+
+  3.1 Upload Flow
+  ───────────────
+  What:    User can upload auction sheet images for extraction
+  How:     Navigate to /agents/valuation, drag+drop or click to upload JPEG images
+  Check:   [ ] Accepts JPEG, PNG, WebP images
+           [ ] Rejects non-image files (PDF, DOC) with error message
+           [ ] Shows file previews after selection
+           [ ] "Extract Data" button appears after file selection
+           [ ] Progress indicator shows during extraction
+           [ ] Multiple files can be uploaded (up to 30)
+
+  3.2 Auction Sheet Extraction
+  ────────────────────────────
+  What:    Extracted data appears correctly in review cards
+  How:     Upload a USS auction sheet (use src/auction_sheets/1.jpeg)
+  Check:   [ ] Make field shows correct brand (e.g., "Porsche")
+           [ ] Model field shows base model (e.g., "911")
+           [ ] Grade field shows trim (e.g., "Carrera T")
+           [ ] Year is correctly converted from Japanese era (R7 = 2025)
+           [ ] Mileage shows correct digit reading
+           [ ] Mileage label shows correct unit (km or miles)
+           [ ] VIN shows 17 characters (or null if unreadable)
+           [ ] Auction grade shows numeric value (e.g., 6, 4.5)
+           [ ] Interior grade shows letter (A, B, C, D)
+           [ ] Colors show English translation
+           [ ] Drive side shows LHD or RHD
+           [ ] No internal fields visible (fieldConfidence, _deepParse*, etc.)
+           [ ] Transmission shows AUTOMATIC or MANUAL
+           [ ] Fuel type shows PETROL, DIESEL, etc.
+
+  3.3 Extraction Accuracy (Regression Test)
+  ─────────────────────────────────────────
+  What:    Agent meets accuracy targets on calibration sheets
+  How:     Run: node --env-file=.env.local --import ./src/lib/agents/valuation/test-loader.js src/lib/agents/valuation/calibration-test.js
+  Check:   [ ] Overall accuracy >= 85%
+           [ ] make, transmission, fuelType at 100%
+           [ ] mileageKm at >= 90%
+           [ ] auctionGrade at >= 90%
+           [ ] year at >= 90%
+           [ ] Zero misses (no field should be completely dropped)
+           [ ] VIN at >= 60% (known limitation)
+           [ ] Test completes without crashes
+
+  3.4 Strict Extraction Rules
+  ───────────────────────────
+  What:    Agent does not infer, guess, or fabricate data
+  How:     Upload a sheet and check specific fields
+  Check:   [ ] Fields not on the sheet return null (not guessed)
+           [ ] Mileage unit preserved (miles sheets show miles, not converted)
+           [ ] Body type shows raw USS code (3D, OP, CP) not English
+           [ ] Make reads from 車名 field exactly (not inferred from grade)
+           [ ] Blank registration plate returns null (not fabricated)
+           [ ] Blank shaken expiry returns null (not fabricated)
+
+  3.5 Per-Field Confidence
+  ────────────────────────
+  What:    Each field has a confidence indicator
+  How:     Check the extraction output JSON (via API or console)
+  Check:   [ ] field_confidence object exists in the output
+           [ ] Values are "high", "medium", or "low"
+           [ ] High-confidence fields match ground truth
+           [ ] Low-confidence fields are flagged for review
+
+  3.6 Review Phase (User Fills Missing Fields)
+  ────────────────────────────────────────────
+  What:    User can fill in fields the agent couldn't extract
+  How:     After extraction, check for "Missing Information" section
+  Check:   [ ] Missing required fields shown with input boxes
+           [ ] Missing optional fields shown with "skip" option
+           [ ] User-entered values are used in the valuation
+           [ ] "Submit for Valuation" button enabled when required fields filled
+
+  3.7 Full Valuation Report
+  ─────────────────────────
+  What:    Complete valuation report displays after submission
+  How:     Fill all fields and click "Submit for Valuation"
+  Check:   [ ] Report loads within 60 seconds
+           [ ] Vehicle summary section shows all input data
+           [ ] Condition assessment shows scores (if photos/sheet provided)
+           [ ] Market analysis shows comparable listings (if scrapers work)
+           [ ] Landed cost shows 15 line items with EUR amounts
+           [ ] Margin analysis shows 3 scenarios (pessimistic/base/optimistic)
+           [ ] Risk assessment shows 6 dimensions with scores
+           [ ] Recommendation shows BUY, REVIEW, or PASS
+           [ ] Max bid JPY is calculated and shown
+           [ ] Comparable listings show clickable URLs
+
+  3.8 Verdict Logic
+  ─────────────────
+  What:    BUY/REVIEW/PASS follows spec thresholds
+  How:     Submit valuations with different margin/risk combinations
+  Check:   [ ] High margin (>EUR15k, >20%) + low risk = BUY
+           [ ] High margin + low confidence (<0.70) = REVIEW
+           [ ] High margin + high risk (>4.0) = PASS
+           [ ] Low margin (<EUR15k or <20%) = PASS
+           [ ] Borderline margin (within 15% of threshold) = REVIEW
+
+  3.9 Valuation History
+  ─────────────────────
+  What:    Past valuations are stored and retrievable
+  How:     Run several valuations, then check history
+  Check:   [ ] GET /api/agents/valuation/history returns past valuations
+           [ ] Each entry has id, make, model, verdict, margin, timestamp
+           [ ] Statistics show total count, verdict breakdown, avg margin
+
+  3.10 LLM Cost Tracking
+  ──────────────────────
+  What:    API calls and costs are tracked
+  How:     Run a valuation, then GET /api/agents/valuation/cost
+  Check:   [ ] totalCalls > 0
+           [ ] totalCost shows dollar amount
+           [ ] byModel breakdown shows calls per model (sonnet, haiku, opus)
+           [ ] recentCalls shows last 20 calls with token counts
+           [ ] ?reset=1 clears the log
+
+  3.11 Calibration Feedback
+  ─────────────────────────
+  What:    Actual sale prices can be recorded for accuracy tracking
+  How:     POST /api/agents/valuation/calibration with {valuationId, actualSalePriceEur}
+  Check:   [ ] Returns prediction error (predicted vs actual)
+           [ ] GET /api/agents/valuation/calibration returns accuracy stats
+           [ ] Stats include MAE, MAPE, bias direction
+
+  3.12 P0 Fields (New)
+  ────────────────────
+  What:    Auction prices, results, and service records are extracted
+  How:     Upload a sheet WITH header pricing (use src/auction_sheets/sheet2.jpeg)
+  Check:   [ ] Auction date extracted (if in header)
+           [ ] Start price (万円) extracted
+           [ ] Sold/bid price extracted
+           [ ] Auction result (sold/unsold) extracted
+           [ ] Service record entries extracted (date + mileage pairs)
+           [ ] Service record count extracted (e.g., "7 books")
+           [ ] Service dealer name extracted (e.g., "Yanase")
+           [ ] New fields display correctly in UI cards
+           [ ] Prices show formatted as ¥XX,XXX,XXX
+
+
+================================================================================
+  4. AGENT #1 — DE MARKET AGENT
+================================================================================
+
+  4.1 Full Market Scan
+  ────────────────────
+  What:    Scans all 20 target models across all platforms
+  How:     Navigate to DE Market Agent, click "Full Scan"
+  Check:   [ ] Progress indicator shows during scan
+           [ ] All 20 models are scanned (check console logs)
+           [ ] mobile.de returns listings for at least 10 models
+           [ ] AutoScout24 returns listings
+           [ ] Results stored in database
+           [ ] Each model shows: median price, P25, P75, listing count
+
+  4.2 Individual Model Scan
+  ─────────────────────────
+  What:    Can scan a single model on demand
+  How:     Select a model (e.g., "Ferrari 488 GTB") and scan
+  Check:   [ ] Returns >= 5 comparable listings
+           [ ] Price statistics are reasonable (e.g., Ferrari 488 = EUR 150-220k)
+           [ ] Demand velocity score (0-100) is calculated
+           [ ] Trend direction (RISING/STABLE/DECLINING) is set
+           [ ] Data freshness timestamp is current
+
+  4.3 Specialist Platforms
+  ────────────────────────
+  What:    Specialist scrapers return data
+  How:     Check if elferspot and classicdriver scrapers are called
+  Check:   [ ] elferspot returns Porsche listings (if available)
+           [ ] classicdriver returns exotic listings
+           [ ] Results are merged with mobile.de/autoscout data
+           [ ] No duplicate listings across platforms
+
+  4.4 Outlier Removal
+  ───────────────────
+  What:    Statistical outliers are filtered before price calculation
+  How:     Check the market analysis output for a model with outliers
+  Check:   [ ] IQR method removes unreasonable prices
+           [ ] Salvage/parts listings (very low price) are excluded
+           [ ] Dealer premium listings (very high) are excluded
+           [ ] Remaining listings are within reasonable range
+
+  4.5 Cron Schedule
+  ─────────────────
+  What:    Auto-scan runs on schedule
+  How:     Check cron configuration
+  Check:   [ ] Cron endpoint exists at /api/agents/de-market/cron
+           [ ] Cron secret is required for authentication
+           [ ] Scan completes within 30 minutes for all models
+
+
+================================================================================
+  5. AGENT #2 — JP SOURCING AGENT
+================================================================================
+
+  5.1 Auction Scan
+  ────────────────
+  What:    Scans Japanese auction sources for opportunities
+  How:     Navigate to JP Sourcing, click "Scan Auctions"
+  Check:   [ ] Scans configured auction sources
+           [ ] Filters by target models from DE Market data
+           [ ] Returns candidate vehicles with pricing
+           [ ] Each candidate has: STRONG_BUY / BUY / REVIEW / PASS
+
+  5.2 Auction Sheet OCR
+  ─────────────────────
+  What:    Japanese auction sheets are parsed correctly
+  How:     Check that sourced vehicles have extracted sheet data
+  Check:   [ ] 41 fields extracted from auction sheets
+           [ ] Japanese era dates converted correctly
+           [ ] Damage codes mapped to English
+           [ ] Equipment list translated
+           [ ] Grade and condition extracted
+
+  5.3 Landed Cost Calculation
+  ───────────────────────────
+  What:    Full cost breakdown is calculated for each candidate
+  How:     Check a STRONG_BUY candidate's cost breakdown
+  Check:   [ ] 15 line items present (purchase through registration)
+           [ ] FX rate is current (within 1 hour)
+           [ ] Auction fees calculated (typically ~5%)
+           [ ] Customs duty at 10% of CIF
+           [ ] Import VAT at 19% of (CIF + duty)
+           [ ] TUV cost estimated based on vehicle spec
+           [ ] Total landed cost is sum of all items
+
+  5.4 Margin Scoring
+  ──────────────────
+  What:    Margin calculated correctly against DE Market prices
+  How:     Compare a candidate's landed cost vs estimated sale price
+  Check:   [ ] Estimated sale price comes from DE Market Agent data
+           [ ] Gross margin = sale price - landed cost
+           [ ] Margin percentage = margin / sale price × 100
+           [ ] Risk-adjusted ranking considers confidence
+
+  5.5 Risk Assessment
+  ───────────────────
+  What:    5-dimension risk scoring for each candidate
+  How:     Check risk scores on a candidate vehicle
+  Check:   [ ] Condition risk (based on auction grade, damage)
+           [ ] Market risk (liquidity, trend, comparable count)
+           [ ] Provenance risk (service history, accident, documentation)
+           [ ] Logistics risk (shipping complexity, customs)
+           [ ] Specification risk (RHD penalty, non-EU spec)
+
+
+================================================================================
+  6. AGENT #3 — ORCHESTRATOR
+================================================================================
+
+  6.1 Decision Engine
+  ───────────────────
+  What:    7-step evaluation produces correct verdict
+  How:     Send a BUY recommendation from JP Sourcing to Orchestrator
+  Check:   [ ] Step 1: Margin >= EUR 15,000 AND >= 20%
+           [ ] Step 2: Confidence >= 0.70
+           [ ] Step 3: Brand < 30% of portfolio
+           [ ] Step 4: Capital deployed < 80% of available
+           [ ] Step 5: No critical risk flags
+           [ ] Step 6: Favorable timing (not seasonal mismatch)
+           [ ] Step 7: Final verdict (all pass = AUTO_APPROVE)
+           [ ] Failed steps produce HUMAN_REVIEW or REJECT
+           [ ] Full 7-step breakdown logged
+
+  6.2 Portfolio Rules
+  ───────────────────
+  What:    Portfolio diversification enforced
+  How:     Try to approve vehicles that would exceed brand concentration
+  Check:   [ ] Brand > 30% triggers warning
+           [ ] Capital > 80% deployed blocks new purchases
+           [ ] Warning shown in UI
+
+  6.3 Human-in-the-Loop
+  ─────────────────────
+  What:    Certain decisions require human approval
+  How:     Submit vehicles exceeding human review thresholds
+  Check:   [ ] Purchase > EUR 80,000 → requires human approval
+           [ ] Any risk flags → HUMAN_REVIEW
+           [ ] Price deviation > 10% from market → HUMAN_REVIEW
+           [ ] Decision logged to audit table
+
+  6.4 Agent Health Monitor
+  ────────────────────────
+  What:    Shows status of all 7 agents
+  How:     View Orchestrator dashboard
+  Check:   [ ] All agents listed with status
+           [ ] Degraded agents show warning color
+           [ ] Down agents show red / alert
+
+
+================================================================================
+  7. AGENT #4 — LOGISTICS AGENT
+================================================================================
+
+  7.1 Pipeline Kanban
+  ───────────────────
+  What:    10-stage Kanban board shows all vehicles
+  How:     Navigate to /pipeline
+  Check:   [ ] All 10 stages visible as columns
+           [ ] Vehicle cards appear in correct stage
+           [ ] Card shows: make, model, year, current stage, days in stage
+           [ ] Stage counts match header numbers
+
+  7.2 Stage Advancement
+  ─────────────────────
+  What:    Vehicles can be advanced to next stage
+  How:     Click "Advance Stage" on a vehicle card
+  Check:   [ ] Vehicle moves to next stage
+           [ ] Transition is timestamped
+           [ ] Pipeline event logged in database
+           [ ] Cannot skip stages (SOURCED → JP_TRANSPORT should fail)
+           [ ] Cannot go backwards without override
+
+  7.3 Prerequisites
+  ─────────────────
+  What:    Certain transitions require prerequisites
+  How:     Try to advance without meeting prerequisites
+  Check:   [ ] AT_PORT_JP → IN_TRANSIT blocked without pre-loading inspection
+           [ ] CUSTOMS → WORKSHOP blocked without duty payment confirmation
+           [ ] TUV → READY_FOR_SALE blocked without TUV certificate
+           [ ] Error message explains what's missing
+
+  7.4 Photo Documentation
+  ───────────────────────
+  What:    Photos required at specific stages
+  How:     Try to advance past photo-required stage without photos
+  Check:   [ ] PURCHASED stage requires photos
+           [ ] AT_PORT_JP stage requires photos
+           [ ] AT_PORT_DE stage requires photos
+           [ ] TUV stage requires photos
+           [ ] READY_FOR_SALE stage requires photos
+
+  7.5 Shipment Tracking
+  ─────────────────────
+  What:    Shipping details tracked for IN_TRANSIT vehicles
+  How:     Add shipment details to a vehicle
+  Check:   [ ] Vessel name stored
+           [ ] Container number stored
+           [ ] Route (e.g., Yokohama → Hamburg) stored
+           [ ] Insurance details stored
+           [ ] ETA calculated
+
+  7.6 Auto Advance
+  ────────────────
+  What:    Bulk stage progression for multiple vehicles
+  How:     Select multiple vehicles, click "Auto Advance"
+  Check:   [ ] All selected vehicles advance one stage
+           [ ] Prerequisites still enforced (skip those that fail)
+           [ ] Events logged for each advancement
+
+
+================================================================================
+  8. AGENT #5 — LISTING AGENT
+================================================================================
+
+  8.1 Listing Generation
+  ──────────────────────
+  What:    AI generates listing descriptions
+  How:     Take a READY_FOR_SALE vehicle, generate listing
+  Check:   [ ] German description generated (800-1200 words)
+           [ ] English description generated
+           [ ] Description mentions key specs and options
+           [ ] SEO keywords included for mobile.de
+           [ ] Narrative style for classicdriver
+           [ ] No factual errors in description
+           [ ] All legally required disclosures included
+
+  8.2 Pricing Strategy
+  ────────────────────
+  What:    Initial price set correctly with reduction schedule
+  How:     Create a listing and check the price
+  Check:   [ ] Price set at P60-P75 of market (from DE Market data)
+           [ ] Price reduction scheduled: Day 14 = -3-5%
+           [ ] Price reduction scheduled: Day 28 = another -3-5%
+           [ ] Day 42+ triggers strategic review
+           [ ] Price history tracked
+
+  8.3 Multi-Platform Publishing
+  ────────────────────────────
+  What:    Listing published to all configured platforms
+  How:     Publish a listing and check platform status
+  Check:   [ ] mobile.de listing created
+           [ ] AutoScout24 listing created
+           [ ] Platform-specific formatting applied
+           [ ] Listing URLs stored and accessible
+
+  8.4 Listing Management
+  ──────────────────────
+  What:    Active listings can be managed
+  How:     Navigate to /listings
+  Check:   [ ] All active listings visible
+           [ ] Filter by status: ACTIVE, SOLD, DRAFT
+           [ ] Days on market shown
+           [ ] View/inquiry counts shown (if available)
+           [ ] Can edit price manually
+           [ ] Can mark as SOLD
+
+
+================================================================================
+  9. AGENT #6 — CONCIERGE AGENT
+================================================================================
+
+  9.1 Inquiry Reception
+  ─────────────────────
+  What:    Inbound inquiries are received and processed
+  How:     Simulate an inquiry (email or API call)
+  Check:   [ ] Lead created in database
+           [ ] Lead appears on /leads page
+           [ ] Status set to NEW
+
+  9.2 Buyer Classification
+  ────────────────────────
+  What:    Buyers classified by type
+  How:     Check classification on received inquiry
+  Check:   [ ] Classified as COLLECTOR, TRADE, BROWSER, or UNKNOWN
+           [ ] Classification visible on lead card
+
+  9.3 Lead Scoring
+  ────────────────
+  What:    Leads scored 0-100
+  How:     Check score on received inquiry
+  Check:   [ ] Score calculated based on inquiry depth, vehicle match
+           [ ] High scores (>70) flagged as priority
+           [ ] Score visible on lead card
+
+  9.4 Auto-Response
+  ─────────────────
+  What:    AI generates and sends expert response
+  How:     Submit an inquiry and check for response
+  Check:   [ ] Response generated within 10 minutes
+           [ ] Response addresses specific questions asked
+           [ ] Response includes vehicle details
+           [ ] Response is in correct language (based on inquiry language)
+           [ ] Response sent via email (SMTP)
+           [ ] Response logged in conversation thread
+
+  9.5 Escalation
+  ──────────────
+  What:    Certain inquiries escalated to human
+  How:     Submit inquiries with escalation triggers
+  Check:   [ ] Offer below 90% of price → ESCALATED
+           [ ] Trade-in request → ESCALATED
+           [ ] Inspection request → ESCALATED
+           [ ] Complaint/legal language → ESCALATED
+           [ ] Escalated leads shown with alert on /leads page
+
+  9.6 Lead Status Management
+  ──────────────────────────
+  What:    Leads progress through statuses
+  How:     Change lead statuses manually
+  Check:   [ ] NEW → QUALIFIED → CONTACTED → CONVERTED/LOST
+           [ ] ESCALATED can happen at any point
+           [ ] Status changes logged
+
+
+================================================================================
+  10. AGENT #7 — FINANCE AGENT
+================================================================================
+
+  10.1 Per-Vehicle P&L
+  ────────────────────
+  What:    Detailed profit/loss for each vehicle
+  How:     Navigate to /finance, select a sold vehicle
+  Check:   [ ] Purchase cost (JPY + EUR at actual FX rate)
+           [ ] All 15 landed cost items
+           [ ] Sale price
+           [ ] Gross margin (EUR + %)
+           [ ] Net margin after operational costs
+           [ ] Estimated vs actual cost comparison
+
+  10.2 Portfolio Dashboard
+  ────────────────────────
+  What:    Aggregate financial view
+  How:     Navigate to /finance
+  Check:   [ ] Total vehicles in pipeline
+           [ ] Capital deployed vs available
+           [ ] 80% deployment limit shown
+           [ ] Realized P&L (sold vehicles)
+           [ ] Unrealized P&L (in-pipeline, mark-to-market)
+
+  10.3 FX Monitoring
+  ──────────────────
+  What:    JPY/EUR rate tracked with alerts
+  How:     Check FX section on /finance
+  Check:   [ ] Current rate displayed
+           [ ] 7d, 30d, 90d moving averages shown
+           [ ] Volatility indicator
+           [ ] Alert if > 2% deviation from 30d average
+           [ ] Alert if > 1% daily movement
+           [ ] Rate refreshes within 1 hour
+
+  10.4 Tax Optimization
+  ─────────────────────
+  What:    Both tax scenarios modeled
+  How:     Check tax section for a vehicle
+  Check:   [ ] Differenzbesteuerung calculation shown (VAT on margin only)
+           [ ] Regelbesteuerung calculation shown (full VAT, reclaim import VAT)
+           [ ] Recommendation shown (which option is better)
+           [ ] Savings amount shown
+
+  10.5 Cash Flow
+  ──────────────
+  What:    Cash position projected forward
+  How:     Check cash flow section
+  Check:   [ ] Current cash position shown
+           [ ] VAT reclaim timeline (4-8 week gap)
+           [ ] Projected position 4-8 weeks out
+           [ ] Alert if below safety threshold
+
+
+================================================================================
+  11. CROSS-AGENT INTEGRATION TESTS
+================================================================================
+
+  11.1 Valuation → Pipeline
+  ─────────────────────────
+  What:    "Send to Pipeline" adds vehicle to Logistics
+  How:     Complete a valuation with BUY verdict, click "Send to Pipeline"
+  Check:   [ ] Vehicle created in database
+           [ ] Vehicle appears in Logistics at SOURCED stage
+           [ ] Valuation data transferred (make, model, price, grade)
+           [ ] Pipeline Kanban shows the new vehicle
+
+  11.2 DE Market → JP Sourcing
+  ────────────────────────────
+  What:    JP Sourcing uses DE Market prices for margin calculation
+  How:     Run DE Market scan, then JP Sourcing scan
+  Check:   [ ] JP Sourcing reads DE Market price data
+           [ ] Margin calculated using DE Market estimated_sale_price
+           [ ] If DE Market data is stale (>24h), warning shown
+
+  11.3 JP Sourcing → Orchestrator
+  ─────────────────────────────
+  What:    BUY recommendations flow to Orchestrator
+  How:     Get a BUY from JP Sourcing, check Orchestrator
+  Check:   [ ] Orchestrator receives the recommendation
+           [ ] 7-step evaluation runs
+           [ ] Decision logged with full breakdown
+
+  11.4 Orchestrator → Logistics
+  ─────────────────────────────
+  What:    AUTO_APPROVE vehicles enter the pipeline
+  How:     Get AUTO_APPROVE from Orchestrator, check Logistics
+  Check:   [ ] Vehicle enters at SOURCED stage
+           [ ] All valuation data transferred
+           [ ] Max bid JPY available for auction
+
+  11.5 Logistics → Listing
+  ────────────────────────
+  What:    READY_FOR_SALE vehicles become available for listing
+  How:     Advance a vehicle to READY_FOR_SALE
+  Check:   [ ] Vehicle appears in Listing Agent's available pool
+           [ ] All vehicle data available for description generation
+
+  11.6 Listing → Concierge
+  ────────────────────────
+  What:    Inquiries on listings create leads
+  How:     Simulate an inquiry on an active listing
+  Check:   [ ] Lead created with correct vehicle link
+           [ ] Listing data available to Concierge for response
+
+  11.7 Full Lifecycle (End-to-End)
+  ────────────────────────────────
+  What:    Vehicle flows through ALL stages from scan to sale
+  How:     Manually advance one vehicle through entire pipeline
+  Check:   [ ] Sourced → Purchased → JP Transport → Port JP → In Transit
+                → Port DE → Customs → Workshop → TUV → Ready for Sale
+                → Listed → Inquiry → Sold → P&L Closed
+           [ ] All transitions logged
+           [ ] Finance Agent tracks every cost
+           [ ] Total cycle matches expected timeline (10-16 weeks simulated)
+
+
+================================================================================
+  12. PERFORMANCE & LOAD TESTS
+================================================================================
+
+  12.1 Valuation Latency
+  ──────────────────────
+  What:    Valuation completes within time budget
+  How:     Time a full valuation (extraction + report)
+  Check:   [ ] Sheet extraction: < 60 seconds (target: 35-50s Tier 1)
+           [ ] Full valuation (with market scraping): < 90 seconds
+           [ ] No timeouts on normal sheets
+
+  12.2 Scraper Performance
+  ────────────────────────
+  What:    Market scrapers complete within time budget
+  How:     Time a DE Market full scan
+  Check:   [ ] Single model scan: < 30 seconds
+           [ ] Full 20-model scan: < 30 minutes
+           [ ] No rate limit errors (or handled gracefully with retry)
+
+  12.3 Concurrent Users
+  ─────────────────────
+  What:    Multiple simultaneous valuations don't crash
+  How:     Open 3 browser tabs, submit valuations simultaneously
+  Check:   [ ] All 3 complete successfully
+           [ ] No data cross-contamination between valuations
+           [ ] Server doesn't crash or run out of memory
+
+  12.4 Large File Upload
+  ──────────────────────
+  What:    Large auction sheet images handled correctly
+  How:     Upload a 5MB+ high-resolution sheet image
+  Check:   [ ] Image is accepted (not rejected for size)
+           [ ] Preprocessing handles large images (resize if needed)
+           [ ] No memory errors during processing
+
+  12.5 API Rate Limits
+  ────────────────────
+  What:    OpenRouter rate limits handled gracefully
+  How:     Submit many valuations rapidly (or mock rate limit)
+  Check:   [ ] 429 responses trigger exponential backoff retry
+           [ ] Retry succeeds after delay
+           [ ] User sees "processing" not an error
+           [ ] Max 3 retries before failing gracefully
+
+
+================================================================================
+  13. ERROR HANDLING & EDGE CASES
+================================================================================
+
+  13.1 Missing API Key
+  ────────────────────
+  What:    Graceful error when OPENROUTER_API_KEY is missing
+  How:     Remove key from .env.local, restart server, try valuation
+  Check:   [ ] Error message: "AI service not configured"
+           [ ] HTTP 503 response
+           [ ] No crash or stack trace in UI
+
+  13.2 Invalid Auction Sheet
+  ──────────────────────────
+  What:    Non-auction-sheet images handled gracefully
+  How:     Upload a random photo (not an auction sheet)
+  Check:   [ ] Agent attempts extraction
+           [ ] Returns partial or empty data (not crash)
+           [ ] Confidence scores are low
+           [ ] User can still fill fields manually
+
+  13.3 Scraper Failure
+  ────────────────────
+  What:    Valuation completes even if scrapers fail
+  How:     Disconnect Apify key or block network to scraper
+  Check:   [ ] Valuation completes with partial results
+           [ ] Market data section shows "No comparable data available"
+           [ ] Verdict defaults to REVIEW (insufficient data)
+           [ ] Error logged but not shown as crash
+
+  13.4 Database Connection Loss
+  ─────────────────────────────
+  What:    App handles DB disconnection gracefully
+  How:     Stop the Postgres database, try to load dashboard
+  Check:   [ ] Error page shown (not crash)
+           [ ] When DB comes back, app recovers automatically
+
+  13.5 Handwritten Auction Sheet
+  ──────────────────────────────
+  What:    Handwritten sheets extracted with appropriate confidence
+  How:     Upload src/auction_sheets/sheet6.jpeg (handwritten SL550)
+  Check:   [ ] Extraction completes (doesn't crash)
+           [ ] Per-field confidence reflects difficulty ("medium" or "low")
+           [ ] Some fields may be null or uncertain
+           [ ] User can correct in review phase
+
+  13.6 Non-USS Auction Sheet
+  ──────────────────────────
+  What:    Non-USS sheets handled with warning
+  How:     Upload a TAA or HAA sheet (if available)
+  Check:   [ ] Extraction attempts to process
+           [ ] _isUSS flag set to false
+           [ ] Warning shown that non-USS layout may be less accurate
+           [ ] No USS-specific template coordinates applied
+
+  13.7 Empty Form Submission
+  ──────────────────────────
+  What:    Cannot submit valuation without required fields
+  How:     Try to submit with empty make/model/year
+  Check:   [ ] Validation error shown per field
+           [ ] Form doesn't submit until required fields filled
+           [ ] No API call made with incomplete data
+
+
+================================================================================
+  14. MOBILE / RESPONSIVE TESTS
+================================================================================
+
+  14.1 Mobile Layout
+  ──────────────────
+  What:    All pages work on mobile screens
+  How:     Use browser DevTools → responsive mode → 375px width
+  Check:   [ ] Login page usable
+           [ ] Dashboard KPIs stack vertically
+           [ ] Pipeline Kanban scrolls horizontally
+           [ ] Valuation form fits on screen
+           [ ] Extraction result cards stack vertically
+           [ ] Report is readable
+           [ ] Navigation menu is accessible (hamburger?)
+
+  14.2 Tablet Layout
+  ──────────────────
+  What:    All pages work on tablet screens
+  How:     Use browser DevTools → 768px width
+  Check:   [ ] Dashboard shows 2-column grid
+           [ ] Valuation form uses 2-column layout
+           [ ] Pipeline shows condensed Kanban
+
+
+================================================================================
+  15. DATA INTEGRITY TESTS
+================================================================================
+
+  15.1 Decimal Precision
+  ──────────────────────
+  What:    Financial calculations use Decimal (never float)
+  How:     Check a landed cost breakdown for rounding errors
+  Check:   [ ] No floating-point artifacts (e.g., 0.1 + 0.2 != 0.3)
+           [ ] All EUR amounts rounded to 2 decimal places
+           [ ] All JPY amounts are whole integers
+           [ ] Total landed cost = sum of all line items (exactly)
+
+  15.2 FX Rate Consistency
+  ────────────────────────
+  What:    Same FX rate used throughout a single valuation
+  How:     Check that purchase cost and all cost items use same rate
+  Check:   [ ] Rate fetched once at valuation start
+           [ ] Same rate applied to purchase + all JPY cost items
+           [ ] Rate stored in valuation record for audit
+
+  15.3 VIN Validation
+  ───────────────────
+  What:    VIN format enforced (17 chars, valid charset)
+  How:     Enter invalid VINs in the review form
+  Check:   [ ] VINs shorter than 17 chars rejected or flagged
+           [ ] VINs with I, O, Q characters flagged
+           [ ] WMI prefix cross-checked against make
+           [ ] Check digit validated (if applicable)
+
+  15.4 Audit Trail
+  ────────────────
+  What:    All agent decisions logged for compliance
+  How:     Check audit_logs table after running decisions
+  Check:   [ ] Orchestrator decisions logged with reasoning
+           [ ] Valuation results stored with full report
+           [ ] Pipeline transitions timestamped
+           [ ] Concierge responses logged with conversation ID
+
+
+================================================================================
+  HOW TO ADD NEW TEST CASES
+================================================================================
+
+  1. For sheet extraction regression tests:
+     - Drop new sheet image into src/auction_sheets/
+     - Add ground truth to src/lib/agents/valuation/calibration-data.js
+     - Run: node --env-file=.env.local --import ./src/lib/agents/valuation/test-loader.js src/lib/agents/valuation/calibration-test.js --sheet=<filename>
+     - See README-calibration.md for details
+
+  2. For valuation end-to-end tests:
+     - Prepare vehicle data (make, model, year, mileage, price)
+     - Submit via /agents/valuation UI
+     - Verify output matches expected verdict
+     - Record in calibration API when vehicle actually sells
+
+  3. For cross-agent tests:
+     - Follow a vehicle through the full pipeline
+     - Document expected state at each transition
+     - Verify database records match expected state
+
+
+================================================================================
