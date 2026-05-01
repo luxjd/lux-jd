@@ -53,7 +53,12 @@ const CALIBRATION = [
       recyclingDepositJpy: 14550,
       seatingCapacity: null,
       dimensions: { length_mm: 4790, width_mm: 1910, height_mm: 1230 },
-      bodyType: null, // not explicitly printed as a body type code
+      bodyType: null,
+      // P0: auction pricing (from header row)
+      startPriceMan: null, // visible but hard to read
+      soldPriceMan: null,
+      auctionResult: "sold", // 落札 in header
+      serviceRecordEntries: null,
     },
   },
 
@@ -93,8 +98,11 @@ const CALIBRATION = [
       recyclingDepositJpy: 16930,
       seatingCapacity: 2,
       dimensions: { length_mm: 4560, width_mm: 1940, height_mm: 1290 },
-      bodyType: "3D", // sheet prints "3D" in 形状 field
+      bodyType: "3D",
       importType: "Dealer",
+      // P0: auction pricing (from header row)
+      auctionResult: "unsold", // ● 流れ in header
+      serviceRecordEntries: null,
     },
   },
 
@@ -134,8 +142,12 @@ const CALIBRATION = [
       recyclingDepositJpy: 21340,
       seatingCapacity: 4,
       dimensions: { length_mm: 4990, width_mm: 1880, height_mm: 1290 },
-      bodyType: "4D", // sheet prints "4D" in 形状 field
+      bodyType: "4D",
       importType: "Dealer",
+      // P0: auction pricing (from header)
+      auctionResult: "sold", // ● 落札
+      soldPriceMan: 5860,
+      startPriceMan: 2180,
     },
   },
 
@@ -217,8 +229,15 @@ const CALIBRATION = [
       recyclingDepositJpy: 23190,
       seatingCapacity: 4,
       dimensions: { length_mm: 4750, width_mm: 1870, height_mm: 1410 },
-      bodyType: "OP", // sheet prints "OP" in 形状 field
+      bodyType: "OP",
       importType: "Dealer",
+      // P0: service records from 注意事項
+      serviceRecordEntries: [
+        { date: "2022-02", mileageKm: 4598 },
+        { date: "2023-02", mileageKm: 8236 },
+        { date: "2024-01", mileageKm: 11954 },
+        { date: "2025-06", mileageKm: 14938 },
+      ],
     },
   },
 
@@ -426,8 +445,11 @@ const CALIBRATION = [
       recyclingDepositJpy: 16900,
       seatingCapacity: 2,
       dimensions: null,
-      bodyType: "3D", // sheet prints "3D" in 形状 field
+      bodyType: "3D",
       importType: "Dealer",
+      // P0: Yanase service records
+      serviceRecordCount: 7,
+      serviceRecordDealer: "Yanase",
     },
   },
 

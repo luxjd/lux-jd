@@ -693,6 +693,37 @@ export const PANEL_LOCATIONS = {
 // MISCELLANEOUS SHEET TERMS
 // ══════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════
+// AUCTION RESULTS — セリ結果 field
+// ══════════════════════════════════════════════════════════════
+
+export const AUCTION_RESULTS = {
+  "落札": "sold",
+  "流れ": "unsold",
+  "商談": "negotiating",
+  "成約": "sold",
+  "不成立": "unsold",
+  "終了": "ended",
+};
+
+// ══════════════════════════════════════════════════════════════
+// SERVICE RECORD TERMS
+// ══════════════════════════════════════════════════════════════
+
+export const SERVICE_TERMS = {
+  "記録簿": "service record book",
+  "ディーラー記録簿": "dealer service records",
+  "ヤナセ記録簿": "Yanase service records",
+  "ヤナセ": "Yanase",
+  "シュテルン": "Stern (Mercedes dealer)",
+  "ポルシェセンター": "Porsche Center",
+  "コーンズ": "Cornes (Ferrari dealer)",
+  "ニコル": "Nicole (BMW dealer)",
+  "AAPC": "Audi Approved Plus Center",
+  "最終": "latest",
+  "枚": "copies/books",
+};
+
 export const MISC_TERMS = {
   "有": "present/yes",
   "無": "absent/no",

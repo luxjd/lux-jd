@@ -156,6 +156,23 @@ Return JSON: {"bodyType": "<code>", "confidence": 0.0-1.0}`,
   displacement: `What is the ENGINE DISPLACEMENT (排気量) in cc on this Japanese auction sheet?
 Read the number next to 排気量. Report the exact integer (e.g. 4000, 3000, 5200).
 Return JSON: {"displacement": <integer>, "confidence": 0.0-1.0}`,
+
+  auctionResult: `What is the AUCTION RESULT (セリ結果) on this sheet?
+Look at the header row for: 落札 (sold), 流れ (unsold/passed), 商談 (negotiating). Only if printed.
+Return JSON: {"auctionResult": "sold|unsold|negotiating|null", "confidence": 0.0-1.0}`,
+
+  startPriceMan: `What is the START PRICE (スタート金額) in 万円 on this sheet?
+Look at the header row for a number labelled スタート金額. The number is in 万円 (×10,000 JPY). Only if printed.
+Return JSON: {"startPriceMan": <integer or null>, "confidence": 0.0-1.0}`,
+
+  soldPriceMan: `What is the SOLD/HAMMER PRICE (落札額) in 万円 on this sheet?
+Look at the header row. Only if printed.
+Return JSON: {"soldPriceMan": <integer or null>, "confidence": 0.0-1.0}`,
+
+  serviceRecordEntries: `Extract SERVICE RECORD HISTORY (記録簿) from this Japanese auction sheet.
+Look in the ◎注意事項 section for entries like: "記録簿 R4.2 (4,598km) R5.2 (8,236km)..." or "H29, H30, H31年ディーラー記録簿" or "ヤナセ記録簿7枚(最終R7)".
+Convert era dates: R4.2 = 2022-02, H30 = 2018.
+Return JSON: {"serviceRecordEntries": [{"date": "YYYY-MM", "mileageKm": <int or null>}], "serviceRecordCount": <int or null>, "serviceRecordDealer": "<name or null>", "confidence": 0.0-1.0}`,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -199,6 +216,9 @@ const FIELD_KEYS = {
   grade: "grade", colorChanged: "colorChanged",
   serviceBookPresent: "serviceBookPresent", bodyType: "bodyType",
   displacement: "displacement",
+  auctionResult: "auctionResult", startPriceMan: "startPriceMan",
+  soldPriceMan: "soldPriceMan", serviceRecordEntries: "serviceRecordEntries",
+  serviceRecordCount: "serviceRecordCount", serviceRecordDealer: "serviceRecordDealer",
 };
 
 function normaliseValue(val, fieldKey) {

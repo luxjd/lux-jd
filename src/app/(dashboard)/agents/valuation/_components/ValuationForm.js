@@ -65,6 +65,16 @@ const FIELD_LABELS = {
   cautionNotes: "Caution Notes",
   inspectorNotes: "Inspector Notes",
   specificationNotes: "Other Specifications",
+  // Auction pricing
+  auctionDate: "Auction Date",
+  startPriceMan: "Start Price (万円)",
+  bidPriceMan: "Highest Bid (万円)",
+  soldPriceMan: "Sold Price (万円)",
+  auctionResult: "Auction Result",
+  // Service records
+  serviceRecordEntries: "Service Record History",
+  serviceRecordCount: "Service Record Books",
+  serviceRecordDealer: "Service Dealer",
 };
 
 function formatValue(key, value) {
@@ -76,6 +86,10 @@ function formatValue(key, value) {
   if (key === "askingPriceJpy" || key === "recyclingDepositJpy") return formatJpy(value);
   if (key === "mileageKm") return `${formatKm(value)}`;
   if (key === "auctionGrade") return String(value);
+  if (key === "startPriceMan" || key === "bidPriceMan" || key === "soldPriceMan") return `¥${(value * 10000).toLocaleString()}`;
+  if (key === "auctionResult") return value === "sold" ? "Sold (落札)" : value === "unsold" ? "Unsold (流れ)" : value === "negotiating" ? "Negotiating (商談)" : value;
+  if (key === "serviceRecordCount") return `${value} books`;
+  if (key === "serviceRecordEntries" && Array.isArray(value)) return value.map((e) => `${e.date}: ${e.mileageKm ? formatKm(e.mileageKm) + " km" : "—"}`).join(", ");
   if (key === "doorCount") return `${value}-door`;
   if (key === "seatingCapacity") return `${value} seats`;
 

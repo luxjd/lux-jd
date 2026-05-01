@@ -477,6 +477,24 @@ export const AUCTION_SHEET_TOOL = {
         mechanical_notes:        { type: "array", items: { type: "string" } },
         modification_notes:      { type: "array", items: { type: "string" } },
         recycling_deposit_jpy:   { type: ["integer", "null"] },
+        auction_date:            { type: ["string", "null"], description: "開催日 — auction date in YYYY-MM-DD or YYYY/MM/DD. Only if printed in the header row." },
+        start_price_man:         { type: ["integer", "null"], description: "スタート金額 — start price in 万円 (×10,000 JPY). Only if printed in the header." },
+        bid_price_man:           { type: ["integer", "null"], description: "応札額 — highest bid in 万円. Only if printed." },
+        sold_price_man:          { type: ["integer", "null"], description: "落札額 — hammer/sold price in 万円. Only if printed." },
+        auction_result:          { type: ["string", "null"], enum: [null, "sold", "unsold", "negotiating"], description: "セリ結果 — 落札=sold, 流れ=unsold, 商談=negotiating. Only if printed." },
+        service_record_entries:  {
+          type: "array",
+          description: "Structured service record history from 記録簿 entries in 注意事項. Each entry has a date and mileage.",
+          items: {
+            type: "object",
+            properties: {
+              date: { type: "string", description: "Service date as YYYY-MM (convert era: R4.2 = 2022-02)" },
+              mileageKm: { type: ["integer", "null"], description: "Mileage at service in km" },
+            },
+          },
+        },
+        service_record_count:    { type: ["integer", "null"], description: "Number of service record books — e.g. '記録簿7枚' = 7. Only if printed." },
+        service_record_dealer:   { type: ["string", "null"], description: "Dealer name for service records — e.g. 'ヤナセ' (Yanase). Only if printed." },
         body_type:               { type: ["string", "null"], description: "形状 field: raw code exactly as printed — 3D, 2D, OP, CP, SD, HB, SW. Do NOT translate to English." },
         door_count:              { type: ["integer", "null"], description: "Only if explicitly printed (e.g. '3D'=3, '2D'=2). Do NOT infer from body type or model name." },
         drivetrain:              { type: ["string", "null"], enum: [null, "2WD", "4WD", "AWD", "FF", "FR", "MR", "RR"], description: "Only if explicitly printed in 駆動 field. Do NOT assume." },
@@ -1867,6 +1885,14 @@ Return ONLY valid JSON:
     "lotNumber": "<auction lot number, or null>",
     "auctionHouse": "<USS|TAA|JU|HAA|CAA|AUCNET|etc., or null>",
     "recyclingDepositJpy": <integer or null>,
+    "auctionDate": "<YYYY-MM-DD — from 開催日 in the header row, only if printed>",
+    "startPriceMan": <integer — スタート金額 in 万円, only if printed in header>,
+    "bidPriceMan": <integer — 応札額 in 万円, only if printed>,
+    "soldPriceMan": <integer — 落札額 in 万円, only if printed>,
+    "auctionResult": "<'sold' | 'unsold' | 'negotiating' — from セリ結果: 落札=sold, 流れ=unsold, 商談=negotiating>",
+    "serviceRecordEntries": [{"date": "YYYY-MM", "mileageKm": <integer>}],
+    "serviceRecordCount": <integer — number of record books, e.g. 記録簿7枚 = 7>,
+    "serviceRecordDealer": "<dealer name, e.g. ヤナセ = Yanase>",
     "featureCodes": ["<equipment codes translated, e.g. 'Sunroof', 'Alloy Wheels', 'Navigation', 'Leather Seats', 'Airbag'>"],
     "salesPoints": ["<each セールスポイント bullet, translated, as a separate array entry>"],
     "modifications": ["<each aftermarket/modification note, translated>"],
@@ -2110,6 +2136,17 @@ export async function extractVehicleData(rawImages) {
       mapIfBetter("bodyType", deepParsed.body_type);
       mapIfBetter("serviceBookPresent", deepParsed.service_book_present, (v) => typeof v === "boolean");
       mapIfBetter("doorCount", deepParsed.door_count, (v) => typeof v === "number" && v >= 1);
+      // P0 fields
+      mapIfBetter("auctionDate", deepParsed.auction_date);
+      mapIfBetter("startPriceMan", deepParsed.start_price_man, (v) => typeof v === "number" && v > 0);
+      mapIfBetter("bidPriceMan", deepParsed.bid_price_man, (v) => typeof v === "number" && v > 0);
+      mapIfBetter("soldPriceMan", deepParsed.sold_price_man, (v) => typeof v === "number" && v > 0);
+      mapIfBetter("auctionResult", deepParsed.auction_result);
+      if (Array.isArray(deepParsed.service_record_entries) && deepParsed.service_record_entries.length > 0) {
+        extracted.serviceRecordEntries = deepParsed.service_record_entries;
+      }
+      mapIfBetter("serviceRecordCount", deepParsed.service_record_count, (v) => typeof v === "number" && v > 0);
+      mapIfBetter("serviceRecordDealer", deepParsed.service_record_dealer);
 
       // Color: prefer the MORE SPECIFIC name over generic truncation.
       // "Pearl White" > "White"; "Selenite Grey Metallic" > "Grey".
