@@ -16,6 +16,8 @@
  * Get your key at: https://openrouter.ai/keys
  */
 
+import { retryWithBackoff } from "@/lib/agents/valuation/retry-with-backoff";
+
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
 // Model mapping — Opus 4.7 for vision/reasoning (auction sheet OCR needs it),
@@ -33,6 +35,37 @@ const PROVIDER_PIN = {
   order: ["Anthropic"],
   allow_fallbacks: process.env.OPENROUTER_ALLOW_FALLBACKS === "1",
 };
+
+// ── LLM cost tracking ──────────────────────────────────────────────
+const _usageLog = [];
+
+export function getUsageLog() { return _usageLog; }
+export function resetUsageLog() { _usageLog.length = 0; }
+export function getTotalCost() {
+  return _usageLog.reduce((sum, entry) => sum + entry.estimatedCost, 0);
+}
+
+function _trackUsage(data, modelId) {
+  try {
+    const usage = data.usage || {};
+    const costPerInputToken = modelId.includes("opus") ? 15/1e6 : modelId.includes("haiku") ? 0.8/1e6 : 3/1e6;
+    const costPerOutputToken = modelId.includes("opus") ? 75/1e6 : modelId.includes("haiku") ? 4/1e6 : 15/1e6;
+    const estimatedCost = (usage.prompt_tokens || 0) * costPerInputToken + (usage.completion_tokens || 0) * costPerOutputToken;
+
+    _usageLog.push({
+      timestamp: Date.now(),
+      model: modelId,
+      promptTokens: usage.prompt_tokens || 0,
+      completionTokens: usage.completion_tokens || 0,
+      totalTokens: usage.total_tokens || 0,
+      estimatedCost: Math.round(estimatedCost * 1e6) / 1e6,
+      caller: new Error().stack?.split('\n')[2]?.trim() || 'unknown',
+    });
+
+    console.log(`[llm] ${modelId.split('/').pop()} ${usage.prompt_tokens || '?'}+${usage.completion_tokens || '?'} tokens = $${estimatedCost.toFixed(4)}`);
+  } catch { /* usage tracking is non-blocking */ }
+}
+// ───────────────────────────────────────────────────────────────────
 
 function getApiKey() {
   return process.env.OPENROUTER_API_KEY || "";
@@ -136,23 +169,27 @@ export async function callClaude({
     body.tool_choice = toolChoice;
   }
 
-  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://luxjd.com",
-      "X-Title": "LuxJD Valuation Agent",
-    },
-    body: JSON.stringify(body),
-  });
+  const data = await retryWithBackoff(async () => {
+    const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://luxjd.com",
+        "X-Title": "LuxJD Valuation Agent",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      const e = new Error(`OpenRouter API error ${res.status}: ${err.slice(0, 200)}`);
+      e.status = res.status;
+      throw e;
+    }
+    return res.json();
+  }, { label: `callClaude(${modelId.split("/").pop()})` });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenRouter API error ${res.status}: ${err}`);
-  }
-
-  const data = await res.json();
+  _trackUsage(data, modelId);
   const parsed = parseResponse(data, !!tools);
 
   if (jsonMode && typeof parsed === "string") return null;
@@ -218,22 +255,26 @@ export async function callClaudeVision({
     body.tool_choice = toolChoice;
   }
 
-  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://luxjd.com",
-      "X-Title": "LuxJD Valuation Agent",
-    },
-    body: JSON.stringify(body),
-  });
+  const data = await retryWithBackoff(async () => {
+    const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://luxjd.com",
+        "X-Title": "LuxJD Valuation Agent",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      const e = new Error(`OpenRouter Vision API error ${res.status}: ${err.slice(0, 200)}`);
+      e.status = res.status;
+      throw e;
+    }
+    return res.json();
+  }, { label: `callClaudeVision(${modelId.split("/").pop()})` });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenRouter Vision API error ${res.status}: ${err}`);
-  }
-
-  const data = await res.json();
+  _trackUsage(data, modelId);
   return parseResponse(data, !!tools);
 }
