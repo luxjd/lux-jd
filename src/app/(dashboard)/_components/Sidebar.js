@@ -36,11 +36,11 @@ const NAV_SECTIONS = [
     subItems: [
       { href: "/agents/de-market", label: "DE Market", icon: "query_stats" },
       { href: "/agents/jp-sourcing", label: "JP Sourcing", icon: "travel_explore" },
-      { href: "/agents/listing", label: "Listing", icon: "edit_note" },
-      { href: "/agents/logistics", label: "Logistics", icon: "local_shipping" },
-      { href: "/agents/finance", label: "Finance AI", icon: "account_balance" },
-      { href: "/agents/concierge", label: "Concierge", icon: "support_agent" },
       { href: "/agents/orchestrator", label: "Orchestrator", icon: "hub" },
+      { href: "/agents/logistics", label: "Logistics", icon: "local_shipping" },
+      { href: "/agents/listing", label: "Listing", icon: "edit_note" },
+      { href: "/agents/concierge", label: "Concierge", icon: "support_agent" },
+      { href: "/agents/finance", label: "Finance", icon: "account_balance" },
     ],
   },
 ];
