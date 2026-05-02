@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { getPipelineVehicles, getPipelineEvents, getAgentStatus, getShipments, getTuvAppointments } from "@/lib/agents/logistics/storage";
-import { STAGE_KEYS as STAGES, STAGES as PIPELINE_STAGES, isPhotoRequired } from "@/lib/agents/logistics/pipeline";
-import AdvanceStageButton from "./_components/AdvanceStageButton";
+import { STAGE_KEYS as STAGES, STAGES as PIPELINE_STAGES } from "@/lib/agents/logistics/pipeline";
 import AutoAdvanceButton from "./_components/AutoAdvanceButton";
-import PhotoUploadButton from "./_components/PhotoUploadButton";
+import VehicleFilters from "./_components/VehicleFilters";
 
 export default async function LogisticsAgentPage() {
   const status = await getAgentStatus();
@@ -70,71 +69,7 @@ export default async function LogisticsAgentPage() {
 
       {/* Vehicles in pipeline */}
       {hasData ? (
-        <div className="space-y-4">
-          <h3 className="font-headline font-bold text-lg">Vehicles ({vehicles.length})</h3>
-          {vehicles.map((v) => {
-            const info = stageInfo.find((s) => s.key === v.currentStage);
-            const daysInStage = Math.round((Date.now() - new Date(v.stageEnteredAt).getTime()) / (1000 * 60 * 60 * 24));
-            const photoRequired = isPhotoRequired(v.currentStage);
-            return (
-              <div key={v.id} className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full ${info?.bg || "bg-slate-400/10"} flex items-center justify-center shrink-0`}>
-                      <span className={`material-symbols-outlined text-lg ${info?.color || "text-slate-400"}`}>{info?.icon || "help"}</span>
-                    </div>
-                    <div>
-                      <h4 className="font-headline font-bold">{v.make} {v.model} {v.year}</h4>
-                      <p className="text-xs text-on-surface-variant">
-                        {v.exteriorColor} · {v.driveSide} · Stage: <span className={info?.color}>{info?.label || v.currentStage}</span> · Day {daysInStage}
-                      </p>
-                      {v.estimatedDaysToReady > 0 && (
-                        <p className="text-[10px] text-on-surface-variant">ETA Ready for Sale: ~{v.estimatedDaysToReady} days</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {photoRequired && (
-                      <PhotoUploadButton vehicleId={v.id} stage={v.currentStage} vehicleName={`${v.make} ${v.model}`} />
-                    )}
-                    <AdvanceStageButton vehicleId={v.id} currentStage={v.currentStage} vehicleName={`${v.make} ${v.model}`} />
-                  </div>
-                </div>
-                {v.stagePhotos?.[v.currentStage]?.length > 0 && (
-                  <p className="text-[10px] text-emerald-400 mt-1">{v.stagePhotos[v.currentStage].length} photos documented at this stage</p>
-                )}
-
-                {/* Stage progress bar */}
-                <div className="flex gap-0.5 mt-3">
-                  {STAGES.map((stage, i) => {
-                    const currentIdx = STAGES.indexOf(v.currentStage);
-                    const isCompleted = i < currentIdx;
-                    const isCurrent = i === currentIdx;
-                    return (
-                      <div key={stage} className={`flex-1 h-1.5 rounded-full ${isCompleted ? "bg-emerald-400" : isCurrent ? "bg-primary animate-pulse" : "bg-surface-container-high"}`} title={stage} />
-                    );
-                  })}
-                </div>
-
-                {/* Shipment info */}
-                {v.shipment && (
-                  <div className="mt-2 text-xs text-on-surface-variant flex items-center gap-2">
-                    <span className="material-symbols-outlined text-sm text-cyan-400">sailing</span>
-                    {v.shipment.vesselName} · {v.shipment.route?.routeKey} · Container: {v.shipment.containerId}
-                  </div>
-                )}
-
-                {/* TUV info */}
-                {v.tuvAssessment && (
-                  <div className="mt-1 text-xs text-on-surface-variant flex items-center gap-2">
-                    <span className="material-symbols-outlined text-sm text-yellow-400">verified</span>
-                    TUV: {v.tuvAssessment.complexity} complexity · {v.tuvAssessment.pass_probability_pct}% pass probability · {v.tuvAssessment.recommended_station}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <VehicleFilters vehicles={vehicles} stageInfo={stageInfo} events={events.events || []} />
       ) : (
         <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-12 text-center">
           <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">local_shipping</span>
