@@ -133,19 +133,19 @@ export function evaluateOpportunity(opportunity, portfolio) {
   const highRiskDimensions = [];
   if (opportunity.risk) {
     for (const [key, val] of Object.entries(opportunity.risk)) {
-      if (val?.score >= 3 && key !== "compositeScore" && key !== "compositeLevel") {
+      if (val?.score >= 4 && key !== "compositeScore" && key !== "compositeLevel") {
         highRiskDimensions.push(`${key}: ${val.score}/5 (${val.level})`);
       }
     }
   }
-  const step3Pass = riskScore <= 2.0 && highRiskDimensions.length === 0;
+  const step3Pass = riskScore <= 3.0 && highRiskDimensions.length === 0;
   const extremeRisk = riskScore > 4.0 || highRiskDimensions.length >= 3;
   steps.push({
     step: 3,
     name: "RISK CHECK",
     icon: "shield",
-    check: "Composite risk <= 2.0, no HIGH individual risks",
-    actual: `${riskScore}/3.0 (${riskLevel})${highRiskDimensions.length > 0 ? ` — ${highRiskDimensions.length} HIGH dimensions` : ""}`,
+    check: "Composite risk <= 3.0, no HIGH (>=4) individual risks",
+    actual: `${riskScore}/5.0 (${riskLevel})${highRiskDimensions.length > 0 ? ` — ${highRiskDimensions.length} HIGH dimensions` : ""}`,
     // Per docx §7.2 step 5 this only ever PASSes or FLAGs — never FAILs.
     result: step3Pass ? "PASS" : "FLAG",
     critical: false,
