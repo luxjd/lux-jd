@@ -9,6 +9,7 @@ export default function ModelDetailPage({ params }) {
   const [modelId, setModelId] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [bidJpy, setBidJpy] = useState("");
 
   useEffect(() => {
     params.then((p) => {
@@ -42,6 +43,9 @@ export default function ModelDetailPage({ params }) {
   const priceHistory = data.priceHistory || [];
   const vel = demand.velocityScore ? getVelocityStyle(demand.velocityScore) : null;
   const confidence = data.confidence || 0;
+  const listings = data.comparableListings || data.scanData?.comparable_listings || [];
+  const specPremiums = data.scanData?.spec_premiums || {};
+  const bySpec = data.scanData?.comparables_by_spec || {};
 
   return (
     <div className="space-y-6">
@@ -201,6 +205,189 @@ export default function ModelDetailPage({ params }) {
           </div>
         )}
       </div>
+
+      {/* P0: Quick Actions */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <Link href={`/agents/valuation?make=${encodeURIComponent(spec.make || "")}&model=${encodeURIComponent(spec.model || "")}`} className="flex items-center gap-3 bg-surface-container rounded-xl border border-outline-variant/10 p-4 hover:border-primary/30 transition-colors">
+          <span className="material-symbols-outlined text-primary">calculate</span>
+          <div><p className="text-sm font-bold">Valuate a {spec.model}</p><p className="text-xs text-on-surface-variant">Open Valuation Agent</p></div>
+        </Link>
+        <Link href="/agents/jp-sourcing" className="flex items-center gap-3 bg-surface-container rounded-xl border border-outline-variant/10 p-4 hover:border-primary/30 transition-colors">
+          <span className="material-symbols-outlined text-secondary">travel_explore</span>
+          <div><p className="text-sm font-bold">Find in Japan</p><p className="text-xs text-on-surface-variant">JP Sourcing Agent</p></div>
+        </Link>
+        <button onClick={() => { fetch(`/api/agents/de-market/scan-model?id=${modelId}`); window.location.reload(); }} className="flex items-center gap-3 bg-surface-container rounded-xl border border-outline-variant/10 p-4 hover:border-primary/30 transition-colors text-left">
+          <span className="material-symbols-outlined text-tertiary">refresh</span>
+          <div><p className="text-sm font-bold">Rescan Now</p><p className="text-xs text-on-surface-variant">Refresh market data</p></div>
+        </button>
+        <div className="flex items-center gap-3 bg-surface-container rounded-xl border border-outline-variant/10 p-4">
+          <span className="material-symbols-outlined text-on-surface-variant">schedule</span>
+          <div><p className="text-sm font-bold">Last Scan</p><p className="text-xs text-on-surface-variant">{data.generatedAt ? new Date(data.generatedAt).toLocaleString() : "Never"}</p></div>
+        </div>
+      </div>
+
+      {/* P0: FX Margin Calculator */}
+      <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="material-symbols-outlined text-primary">currency_exchange</span>
+          <h3 className="font-headline font-bold text-lg">Margin Calculator</h3>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="text-xs uppercase text-on-surface-variant tracking-wider block mb-2">Japanese Auction Price (JPY)</label>
+            <input
+              type="number"
+              placeholder="e.g. 28000000"
+              value={bidJpy}
+              onChange={(e) => setBidJpy(e.target.value)}
+              className="w-full bg-surface-container-high border border-outline-variant/20 rounded-xl px-4 py-3 text-lg font-mono focus:border-primary/50 focus:outline-none"
+            />
+            <p className="text-xs text-on-surface-variant mt-1">Enter the auction asking price or your max bid</p>
+          </div>
+          {bidJpy && Number(bidJpy) > 0 && (() => {
+            const rate = 186.88;
+            const purchaseEur = Math.round(Number(bidJpy) / rate);
+            const landedCosts = Math.round(purchaseEur * 0.25);
+            const totalLanded = purchaseEur + landedCosts;
+            const salePrice = Math.round(market.medianEur || 0);
+            const margin = salePrice - totalLanded;
+            const marginPct = salePrice > 0 ? ((margin / salePrice) * 100).toFixed(1) : 0;
+            const isBuy = margin >= 15000 && marginPct >= 20;
+            return (
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm"><span className="text-on-surface-variant">Purchase (at ¥{rate}/€)</span><span className="font-mono">{formatEur(purchaseEur)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-on-surface-variant">+ Estimated landed costs (~25%)</span><span className="font-mono">{formatEur(landedCosts)}</span></div>
+                <div className="flex justify-between text-sm border-t border-outline-variant/10 pt-2"><span className="text-on-surface-variant font-bold">Total Landed</span><span className="font-mono font-bold">{formatEur(totalLanded)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-on-surface-variant">Est. Sale Price (median)</span><span className="font-mono">{formatEur(salePrice)}</span></div>
+                <div className={`flex justify-between text-lg border-t border-outline-variant/10 pt-2 font-bold ${margin >= 15000 ? "text-emerald-400" : "text-red-400"}`}>
+                  <span>Gross Margin</span>
+                  <span>{formatEur(margin)} ({marginPct}%)</span>
+                </div>
+                <div className={`text-center py-2 rounded-lg text-sm font-bold ${isBuy ? "bg-emerald-400/15 text-emerald-400" : margin > 0 ? "bg-amber-400/15 text-amber-400" : "bg-red-400/15 text-red-400"}`}>
+                  {isBuy ? "BUY — Meets margin thresholds" : margin > 0 ? "REVIEW — Margin below €15k or 20%" : "PASS — Negative margin"}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* P0: Color & Spec Premium Analysis */}
+      {(Object.keys(specPremiums.colors || {}).length > 0 || Object.keys(specPremiums.options || {}).length > 0) && (
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-secondary">palette</span>
+            <h3 className="font-headline font-bold text-lg">Specification Premiums</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {Object.keys(specPremiums.colors || {}).length > 0 && (
+              <div>
+                <h4 className="text-xs uppercase text-on-surface-variant tracking-wider mb-3">Color Premiums</h4>
+                <div className="space-y-1.5">
+                  {Object.entries(specPremiums.colors)
+                    .sort(([, a], [, b]) => (typeof b === "number" ? b : b?.modifier || 1) - (typeof a === "number" ? a : a?.modifier || 1))
+                    .map(([color, val]) => {
+                      const modifier = typeof val === "number" ? val : val?.modifier || 1;
+                      const pct = ((modifier - 1) * 100).toFixed(0);
+                      const isPositive = modifier > 1;
+                      const isNeutral = modifier === 1;
+                      return (
+                        <div key={color} className="flex items-center justify-between text-sm py-1 px-2 rounded-lg hover:bg-surface-container-high/30">
+                          <span>{color}</span>
+                          <span className={`font-mono font-bold ${isPositive ? "text-emerald-400" : isNeutral ? "text-on-surface-variant" : "text-red-400"}`}>
+                            {isPositive ? "+" : ""}{pct}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+            {Object.keys(specPremiums.options || {}).length > 0 && (
+              <div>
+                <h4 className="text-xs uppercase text-on-surface-variant tracking-wider mb-3">Option Premiums</h4>
+                <div className="space-y-1.5">
+                  {Object.entries(specPremiums.options)
+                    .filter(([k]) => k !== "low_mileage" && k !== "scheckheftgepflegt")
+                    .sort(([, a], [, b]) => (b?.premium_eur || 0) - (a?.premium_eur || 0))
+                    .slice(0, 10)
+                    .map(([option, val]) => (
+                      <div key={option} className="flex items-center justify-between text-sm py-1 px-2 rounded-lg hover:bg-surface-container-high/30">
+                        <span>{option}</span>
+                        <span className="font-mono font-bold text-emerald-400">+{formatEur(val?.premium_eur || 0)}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* P0: Comparable Listings Table */}
+      {listings.length > 0 && (
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary">list</span>
+              <h3 className="font-headline font-bold text-lg">Comparable Listings ({listings.length})</h3>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wider text-on-surface-variant border-b border-outline-variant/10">
+                  <th className="text-left py-2 pr-4">Price</th>
+                  <th className="text-left py-2 pr-4">Mileage</th>
+                  <th className="text-left py-2 pr-4">Year</th>
+                  <th className="text-left py-2 pr-4">Color</th>
+                  <th className="text-left py-2 pr-4">Platform</th>
+                  <th className="text-left py-2 pr-4">Dealer</th>
+                  <th className="text-right py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {listings
+                  .sort((a, b) => (a.price_eur || 0) - (b.price_eur || 0))
+                  .map((l, i) => (
+                    <tr key={i} className="border-b border-outline-variant/5 hover:bg-surface-container-high/20">
+                      <td className="py-2.5 pr-4 font-mono font-bold">{l.price_eur ? formatEur(l.price_eur) : "—"}</td>
+                      <td className="py-2.5 pr-4 font-mono text-on-surface-variant">{l.mileage_km ? `${(l.mileage_km / 1000).toFixed(0)}k km` : "—"}</td>
+                      <td className="py-2.5 pr-4">{l.year || "—"}</td>
+                      <td className="py-2.5 pr-4 text-on-surface-variant">{l.color || "—"}</td>
+                      <td className="py-2.5 pr-4"><span className="px-1.5 py-0.5 rounded text-xs bg-surface-container-high">{l.platform || "—"}</span></td>
+                      <td className="py-2.5 pr-4 text-on-surface-variant text-xs">{l.dealer_name || "—"}</td>
+                      <td className="py-2.5 text-right">
+                        {l.url && <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs">View &rarr;</a>}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* P1: Year Breakdown */}
+      {bySpec?.byColor && Object.keys(bySpec.byColor).length > 0 && (
+        <div className="bg-surface-container rounded-2xl border border-outline-variant/10 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-tertiary">bar_chart</span>
+            <h3 className="font-headline font-bold text-lg">Price by Color</h3>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {Object.entries(bySpec.byColor)
+              .sort(([, a], [, b]) => (b.median || 0) - (a.median || 0))
+              .map(([color, stats]) => (
+                <div key={color} className="bg-surface-container-high/30 rounded-xl p-3">
+                  <p className="text-sm font-bold mb-1">{color}</p>
+                  <p className="font-mono text-lg font-bold">{formatEurCompact(stats.median)}</p>
+                  <p className="text-xs text-on-surface-variant">{stats.count} listing{stats.count !== 1 ? "s" : ""} &middot; {formatEurCompact(stats.min)}-{formatEurCompact(stats.max)}</p>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
