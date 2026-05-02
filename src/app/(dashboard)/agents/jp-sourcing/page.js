@@ -150,10 +150,12 @@ export default function JpSourcingPage() {
   };
 
   const hasData = opportunities.length > 0;
-  const strongBuys = opportunities.filter((o) => (o.refinedRecommendation || o.recommendation) === "STRONG_BUY");
-  const buys = opportunities.filter((o) => (o.refinedRecommendation || o.recommendation) === "BUY");
-  const reviews = opportunities.filter((o) => (o.refinedRecommendation || o.recommendation) === "REVIEW");
-  const passes = opportunities.filter((o) => (o.refinedRecommendation || o.recommendation) === "PASS");
+  // KPI counts use the FORMULA verdict (deterministic, spec-compliant).
+  // The LLM's refinedRecommendation is advisory context, not an override.
+  const strongBuys = opportunities.filter((o) => o.recommendation === "STRONG_BUY");
+  const buys = opportunities.filter((o) => o.recommendation === "BUY");
+  const reviews = opportunities.filter((o) => o.recommendation === "REVIEW");
+  const passes = opportunities.filter((o) => o.recommendation === "PASS");
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><span className="material-symbols-outlined text-primary text-4xl animate-spin">progress_activity</span></div>;
@@ -225,7 +227,7 @@ export default function JpSourcingPage() {
           <h3 className="font-headline font-bold text-lg">Opportunities ({opportunities.filter((o) => o.recommendation !== "PASS").length} actionable)</h3>
 
           {opportunities.filter((o) => o.recommendation !== "PASS").map((opp) => {
-            const rec = opp.refinedRecommendation || opp.recommendation;
+            const rec = opp.recommendation;
             const da = opp.deepAnalysis;
             return (
               <div key={opp.id} className="bg-surface-container rounded-2xl border border-outline-variant/10 p-4 sm:p-5 hover:border-primary/30 transition-all">

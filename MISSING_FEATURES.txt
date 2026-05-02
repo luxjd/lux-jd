@@ -1,0 +1,496 @@
+================================================================================
+  LUXJD — MISSING FEATURES & FUTURE ENHANCEMENTS
+  What's not implemented, why, and when to add it
+  Version 1.0 | May 2026
+================================================================================
+
+
+STATUS SUMMARY
+--------------
+  Overall platform spec compliance:  ~92%
+  Valuation Agent (#0):              ~92% (88.6% extraction accuracy)
+  DE Market Agent (#1):              ~97% (31/32 requirements)
+  JP Sourcing Agent (#2):            ~91% (29/32 requirements)
+  Orchestrator (#3):                 needs audit
+  Logistics Agent (#4):              needs audit
+  Listing Agent (#5):                needs audit
+  Concierge Agent (#6):              needs audit
+  Finance Agent (#7):                needs audit
+
+  This document tracks features that are INTENTIONALLY deferred,
+  not bugs or broken functionality.
+
+
+================================================================================
+  1. BROKER API INTEGRATIONS
+================================================================================
+
+  Source:     luxury_auto_arbitrage_1.docx §6.2.2
+  Agent:      JP Sourcing Agent (#2)
+  Priority:   LOW (Phase 3+)
+  Status:     NOT IMPLEMENTED
+
+  WHAT IT IS:
+  Direct API integrations with Japanese vehicle broker services:
+  - SBI Motor Japan (sbimotor.co.jp) — luxury vehicle export specialist
+  - Be Forward (beforward.jp) — large-scale vehicle exporter
+  - Other brokers: Autorec, Qualitex Trading, STC Japan
+
+  PURPOSE:
+  Brokers offer fixed-price purchases (no auction competition). They handle
+  export documentation, pre-shipment inspection, and sometimes domestic
+  transport. Their APIs would provide structured vehicle data feeds with
+  standardized fields (price, specs, photos, condition reports).
+
+  USE CASE:
+  - Find vehicles that aren't listed at public auctions
+  - Get fixed prices instead of competing at auction (lower risk)
+  - Access pre-inspected inventory with broker's condition guarantees
+  - Some brokers specialize in specific brands (e.g., luxury European)
+
+  WHY IT'S DEFERRED:
+  1. Current sources already cover 95%+ of available luxury inventory:
+     - japan-auktion.de aggregator covers 12 auction houses (USS, TAA,
+       HAA, JU, BH Auction, Arai, ZIP, CAA, AUCNET, MIRIVE, etc.)
+     - goo-net.com: 500,000+ dealer listings
+     - carsensor.net: 400,000+ dealer listings
+  2. Broker APIs require business agreements (contracts, deposits,
+     sometimes membership fees of ¥100,000-500,000/year)
+  3. Be Forward primarily serves African/emerging market exports —
+     limited luxury European inventory for the German market
+  4. At 1-5 vehicles/month (Phase 1-2), inventory is not the bottleneck
+  5. No broker offers a public API — each requires negotiation
+
+  WHEN TO ADD:
+  - Phase 3+ (month 9+), when processing 5-10 vehicles/month
+  - When you've established relationships with specific brokers
+  - When you want fixed-price sourcing to reduce auction risk
+  - When a specific broker has inventory you can't find at auctions
+
+  EFFORT TO IMPLEMENT:
+  - Per broker: 2-3 days (API integration + normalization)
+  - Requires: API key/credentials, documentation, test account
+  - Architecture: add new scraper in src/lib/agents/jp-sourcing/scrapers/
+    following the same interface as goo-net.js and carsensor.js
+
+  RISK OF NOT HAVING:
+  LOW — You might miss 5-10% of available inventory, but the current
+  3-source setup provides more candidates than you can process.
+  The 95 candidates found per scan proves inventory is abundant.
+
+
+================================================================================
+  2. PROVENANCE VERIFICATION SYSTEM
+================================================================================
+
+  Source:     luxury_auto_arbitrage_1.docx §6.2.3
+  Agent:      JP Sourcing Agent (#2)
+  Priority:   MEDIUM (Phase 2+ for Ferraris, Phase 3+ for others)
+  Status:     PARTIALLY IMPLEMENTED (basic checks only)
+
+  WHAT IT IS:
+  Deep verification of a vehicle's authenticity, originality, and history
+  beyond what the auction sheet provides. Four sub-components:
+
+  a) MATCHING NUMBERS VERIFICATION
+     - Confirm engine number matches chassis/VIN records
+     - For Ferraris: engine, gearbox, and chassis must all match
+     - A re-engined Ferrari loses 30-50% of value
+     - A non-matching Porsche loses 10-20%
+     - Not relevant for Mercedes-AMG, BMW M, Bentley (engine swaps
+       are extremely rare and don't impact value the same way)
+
+  b) ORIGINAL COLOR VERIFICATION
+     - Compare current color against factory build sheet records
+     - A repainted Ferrari in non-original color loses 10-20%
+     - Original-color vehicles command premiums, especially in
+       factory-special colors (Blu Pozzi, Verde British Racing)
+     - Already partially covered: our extraction detects 色替
+       (color change arrow) on auction sheets
+
+  c) SERVICE HISTORY COMPLETENESS
+     - Verify claimed service history against manufacturer records
+     - Confirm dealer stamps are authentic (not forged)
+     - Check for gaps in the service timeline
+     - Already partially covered: we extract service record entries
+       with dates + mileage from auction sheets (P0 feature)
+
+  d) LIMITED EDITION NUMBERING
+     - For numbered editions (e.g., "Ferrari 488 Pista #234 of 500")
+     - Verify the production number is real and matches the VIN
+     - Fake limited edition claims exist in the market
+     - Affects value by 5-15% for genuine limited editions
+
+  PURPOSE:
+  Prevent buying a vehicle whose value is significantly less than estimated
+  due to hidden authenticity issues. The margin on a €200k Ferrari can
+  evaporate if it turns out to be re-engined or repainted.
+
+  USE CASE:
+  - Ferrari purchases above €150k (matching numbers critical)
+  - Lamborghini limited editions (edition numbering)
+  - Any vehicle where the seller claims "original" condition
+  - Detecting sophisticated fraud (forged service books, cloned VINs)
+
+  WHAT'S ALREADY IMPLEMENTED:
+  - Auction grade extraction (tells you overall condition, 100% accuracy)
+  - Service book present/absent detection (100% accuracy)
+  - Accident history extraction from auction sheet
+  - Color change detection (色替 arrow on sheet)
+  - Service record history parsing (dates + mileage entries)
+  - VIN extraction and WMI validation
+  - AI thesis flags "missing documentation" as a risk factor
+  - Provenance risk score (FULL_DEALER/PARTIAL/UNKNOWN)
+
+  WHY IT'S DEFERRED:
+  1. Manufacturer databases are NOT publicly accessible:
+     - Ferrari Classiche: in-person only, €500+ per lookup, 6+ month wait
+     - Porsche PAP: authorized dealer access only
+     - Mercedes Star Diagnostics: dealer credentials required
+     - BMW ISTA: dealer license required
+  2. No manufacturer offers a public API for vehicle history
+  3. Manual verification is more reliable and cheaper for low volume:
+     - Call a Ferrari dealer: €500, 10 minutes, definitive answer
+     - Request build sheet from manufacturer: €50-100, 2-4 weeks
+  4. Your bread-and-butter vehicles (AMG GT, 911, Cayman GT4, M3)
+     are NOT numbers-matching sensitive — this issue is Ferrari-specific
+  5. The auction grade from USS/TAA IS professional third-party verification
+
+  WHEN TO ADD:
+  - When you start buying Ferraris above €150k regularly (>2/month)
+  - When a manufacturer opens API access (unlikely near-term)
+  - When you partner with a dealer who can run checks for you
+  - Phase 3+ as a manual workflow tool (track verification requests)
+
+  EFFORT TO IMPLEMENT:
+  - Automated: IMPOSSIBLE without manufacturer API access
+  - Semi-automated (tracking system): 3-5 days
+    - Create a "provenance check request" workflow
+    - Track: requested → in-progress → verified/failed
+    - Store results linked to vehicle record
+    - Manual entry of Classiche results, build sheet data
+  - Full integration: requires authorized dealer partnership
+
+  RISK OF NOT HAVING:
+  MEDIUM for Ferraris, LOW for other brands.
+  Mitigation: avoid Ferraris in Phase 1, or manually verify (€500/check).
+  The AI thesis already flags documentation gaps, and human review
+  catches this before "Approve Bid" is clicked.
+
+
+================================================================================
+  3. VIN CROSS-REFERENCE WITH MANUFACTURER DATABASES
+================================================================================
+
+  Source:     luxury_auto_arbitrage_1.docx §6.2.3
+  Agent:      JP Sourcing Agent (#2)
+  Priority:   LOW (Phase 3+)
+  Status:     PARTIALLY IMPLEMENTED (format validation only)
+
+  WHAT IT IS:
+  Query vehicle manufacturer service databases using the 17-character VIN
+  to retrieve:
+  - Complete factory specification (every option code)
+  - Full dealer service history (dates, mileage, work performed)
+  - Outstanding recalls or campaigns
+  - Warranty status and coverage remaining
+  - Original delivery market and date
+  - Odometer readings at each dealer visit (detects rollback)
+
+  PURPOSE:
+  Provides "ground truth" verification independent of the seller's claims.
+  If the auction sheet says "62,000 km" but the manufacturer database shows
+  the last dealer visit at 78,000 km, the odometer has been rolled back.
+  If the seller claims "full dealer service" but the database shows gaps,
+  the service books may be forged.
+
+  USE CASE:
+  - Odometer fraud detection (rare in Japan, but exists)
+  - Service history verification (confirm dealer stamps are real)
+  - Specification verification (confirm options actually installed)
+  - Recall status (unfixed recalls = liability + cost)
+  - Warranty transfer eligibility (some warranties transfer, adding value)
+
+  WHAT'S ALREADY IMPLEMENTED:
+  - VIN extraction from auction sheets (69% accuracy, improving)
+  - VIN format validation (17 chars, valid charset, check digit)
+  - WMI prefix validation (VIN prefix matches stated brand)
+  - NHTSA VIN decoder (US database — limited but free, validates
+    make/model/year/engine against the VIN)
+  - Service record extraction from auction sheets (dates + mileage)
+
+  WHY IT'S DEFERRED:
+  1. NO manufacturer offers public VIN lookup APIs:
+     - Ferrari: dealer-only portal (FerrariNet)
+     - Porsche: dealer-only (PIWIS/PAP)
+     - Mercedes: dealer-only (XENTRY/Star Diagnostics)
+     - BMW: dealer-only (ISTA)
+     - Bentley: dealer-only (ODIS)
+     - Aston Martin: dealer-only
+     - Jaguar/Land Rover: dealer-only (SDD/PATHFINDER)
+  2. Third-party services have limited Japan coverage:
+     - Carfax: primarily US/Canada, minimal Japan data
+     - AutoCheck: US-focused
+     - HPI Check: UK-focused
+     - Japan Automobile Inspection Association: not accessible to foreigners
+  3. Building scrapers for dealer portals would violate terms of service
+     and potentially be illegal (computer fraud laws)
+  4. The NHTSA decoder (already integrated) covers basic validation
+  5. Japanese auction houses (USS, TAA) perform their own VIN verification
+     as part of the inspection process — the auction grade implicitly
+     includes VIN authenticity verification
+
+  WHEN TO ADD:
+  - When a third-party service launches Japan VIN history coverage
+  - When you partner with an authorized dealer who can batch-query
+  - When processing 10+ vehicles/month (justifies the partnership cost)
+  - Consider a manual workflow: for each BUY candidate, email the
+    brand's dealer with the VIN and request a history printout
+
+  EFFORT TO IMPLEMENT:
+  - Automated: IMPOSSIBLE without dealer API access
+  - Manual workflow: 1-2 days (request tracking system)
+  - Third-party integration (if service exists): 2-3 days per service
+
+  RISK OF NOT HAVING:
+  LOW — Japanese auction houses verify VINs during inspection. The auction
+  grade IS your VIN verification. Odometer fraud is extremely rare in Japan
+  (strict Shaken system records mileage biennially). The bigger risk is
+  buying a vehicle with undisclosed repairs, which the auction sheet's
+  修復歴 (repair history) field already covers.
+
+
+================================================================================
+  4. HAGERTY / CLASSIC ANALYTICS MARKET INDICES
+================================================================================
+
+  Source:     luxury_auto_arbitrage_1.docx §6.1.2
+  Agent:      DE Market Agent (#1)
+  Priority:   LOW (Phase 3+)
+  Status:     NOT IMPLEMENTED
+
+  WHAT IT IS:
+  Integration with collector car valuation services:
+  - Hagerty Valuation Tools: condition-graded valuations for collector
+    vehicles (#1 Concours, #2 Excellent, #3 Good, #4 Fair)
+  - Classic Analytics: European market indices tracking appreciation/
+    depreciation of specific models over time
+
+  PURPOSE:
+  Provides long-term trend data and condition-specific valuations for
+  vehicles that are transitioning from "used car" to "collector car"
+  status. A Ferrari 488 is currently a used sports car, but in 5-10
+  years it becomes a collectible — Hagerty tracks this transition.
+
+  USE CASE:
+  - Identifying models that are starting to appreciate (buy before
+    the market moves — e.g., manual-transmission 997.2 GT3)
+  - Setting floor prices for vehicles that are below market but
+    above collector value (protect against overpaying)
+  - Long-term portfolio strategy (hold vs. sell decisions)
+  - Marketing angle: "Hagerty values this at €X" adds credibility
+    to listings on classicdriver/elferspot
+
+  WHY IT'S DEFERRED:
+  1. Subscription cost: Hagerty Pro is $300-500/year, Classic Analytics
+     is €400-800/year
+  2. Limited API access — Hagerty offers basic lookups but not bulk data
+  3. Your target vehicles (2016-2023 models) are too new for most
+     collector indices — they track vehicles 10+ years old
+  4. Your DE Market Agent's live scraping of mobile.de/AutoScout24
+     provides MORE ACCURATE current pricing than static indices
+  5. Indices are updated monthly/quarterly — your data is hourly
+
+  WHEN TO ADD:
+  - When you start dealing in pre-2015 vehicles (genuine collector territory)
+  - When you need "official" valuation references for insurance or financing
+  - Phase 3+ as a supplementary data source for the DE Market Agent
+
+  EFFORT TO IMPLEMENT:
+  - Hagerty API integration: 1-2 days
+  - Classic Analytics: manual data entry (they don't have an API)
+  - Would add a new data source to the TVR generator
+
+  RISK OF NOT HAVING:
+  NEGLIGIBLE for current operations. Your real-time scraping is better
+  than monthly indices for 2016-2023 model years.
+
+
+================================================================================
+  5. CONFIDENCE CALIBRATION (ACTUAL vs PREDICTED)
+================================================================================
+
+  Source:     valuation_agent_spec.docx §7.2 (Nice to Have)
+  Agent:      Valuation Agent (#0)
+  Priority:   MEDIUM (ongoing from first sale)
+  Status:     INFRASTRUCTURE BUILT, NEEDS DATA
+
+  WHAT IT IS:
+  A feedback loop that compares the agent's predicted sale price against
+  the actual sale price when a vehicle is sold. Over time, this measures
+  and improves prediction accuracy.
+
+  WHAT'S ALREADY BUILT:
+  - ValuationCalibration Prisma model in database schema
+  - POST /api/agents/valuation/calibration — submit actual sale price
+  - GET /api/agents/valuation/calibration — accuracy statistics
+  - Computes: MAE (Mean Absolute Error), MAPE (Mean Absolute Percentage
+    Error), bias direction (over/under-predicting)
+
+  WHAT'S MISSING:
+  - Actual sales data (you haven't sold any vehicles yet)
+  - UI for submitting calibration data (currently API-only)
+  - Automated feedback when Finance Agent records a sale
+  - Dashboard showing prediction accuracy over time
+
+  PURPOSE:
+  Without calibration, you don't know if the agent is consistently
+  over-predicting (dangerous — you'd buy overpriced vehicles) or
+  under-predicting (conservative — you'd miss opportunities).
+
+  WHEN TO ACTIVATE:
+  - After your first vehicle sale — submit the actual price via API
+  - After 5 sales: enough data for basic statistics
+  - After 20 sales: reliable MAPE calculation
+  - Wire Finance Agent sale completion → auto-submit calibration
+
+  EFFORT TO COMPLETE:
+  - UI form for manual calibration entry: 1 day
+  - Auto-submit from Finance Agent: 0.5 days
+  - Dashboard visualization: 1 day
+
+  RISK OF NOT HAVING:
+  MEDIUM — you're flying blind on prediction accuracy until you close
+  the feedback loop. But the first few sales will be manually managed
+  anyway, so you'll know intuitively if predictions are close.
+
+
+================================================================================
+  6. EMAIL NOTIFICATIONS
+================================================================================
+
+  Source:     valuation_agent_spec.docx §7.2 (Nice to Have)
+  Agent:      Cross-agent
+  Priority:   LOW (Phase 2+)
+  Status:     SMTP CONFIGURED BUT NOT WIRED TO AGENTS
+
+  WHAT IT IS:
+  Email notifications for key events:
+  - New STRONG_BUY opportunity found by JP Sourcing
+  - FX rate alert from Finance Agent
+  - Vehicle reached READY_FOR_SALE in Logistics
+  - New customer inquiry (Concierge Agent)
+  - Valuation report completed
+
+  WHAT'S ALREADY BUILT:
+  - SMTP configuration in .env.local (smtp.gmail.com)
+  - Email sending service used by Concierge Agent
+  - Notification system in the UI (bell icon, 9 notifications visible)
+
+  WHAT'S MISSING:
+  - Agent events → email trigger wiring
+  - User notification preferences (which events to email)
+  - Email templates for each event type
+
+  WHEN TO ADD:
+  - Phase 2, when you're not watching the dashboard constantly
+  - Critical for: FX alerts, STRONG_BUY notifications
+  - Nice for: pipeline stage completions, inquiry alerts
+
+  EFFORT: 2-3 days
+  RISK OF NOT HAVING: LOW — you're checking the dashboard daily anyway.
+
+
+================================================================================
+  7. BATCH CLI MODE
+================================================================================
+
+  Source:     valuation_agent_spec.docx §2.2.2
+  Agent:      Valuation Agent (#0)
+  Priority:   LOW
+  Status:     CLI EXISTS (Python), NO BATCH FLAG
+
+  WHAT IT IS:
+  Process multiple vehicles in a single command:
+  python -m valuation_agent.cli --batch ./vehicles.csv --output ./reports/
+
+  WHAT'S ALREADY BUILT:
+  - Python CLI (valuation-agent/valuation_agent/cli.py) for single vehicles
+  - Node.js calibration test runner processes multiple sheets
+
+  WHAT'S MISSING:
+  - --batch flag that reads a CSV of vehicles
+  - Parallel processing with configurable concurrency
+  - Progress reporting for batch jobs
+
+  WHEN TO ADD: When you need to evaluate 50+ vehicles at once (auction lot)
+  EFFORT: 1 day
+  RISK OF NOT HAVING: LOW — use the web UI for 1-5 vehicles at a time.
+
+
+================================================================================
+  8. SHEET EXTRACTION ACCURACY → 95%+
+================================================================================
+
+  Source:     Implied by valuation_agent_spec.docx §4.3.2
+  Agent:      Valuation Agent (#0)
+  Priority:   MEDIUM (ongoing)
+  Status:     88.6% ACCURACY (target: 95%+)
+
+  WHAT'S BLOCKING 95%:
+  - VIN: 67% — needs region cropping (crop VIN row, upscale, multi-model)
+  - registrationPlate: 50% — needs region cropping
+  - Handwritten sheets: ~60% — needs specialized OCR or region cropping
+  - bodyType: 42% → 91% (fixed with reverse mapping)
+
+  WHAT'S NEEDED:
+  1. Region cropping pipeline (Stage A from the pipeline spec):
+     - Crop each field zone from the sheet image
+     - Upscale to ~2000px per zone
+     - Read each zone independently
+     - Already proven for mileage (zone extractor → 100% accuracy)
+  2. 50+ calibration sheets for template calibration:
+     - 13 sheets is too small for reliable per-field statistics
+     - Need USS + TAA + HAA + AUCNET formats
+     - Need typed + handwritten + mixed
+  3. VIN zone extractor calibration:
+     - Built but disabled (locator crops wrong region sometimes)
+     - Needs bounding box calibration on more sheets
+
+  WHEN TO ADD:
+  - Region cropping: when you provide 50+ calibration sheets
+  - VIN zone: after locator calibration (needs 20+ VIN examples)
+  - Ongoing: each new sheet type encountered → add to calibration set
+
+  EFFORT: 3-5 days for region cropping pipeline, ongoing calibration
+  RISK OF NOT HAVING: MEDIUM — 88.6% means ~1 in 9 fields wrong.
+  Human review catches errors before they affect purchases.
+
+
+================================================================================
+  DECISION MATRIX: WHAT TO BUILD NEXT
+================================================================================
+
+  IF your goal is...               THEN build...
+
+  Start buying vehicles NOW        → Nothing. Current system is ready.
+                                     Use human review for edge cases.
+
+  Improve extraction accuracy      → Provide 50+ calibration sheets.
+                                     I'll build region cropping.
+
+  Buy Ferraris above €150k         → Semi-automated provenance workflow
+                                     (manual Classiche + tracking).
+
+  Scale to 10+ vehicles/month      → Broker APIs (SBI Motor Japan).
+                                     Batch CLI mode. Email notifications.
+
+  Measure prediction accuracy      → Submit actual sale prices via
+                                     POST /api/agents/valuation/calibration
+                                     (infrastructure already built).
+
+  Track collector market trends    → Hagerty subscription ($300/year)
+                                     + API integration (1-2 days).
+
+
+================================================================================

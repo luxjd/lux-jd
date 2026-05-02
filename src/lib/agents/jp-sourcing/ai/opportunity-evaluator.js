@@ -257,11 +257,14 @@ function scoreRisk(vehicle, tvr, landedCost, margin, fxVolatility) {
 // ─── Recommendation logic (per PRD) ───
 
 function generateRecommendation(margin, marginPct, confidence, risk, vehicle) {
+  // Per spec: HIGH risk = score >= 4 (not 3). Score 3 is MEDIUM.
   const highRisks = Object.values(risk)
     .filter((r) => typeof r === "object" && r.score)
-    .filter((r) => r.score >= 3).length;
+    .filter((r) => r.score >= 4).length;
 
-  if (margin >= MIN_MARGIN_EUR && marginPct >= MIN_MARGIN_PCT && confidence >= 0.70 && risk.compositeScore <= 2.0 && highRisks === 0) {
+  // Per spec: BUY when margin >= €15k AND >= 20% AND confidence >= 0.70
+  // AND composite risk <= 3.0 AND no HIGH (>=4) individual risks
+  if (margin >= MIN_MARGIN_EUR && marginPct >= MIN_MARGIN_PCT && confidence >= 0.70 && risk.compositeScore <= 3.0 && highRisks === 0) {
     return margin >= MIN_MARGIN_EUR * 2 ? "STRONG_BUY" : "BUY";
   }
 
