@@ -1,0 +1,427 @@
+================================================================================
+  LUXJD — HOW TO START TESTING
+  Step-by-step guide from zero to full pipeline test
+  May 2026
+================================================================================
+
+
+PREREQUISITES
+─────────────
+  1. Dev server running:          npm run dev
+  2. Database running:            npx prisma db push
+  3. .env.local has:
+     - OPENROUTER_API_KEY         (Claude access)
+     - APIFY_API_KEY              (scrapers — invoices paid!)
+     - DATABASE_URL               (Postgres)
+     - SESSION_SECRET             (32+ chars)
+     - AUTH_EMAIL / AUTH_PASSWORD  (login)
+     - SMTP_HOST / SMTP_USER / SMTP_PASS  (email — optional)
+  4. Login at http://localhost:3000/login
+
+
+================================================================================
+  TESTING ORDER — Follow this exact sequence
+================================================================================
+
+  The agents have dependencies. Test in this order:
+
+  Step 1: Dashboard .......................... 5 min
+  Step 2: Valuation Agent (standalone) ....... 10 min
+  Step 3: DE Market Agent .................... 15 min (includes scan time)
+  Step 4: JP Sourcing Agent .................. 10 min (includes scan time)
+  Step 5: Orchestrator ....................... 5 min
+  Step 6: Logistics Agent .................... 10 min
+  Step 7: Listing Agent ...................... 5 min
+  Step 8: Concierge Agent .................... 5 min
+  Step 9: Finance Agent ...................... 5 min
+  Step 10: Full Lifecycle Test ............... 15 min
+                                               ──────
+  Total:                                       ~85 min
+
+
+================================================================================
+  STEP 1: DASHBOARD (5 min)
+================================================================================
+
+  URL: http://localhost:3000/dashboard
+
+  CHECK:
+  [ ] Page loads without errors
+  [ ] 4 KPI cards visible (Active Vehicles, Capital, P&L, Leads)
+  [ ] Pipeline Overview shows all 10 stage icons
+  [ ] Agent Status shows all 7 agents with LIVE/IDLE badges
+  [ ] Quick Action buttons work (click each, verify navigation):
+      - Scan Market → /agents/de-market
+      - Scan Japan → /agents/jp-sourcing
+      - Valuate → /agents/valuation
+      - Evaluate → /agents/orchestrator
+  [ ] FX rate shows a number (e.g., ¥186.88)
+  [ ] Sidebar shows agents in pipeline order:
+      DE Market → JP Sourcing → Orchestrator → Logistics →
+      Listing → Concierge → Finance
+
+  EXPECTED: All sections render. Numbers may be 0 if agents haven't run.
+
+
+================================================================================
+  STEP 2: VALUATION AGENT — Standalone (10 min)
+================================================================================
+
+  URL: http://localhost:3000/agents/valuation
+
+  TEST A: Upload an auction sheet
+  ─────────────────────────────────
+  [ ] Drag+drop a JPEG auction sheet (use src/auction_sheets/1.jpeg)
+  [ ] Click "Extract Data"
+  [ ] Wait for extraction (~30-60 seconds)
+  [ ] Verify extracted data cards appear:
+      - Make: Porsche
+      - Model: 911
+      - Grade: Carrera T
+      - Year: 2025
+      - Mileage shows a number
+      - No internal fields visible (no "fieldConfidence", no "_deepParse*")
+  [ ] Mileage label shows "km" or "miles" (not both)
+
+  TEST B: Fill missing fields + submit valuation
+  ──────────────────────────────────────────────
+  [ ] Fill any missing required fields (asking price, color, etc.)
+  [ ] Click "Submit for Valuation"
+  [ ] Wait for report (~30-60 seconds)
+  [ ] Verify report sections:
+      - Vehicle Summary
+      - Market Analysis (comparable listings)
+      - Landed Cost (15 line items)
+      - Margin Analysis (3 scenarios)
+      - Risk Assessment (6 dimensions)
+      - Recommendation: BUY / REVIEW / PASS
+      - Max Bid JPY shown
+
+  TEST C: Check extraction accuracy (automated)
+  ───────────────────────────────────────────────
+  Run in terminal:
+    node --env-file=.env.local \
+      --import ./src/lib/agents/valuation/test-loader.js \
+      src/lib/agents/valuation/calibration-test.js --sheet=1.jpeg
+
+  [ ] Test completes without crash
+  [ ] Accuracy reported (expect ~85%+)
+
+
+================================================================================
+  STEP 3: DE MARKET AGENT (15 min)
+================================================================================
+
+  URL: http://localhost:3000/agents/de-market
+
+  TEST A: Run a full market scan
+  ──────────────────────────────
+  [ ] Click "Full Scan" button
+  [ ] Wait for scan to complete (~5-15 min depending on Apify)
+  [ ] Check console for scraper logs (should NOT show 403 errors)
+  [ ] After scan: model cards appear with price data
+
+  TEST B: Check model detail page
+  ────────────────────────────────
+  [ ] Click on "Ferrari 488 GTB" card
+  [ ] Verify model detail page loads (NOT "No data available")
+  [ ] Check sections:
+      - Price Overview (Median, P25-P75, Sample count)
+      - Demand Analysis (Velocity score, days on market)
+      - Price Trend (7d/30d/90d)
+      - Comparable Listings table (with clickable links)
+      - Specification Premiums (color + option premiums)
+      - Margin Calculator (enter a JPY price, verify margin calculation)
+      - Quick Actions (Valuate, Find in Japan, Rescan)
+
+  TEST C: Verify other models load
+  ─────────────────────────────────
+  [ ] Go back, click on another model (e.g., "Mercedes-AMG GT R")
+  [ ] Verify data loads correctly
+
+
+================================================================================
+  STEP 4: JP SOURCING AGENT (10 min)
+================================================================================
+
+  URL: http://localhost:3000/agents/jp-sourcing
+
+  TEST A: Run auction scan
+  ────────────────────────
+  [ ] Click "Scan Japanese Auctions"
+  [ ] Wait for scan (~3-10 min)
+  [ ] KPI cards update: check STRONG_BUY, BUY, REVIEW, PASS counts
+  [ ] BUY count should be > 0 (if not, thresholds may be too strict)
+
+  TEST B: Check opportunity cards
+  ────────────────────────────────
+  [ ] Opportunities list shows vehicle cards
+  [ ] Each card shows: JP Price, DE Value, Landed Cost, Margin, Confidence
+  [ ] AI Thesis is visible (bull case + bear case)
+  [ ] "Approve Bid" button visible
+  [ ] "Details" expand works
+
+  TEST C: Approve a vehicle
+  ─────────────────────────
+  [ ] Click "Approve Bid" on a REVIEW or BUY vehicle
+  [ ] Verify it sends to Orchestrator (check Orchestrator page)
+
+
+================================================================================
+  STEP 5: ORCHESTRATOR (5 min)
+================================================================================
+
+  URL: http://localhost:3000/agents/orchestrator
+
+  TEST A: Evaluate opportunities
+  ──────────────────────────────
+  [ ] Click "Evaluate N Opportunities"
+  [ ] Progress bar shows: "Evaluating 3/24 (12%)"
+  [ ] Progress bar fills as each vehicle is evaluated
+  [ ] Results show: N APPROVED, N REVIEW, N REJECTED
+
+  TEST B: Check decision details
+  ───────────────────────────────
+  [ ] Scroll to "Pending Review" section
+  [ ] Click a vehicle card
+  [ ] Verify 10-step decision breakdown visible:
+      Steps 1-10 with PASS/FAIL/FLAG for each
+  [ ] "Send to Pipeline" and "Reject" buttons visible
+
+  TEST C: Send a vehicle to pipeline
+  ────────────────────────────────────
+  [ ] Click "Send to Pipeline" on a vehicle
+  [ ] Go to Logistics Agent page
+  [ ] Verify the vehicle appears at SOURCED stage
+
+
+================================================================================
+  STEP 6: LOGISTICS AGENT (10 min)
+================================================================================
+
+  URL: http://localhost:3000/agents/logistics
+
+  TEST A: Check pipeline view
+  ───────────────────────────
+  [ ] 10-stage summary bar shows at top
+  [ ] Vehicle cards visible with progress bars
+  [ ] Filter dropdown works (filter by stage)
+  [ ] Sort dropdown works (sort by days/value/name)
+  [ ] Search field works (type vehicle name)
+
+  TEST B: Expand a vehicle card
+  ──────────────────────────────
+  [ ] Click a vehicle card to expand
+  [ ] 5 tabs appear: Overview, Documents, Costs, Timeline, History
+  [ ] Overview tab: Vehicle specs, Pricing, Shipment info
+  [ ] Documents tab: Checklist with checkboxes per stage
+  [ ] Costs tab: 13-line estimated vs actual table
+  [ ] Timeline tab: 10-stage visual with ETAs
+  [ ] History tab: Events or "No events yet"
+  [ ] Notes field at bottom
+
+  TEST C: Advance a vehicle
+  ──────────────────────────
+  [ ] Click "→ PURCHASED" button on a SOURCED vehicle
+  [ ] Confirm the advance
+  [ ] Vehicle moves to PURCHASED stage
+  [ ] Progress bar updates
+  [ ] Check that clicking buttons doesn't also toggle card expansion
+
+  TEST D: Photo upload
+  ─────────────────────
+  [ ] On a PURCHASED vehicle, photo upload button should appear
+  [ ] Click it, select a photo
+  [ ] Verify upload succeeds (or appropriate error)
+
+
+================================================================================
+  STEP 7: LISTING AGENT (5 min)
+================================================================================
+
+  URL: http://localhost:3000/agents/listing
+
+  NOTE: Listing Agent needs a READY_FOR_SALE vehicle. If you don't have
+  one, advance a vehicle through all stages in Logistics first, or
+  test the create API directly:
+
+  [ ] Agent page loads
+  [ ] "Create Listing" button visible (if READY_FOR_SALE vehicles exist)
+  [ ] If no vehicles ready: page shows appropriate message
+
+  TEST: Check listings page
+  ──────────────────────────
+  URL: http://localhost:3000/listings
+  [ ] Table view loads
+  [ ] Filter tabs work: ALL, ACTIVE, SOLD, DRAFT
+
+
+================================================================================
+  STEP 8: CONCIERGE AGENT (5 min)
+================================================================================
+
+  URL: http://localhost:3000/agents/concierge
+
+  TEST A: Inquiry simulator
+  ──────────────────────────
+  [ ] Find the inquiry simulator on the page
+  [ ] Enter a sample inquiry:
+      Name: "Hans Mueller"
+      Email: "hans@test.com"
+      Vehicle: (select any from dropdown)
+      Message: "Ist das Fahrzeug noch verfügbar? Welche Farbe hat das Interieur?"
+  [ ] Click "Send Inquiry"
+  [ ] Verify AI-generated response appears
+  [ ] Response should be in GERMAN (matches inquiry language)
+  [ ] Lead should appear in the leads list
+
+  TEST B: Check leads page
+  ─────────────────────────
+  URL: http://localhost:3000/leads
+  [ ] Leads table shows entries
+  [ ] Filter tabs work: ALL, NEW, QUALIFIED, ESCALATED, etc.
+
+
+================================================================================
+  STEP 9: FINANCE AGENT (5 min)
+================================================================================
+
+  URL: http://localhost:3000/finance
+
+  [ ] Finance page loads
+  [ ] Portfolio metrics visible (if vehicles in pipeline)
+  [ ] FX rate section shows current JPY/EUR
+  [ ] Tax optimization section visible
+
+  TEST: Check FX API
+  ───────────────────
+  [ ] Open browser: /api/agents/finance/fx
+  [ ] Verify JSON with rate, moving averages, alerts
+
+  TEST: Check LLM cost tracking
+  ──────────────────────────────
+  [ ] Open browser: /api/agents/valuation/cost
+  [ ] Verify totalCalls > 0 (if you ran valuations)
+  [ ] byModel breakdown shows sonnet/haiku/opus calls
+
+
+================================================================================
+  STEP 10: FULL LIFECYCLE TEST (15 min)
+================================================================================
+
+  This tests the COMPLETE vehicle lifecycle from discovery to sale.
+
+  1. START: DE Market
+     [ ] Run a full market scan (or verify recent data exists)
+
+  2. DISCOVER: JP Sourcing
+     [ ] Run "Scan Japanese Auctions"
+     [ ] Find a BUY or REVIEW candidate
+
+  3. DECIDE: Orchestrator
+     [ ] Click "Evaluate Opportunities"
+     [ ] Find a HUMAN_REVIEW or AUTO_APPROVE vehicle
+     [ ] Click "Send to Pipeline"
+
+  4. TRACK: Logistics
+     [ ] Verify vehicle appears at SOURCED
+     [ ] Advance to PURCHASED
+     [ ] Expand card, check all 5 tabs work
+     [ ] Add a note in the notes field
+
+  5. SELL: (simulated — requires advancing through all stages)
+     [ ] If possible, advance through remaining stages
+     [ ] At READY_FOR_SALE, check if Listing Agent can create listing
+
+  6. RESPOND: Concierge
+     [ ] Use inquiry simulator to send a fake inquiry
+     [ ] Verify AI response generated
+
+  7. TRACK: Finance
+     [ ] Check finance page for the vehicle's costs
+     [ ] Verify FX rate is fresh
+
+  8. DASHBOARD: Check everything
+     [ ] Go to dashboard
+     [ ] Pending Actions should reflect current state
+     [ ] Pipeline Overview should show the vehicle
+     [ ] Agent statuses should show recent activity
+
+
+================================================================================
+  REGRESSION TEST (automated)
+================================================================================
+
+  Run the auction sheet extraction regression test:
+
+    node --env-file=.env.local \
+      --import ./src/lib/agents/valuation/test-loader.js \
+      src/lib/agents/valuation/calibration-test.js
+
+  Expected output:
+    - 13 sheets tested
+    - Overall accuracy >= 85%
+    - 0 misses (every field extracted)
+    - mileageKm, make, transmission, fuelType at 100%
+
+  For a single sheet:
+    node --env-file=.env.local \
+      --import ./src/lib/agents/valuation/test-loader.js \
+      src/lib/agents/valuation/calibration-test.js --sheet=1.jpeg
+
+  For JSON output (CI/CD):
+    node --env-file=.env.local \
+      --import ./src/lib/agents/valuation/test-loader.js \
+      src/lib/agents/valuation/calibration-test.js --json > results.json
+
+
+================================================================================
+  COMMON ISSUES & FIXES
+================================================================================
+
+  ISSUE: "AI service not configured"
+  FIX:   Add OPENROUTER_API_KEY to .env.local
+
+  ISSUE: All scrapers return 403 "Too many outstanding invoices"
+  FIX:   Pay Apify invoice at console.apify.com → Billing
+
+  ISSUE: DE Market model detail shows "No data available"
+  FIX:   Run a full market scan first. Data persists in DB.
+
+  ISSUE: JP Sourcing shows 0 BUY, all REVIEW/PASS
+  FIX:   1. Ensure DE Market scan completed (JP Sourcing needs prices)
+         2. Check that Apify is not blocked (403 errors)
+         3. Risk thresholds: BUY requires risk ≤ 3.0 (was fixed from 2.0)
+
+  ISSUE: Orchestrator shows 0 APPROVED, all REJECTED
+  FIX:   Risk threshold was 2.0, fixed to 3.0. Re-evaluate opportunities.
+
+  ISSUE: Dashboard KPI cards all show 0
+  FIX:   Run agents first: DE Market scan → JP Sourcing scan → Evaluate
+
+  ISSUE: Login returns "Invalid or missing CSRF token"
+  FIX:   Use the web form at /login, not direct API calls
+
+  ISSUE: Extraction shows internal fields (fieldConfidence, _deepParse*)
+  FIX:   Already fixed — these are hidden via HIDDEN_FIELDS in ValuationForm.js
+
+  ISSUE: Mileage shows wrong value (e.g., 2,567 → 56,762)
+  FIX:   Zone mileage extractor enabled by default. If still wrong,
+         check if the sheet shows マイル (miles) — raw value preserved.
+
+  ISSUE: Console shows "[llm] sonnet 1200+300 tokens = $0.0081"
+  FIX:   Not an issue — this is LLM cost tracking. Check total at
+         /api/agents/valuation/cost
+
+
+================================================================================
+  ADDING NEW TEST SHEETS
+================================================================================
+
+  1. Drop JPEG into src/auction_sheets/
+  2. Add ground truth to src/lib/agents/valuation/calibration-data.js
+  3. Run: calibration-test.js --sheet=<filename>
+  4. See README-calibration.md for details
+
+
+================================================================================
