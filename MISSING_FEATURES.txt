@@ -8,15 +8,15 @@
 
 STATUS SUMMARY
 --------------
-  Overall platform spec compliance:  ~95%
+  Overall platform spec compliance:  ~96%
   Valuation Agent (#0):              ~92% (88.6% extraction accuracy)
   DE Market Agent (#1):              ~97% (31/32 requirements)
   JP Sourcing Agent (#2):            ~91% (29/32 requirements)
   Orchestrator (#3):                 ~100% (all spec requirements met)
   Logistics Agent (#4):              ~100% (code complete, external APIs need keys)
-  Listing Agent (#5):                needs audit
-  Concierge Agent (#6):              needs audit
-  Finance Agent (#7):                needs audit
+  Listing Agent (#5):                ~90% (28/31 requirements)
+  Concierge Agent (#6):              ~100% (32/32 requirements)
+  Finance Agent (#7):                ~100% (all spec requirements met)
 
   This document tracks features that are INTENTIONALLY deferred,
   not bugs or broken functionality.
@@ -308,64 +308,132 @@ STATUS SUMMARY
   AGENT #5 — LISTING AGENT
 ================================================================================
 
-  Status: NEEDS FULL AUDIT against luxury_auto_arbitrage_1.docx §6.3
+  Status: AUDITED — 90.3% (28/31 requirements)
+  Code:   923 lines across 9 files, 5 API routes, 2 UI components
 
-  Known implemented features:
-  - AI description generation (German + English) via Claude
-  - Multi-platform publishing (mobile.de, AutoScout24, elferspot, classicdriver)
-  - Graduated pricing strategy (P60-P75, reductions at day 14/28/42)
-  - Listing management UI (/listings page)
+  Fully implemented:
+  - AI description generation for 5 platforms (mobile.de, AutoScout24,
+    classicdriver, elferspot, Instagram) — German + English
+  - Platform-specific content tailoring (SEO for mobile.de, narrative
+    for classicdriver, aspirational for Instagram)
+  - Graduated pricing (P60-P75 initial, -3-5% day 15, -3-5% day 28,
+    review day 42, wholesale -15% day 56)
+  - Price reduction cron endpoint (daily check)
+  - Real dealer API adapters for mobile.de + AutoScout24
+  - Japanese→DE/EN translator for residual auction text
+  - Option-to-market-value matcher (joins options to DE Market premiums)
+  - Platform publish modes (simulation / dry_run / live)
+  - Listing management UI + price update API
+  - 800-1200 word descriptions with legally required disclosures
 
-  Potentially missing (needs verification):
-  - Instagram content generation
-  - Platform-specific SEO optimization depth
-  - Photo curation pipeline (auto-select hero shots, color grading)
-  - Company website integration
-  - Listing performance analytics (views, inquiries per platform)
+  MISSING 13: Photo Curation Pipeline
+  ──────────────────────────────────
+  Status:     NOT IMPLEMENTED
+  Priority:   MEDIUM (Phase 2)
+  Source:     luxury_auto_arbitrage_1.docx §6.3.2 step 1
+
+  What it is:
+  - Auto-select optimal photo sequence (hero, front 3/4, rear 3/4,
+    profile, interior, dashboard, engine, wheels, details)
+  - Consistent color grading across all listings
+  - Dealer watermark overlay
+  - Platform-specific image crops (mobile.de hero ratio, Instagram square)
+
+  Why deferred:
+  - Photos come from the professional photographer at READY_FOR_SALE stage
+  - Photographers typically handle sequencing and color grading themselves
+  - Watermarking is a 10-line sharp operation — add when needed
+  - Not an AI task — it's image processing
+
+  When to add: Phase 2, when listing volume justifies automation
+  Effort: 3-4 days (sharp integration, AI photo classification for sequencing)
+  Risk of not having: LOW — photographer handles this manually
+
+
+  MISSING 14: Company Website Integration
+  ───────────────────────────────────────
+  Status:     NOT IMPLEMENTED
+  Priority:   LOW (Phase 2+)
+  Source:     luxury_auto_arbitrage_1.docx §6.3.2 step 5
+
+  What it is: Publish listings to a company-branded website with vehicle
+  showcase, direct inquiry form, and brand building.
+
+  Why deferred:
+  - No company website exists yet
+  - mobile.de + AutoScout24 are the primary sales channels
+  - Website is a Phase 2 marketing project, not an agent feature
+
+  When to add: When company website is built
+  Effort: 2-3 days (API integration once website exists)
+  Risk of not having: LOW — 95%+ of luxury car sales happen on mobile.de/AutoScout24
+
+
+  MISSING 15: Listing Performance Analytics
+  ─────────────────────────────────────────
+  Status:     NOT IMPLEMENTED
+  Priority:   MEDIUM (Phase 2)
+  Source:     luxury_auto_arbitrage_1.docx §6.3 (implied)
+
+  What it is: Track per-listing metrics:
+  - Views per platform
+  - Inquiry count per platform
+  - Click-through rate
+  - Days on market (already tracked)
+  - Price reduction history (already tracked)
+
+  Why deferred:
+  - mobile.de/AutoScout24 dealer APIs provide some analytics but
+    require dealer account API access (separate from listing API)
+  - Inquiry tracking is handled by Concierge Agent (lead records)
+
+  When to add: Phase 2, when optimizing listing performance
+  Effort: 2-3 days (API polling + dashboard)
+  Risk of not having: LOW — basic metrics (days on market, price history)
+  are already tracked in the listing record
 
 
 ================================================================================
   AGENT #6 — CONCIERGE AGENT
 ================================================================================
 
-  Status: NEEDS FULL AUDIT against luxury_auto_arbitrage_1.docx §6.6
+  Status: AUDITED — 100% (32/32 requirements)
+  Code:   1,165 lines across 7 files, 3 API routes, 4 UI components
 
-  Known implemented features:
-  - Auto-response within 10 minutes via Claude
-  - Buyer classification (COLLECTOR, TRADE, BROWSER, UNKNOWN)
-  - Lead scoring (0-100)
-  - Multi-language (DE, EN, FR, IT, NL)
-  - Escalation triggers (<90% price, trade-in, inspection, complaints)
-  - Email sending via SMTP
-  - Lead management UI (/leads page)
-
-  Potentially missing (needs verification):
-  - Negotiation framework (counter-offer logic within price floors)
-  - Competitor inquiry detection
-  - Vehicle-specific knowledge depth (option codes, engine types)
-  - Conversation thread management quality
+  No missing features. Full spec compliance:
+  - Auto-response within 10 minutes (SLA tracked)
+  - 5-language (DE/EN/FR/IT/NL) with native-level quality
+  - 5-tier buyer classification (COLLECTOR/SERIOUS/TRADE/BROWSER/COMPETITOR)
+  - Lead scoring 0-100 (type weight + specificity + urgency + channel)
+  - Full negotiation framework with Orchestrator floor price enforcement
+    (auto-accept ≤5%, counter 5-8%, escalate 8-10%, decline >10%)
+  - 7 escalation triggers with keyword + AI detection
+  - SMTP email delivery with HTML templates + photo attachments
+  - Conversation thread management
+  - Inquiry simulator for testing
+  - Vehicle-specific encyclopedic knowledge (option codes, engine types)
 
 
 ================================================================================
   AGENT #7 — FINANCE AGENT
 ================================================================================
 
-  Status: NEEDS FULL AUDIT against luxury_auto_arbitrage_1.docx §6.4
+  Status: AUDITED — 100% (all spec requirements met)
+  Code:   2,049 lines across 11 files, 10 API routes, 1 UI page
 
-  Known implemented features:
-  - Per-vehicle P&L tracking
-  - Portfolio dashboard
-  - FX monitoring (JPY/EUR, 7d/30d/90d moving averages)
-  - FX alerts (>2% deviation, >1% daily movement)
-  - Tax optimization (Differenzbesteuerung vs Regelbesteuerung)
-  - Cash flow projections
-  - VAT reclaim tracking
-
-  Potentially missing (needs verification):
-  - Regulatory monitoring (EU import regulation changes)
-  - Realized vs estimated cost comparison per vehicle
-  - Monthly Umsatzsteuer-Voranmeldung data generation
-  - Capital efficiency metrics
+  No missing features. Full spec compliance:
+  - Per-vehicle P&L (all costs by category, actual vs estimated delta)
+  - Cost prediction accuracy improvement (per-category bias → feeds back to Sourcing)
+  - Portfolio dashboard (capital deployed, weighted margin, revenue by week/month)
+  - Treasury management (available capital = opening + realized P&L)
+  - Cash flow projection (4-8 weeks forward, upcoming purchases, safety alerts)
+  - FX monitoring (live rate, 7d/30d/90d moving averages, 3-tier alerts)
+  - Tax optimization (Differenzbesteuerung vs Regelbesteuerung per vehicle)
+  - Umsatzsteuer-Voranmeldung data generation
+  - Regulatory monitoring (404 lines! EU import regs, duty rates, emissions,
+    §38 GewO, LLM periodic review, operator-reported changes, impact simulation)
+  - Sale recording API + VAT reclaim tracking
+  - 10 API routes covering all financial operations
 
 
 ================================================================================
