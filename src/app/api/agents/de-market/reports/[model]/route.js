@@ -6,23 +6,27 @@ export async function GET(request, { params }) {
   const realTVRs = await getLatestTVRs();
   const realScans = await getLatestScanResults();
 
-  if (realTVRs?.reports?.length > 0) {
-    const tvr = realTVRs.reports.find((r) => {
-      const id = (r.vehicleSpec?.make + "-" + r.vehicleSpec?.model).toLowerCase().replace(/[\s()]+/g, "-");
-      return id === model || r.modelId === model;
+  const tvrList = realTVRs?.reports || [];
+  const scanList = realScans?.results || [];
+
+  // Match by modelId first (exact), then by constructed make-model slug
+  const tvr = tvrList.find((r) => r.modelId === model)
+    || tvrList.find((r) => {
+      const slug = (r.vehicleSpec?.make + "-" + r.vehicleSpec?.model)
+        .toLowerCase().replace(/[\s()]+/g, "-");
+      return slug === model;
     });
 
-    const scan = realScans?.results?.find((r) => r.modelId === model);
+  if (tvr) {
+    const scan = scanList.find((r) => r.modelId === model) || null;
     const history = await getPriceHistory(model);
 
-    if (tvr) {
-      return Response.json({
-        ...tvr,
-        scanData: scan || null,
-        priceHistory: history?.history || [],
-        aiPowered: true,
-      });
-    }
+    return Response.json({
+      ...tvr,
+      scanData: scan,
+      priceHistory: history?.history || [],
+      aiPowered: true,
+    });
   }
 
   return Response.json({ error: "Model not found. Run a market scan first." }, { status: 404 });
