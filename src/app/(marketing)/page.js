@@ -19,16 +19,16 @@ export default function Home() {
               LuxJD
             </div>
             <div className="hidden md:flex items-center gap-8">
-              <a className="text-primary border-b-2 border-primary-container pb-1" href="#">
+              <a className="text-primary border-b-2 border-primary-container pb-1" href="/">
                 Home
               </a>
-              <a className="text-slate-300 hover:text-primary transition-colors" href="#">
+              <a className="text-slate-300 hover:text-primary transition-colors" href="/about">
                 About
               </a>
-              <a className="text-slate-300 hover:text-primary transition-colors" href="#">
+              <a className="text-slate-300 hover:text-primary transition-colors" href="/inventory">
                 Inventory
               </a>
-              <a className="text-slate-300 hover:text-primary transition-colors" href="#">
+              <a className="text-slate-300 hover:text-primary transition-colors" href="/contact">
                 Contact
               </a>
             </div>
@@ -809,13 +809,13 @@ export default function Home() {
             <footer className="w-full border-t border-primary/20 bg-[#0a0a0a] flex flex-col md:flex-row justify-between items-center px-12 py-8 gap-6 font-body text-sm tracking-wide">
               <div className="text-slate-500">© 2024 LuxJD</div>
               <div className="flex gap-8">
-                <a className="text-slate-500 hover:text-slate-200 transition-all" href="#">
+                <a className="text-slate-500 hover:text-slate-200 transition-all" href="/about">
                   About
                 </a>
-                <a className="text-slate-500 hover:text-slate-200 transition-all" href="#">
+                <a className="text-slate-500 hover:text-slate-200 transition-all" href="/contact">
                   Contact
                 </a>
-                <a className="text-slate-500 hover:text-slate-200 transition-all" href="#">
+                <a className="text-slate-500 hover:text-slate-200 transition-all" href="/privacy">
                   Privacy
                 </a>
               </div>
