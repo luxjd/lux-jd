@@ -79,7 +79,7 @@ PREREQUISITES
       - Model: 911
       - Grade: Carrera T
       - Year: 2025
-      - Mileage shows a number
+      - Mileage shows a numbe
       - No internal fields visible (no "fieldConfidence", no "_deepParse*")
   [ ] Mileage label shows "km" or "miles" (not both)
 
