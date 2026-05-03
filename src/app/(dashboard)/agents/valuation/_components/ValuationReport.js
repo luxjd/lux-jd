@@ -563,7 +563,11 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
                 <tbody>
                   {r.comparableListings.map((c, i) => (
                     <tr key={c.id || i} className="border-b border-outline-variant/10 hover:bg-surface-container-high/30 print:border-gray-100">
-                      <td className="py-2 px-3 text-sm font-bold">{c.title || "—"}</td>
+                      <td className="py-2 px-3 text-sm font-bold">
+                        {c.url ? (
+                          <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{c.title || "View listing"}</a>
+                        ) : (c.title || "—")}
+                      </td>
                       <td className="py-2 px-3 text-sm font-mono">{fmtFull(c.price)}</td>
                       <td className="py-2 px-3 text-sm text-on-surface-variant">{c.mileage && c.mileage < 1000000 ? `${formatKm(c.mileage)} km` : "—"}</td>
                       <td className="py-2 px-3 text-sm text-on-surface-variant">{c.location || "—"}</td>
@@ -603,7 +607,11 @@ export default function ValuationReport({ report, onNewValuation, onRerun, onSen
                 <tbody>
                   {r.comparableListings.map((c, i) => (
                     <tr key={c.id || i} className="border-b border-outline-variant/10 hover:bg-surface-container-high/30">
-                      <td className="py-2 px-3 text-sm font-bold">{c.title || "—"}</td>
+                      <td className="py-2 px-3 text-sm font-bold">
+                        {c.url ? (
+                          <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{c.title || "View listing"}</a>
+                        ) : (c.title || "—")}
+                      </td>
                       <td className="py-2 px-3 text-sm font-mono">{fmtFull(c.price)}</td>
                       <td className="py-2 px-3 text-sm text-on-surface-variant">{c.platform || "web"}</td>
                     </tr>
